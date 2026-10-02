@@ -1,0 +1,855 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI library</title>
+<link rel="icon" href="/ui/logo.svg">
+<script src="/ui/theme.js"></script>
+<link rel="stylesheet" href="/ui/ui.css">
+<link rel="stylesheet" href="/ui/guide.css">
+<script src="/ui/ui.js" defer></script>
+<script src="/ui/guide.js" defer></script>
+</head>
+<body>
+<div class="page">
+
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="brand" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+    <div class="site-header__end">UI library</div>
+  </div>
+</header>
+
+<main class="page__main">
+<div class="container stack stack--xl">
+
+  <section class="stack stack--md" aria-labelledby="h-intro">
+    <h1 id="h-intro">UI library</h1>
+    <p class="lead">Every component in <code>ui.css</code>, live and in its states. Each markup snippet is generated from the example above it, so the two cannot drift apart.</p>
+    <p class="text-caption">Rules for pages: colours come only from tokens. Lerato's side is always <code>.party-a</code> (blue) and Kwame's is always <code>.party-b</code> (rust), whoever is looking. Copy stays in plain words. Anything marked <span class="pill pill--warn">New, not on the canvas</span> was added beyond the approved design.</p>
+    <nav class="cluster cluster--tight" aria-label="Sections on this page">
+      <a class="btn btn--link" href="#theme">Theme</a>
+      <a class="btn btn--link" href="#colours">Colours</a>
+      <a class="btn btn--link" href="#buttons">Buttons</a>
+      <a class="btn btn--link" href="#forms">Forms</a>
+      <a class="btn btn--link" href="#pills">Pills and status</a>
+      <a class="btn btn--link" href="#conversation">Conversation</a>
+      <a class="btn btn--link" href="#decision">Decision and outcome</a>
+      <a class="btn btn--link" href="#points">Points</a>
+      <a class="btn btn--link" href="#callouts">Callouts</a>
+      <a class="btn btn--link" href="#blocks">Cards and blocks</a>
+      <a class="btn btn--link" href="#page-parts">Header and footers</a>
+      <a class="btn btn--link" href="#helpers">Layout and helpers</a>
+      <a class="btn btn--link" href="#dock">Dock</a>
+      <a class="btn btn--link" href="#details">Details</a>
+      <a class="btn btn--link" href="#instructions">Instructions</a>
+      <a class="btn btn--link" href="#prose">Prose</a>
+      <a class="btn btn--link" href="#toasts">Toasts</a>
+      <a class="btn btn--link" href="#states">Empty and error</a>
+      <a class="btn btn--link" href="#icons">Icons</a>
+    </nav>
+  </section>
+
+  <!-- ============================================================ theme -->
+  <section class="stack stack--md" id="theme" aria-labelledby="h-theme">
+    <div class="cluster"><h2 id="h-theme">Theme</h2><span class="pill pill--warn">New, not on the canvas</span></div>
+    <p class="text-muted">The dark palette is new design work. System follows the device setting. Your choice is remembered in this browser.</p>
+    <fieldset>
+      <legend class="field__label">Theme</legend>
+      <div class="grid-auto" data-theme-group>
+        <label class="radio-card">
+          <input type="radio" name="guide-theme" value="system">
+          <span class="radio-card__body"><span class="radio-card__title">System</span><span class="radio-card__hint">Match this device</span></span>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="guide-theme" value="light">
+          <span class="radio-card__body"><span class="radio-card__title">Light</span><span class="radio-card__hint">Always light</span></span>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="guide-theme" value="dark">
+          <span class="radio-card__body"><span class="radio-card__title">Dark</span><span class="radio-card__hint">Always dark</span></span>
+        </label>
+      </div>
+    </fieldset>
+  </section>
+
+  <!-- ========================================================== colours -->
+  <section class="stack stack--md" id="colours" aria-labelledby="h-colours">
+    <h2 id="h-colours">Colour tokens</h2>
+    <p class="text-muted">Components read colour only through these tokens. Use <code>var(--token)</code>, never a literal colour.</p>
+    <div class="grid-auto" data-swatches></div>
+  </section>
+
+  <!-- ========================================================== buttons -->
+  <section class="stack stack--md" id="buttons" aria-labelledby="h-buttons">
+    <h2 id="h-buttons">Buttons</h2>
+    <p class="eyebrow-label">Variants</p>
+    <div class="guide-example cluster" data-snippet="btn-variants">
+      <button class="btn btn--primary" type="button">Send to Kwame</button>
+      <button class="btn btn--secondary" type="button">Save for later</button>
+      <button class="btn btn--primary btn--small" type="button">Small primary</button>
+      <button class="btn btn--secondary btn--small" type="button">Small secondary</button>
+      <button class="btn btn--link" type="button">Link button</button>
+      <a class="btn btn--secondary" href="/spec">A link that looks like a button</a>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="btn-variants"></code></pre></div></details>
+
+    <div class="cluster"><p class="eyebrow-label">Disabled and busy</p><span class="pill pill--warn">New, not on the canvas</span></div>
+    <div class="guide-example cluster" data-snippet="btn-states">
+      <button class="btn btn--primary" type="button" disabled>Disabled primary</button>
+      <button class="btn btn--secondary" type="button" disabled>Disabled secondary</button>
+      <button class="btn btn--primary" type="button" aria-busy="true">Sending</button>
+      <button class="btn btn--secondary" type="button" aria-busy="true">Checking</button>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="btn-states"></code></pre></div></details>
+
+    <p class="eyebrow-label">On an inverse band, and full width</p>
+    <div class="guide-example stack" data-snippet="btn-inverse">
+      <div class="cta-band">
+        <div class="cta-band__body"><p class="cta-band__text">Buttons for the inverse band</p></div>
+        <button class="btn btn--on-inverse" type="button">On inverse</button>
+        <button class="btn btn--ghost-on-inverse" type="button">Ghost on inverse</button>
+      </div>
+      <button class="btn btn--primary btn--block" type="button">Full width</button>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="btn-inverse"></code></pre></div></details>
+  </section>
+
+  <!-- ============================================================ forms -->
+  <section class="stack stack--md" id="forms" aria-labelledby="h-forms">
+    <h2 id="h-forms">Forms</h2>
+    <p class="eyebrow-label">Fields with a hint</p>
+    <div class="guide-example stack" data-snippet="form-fields">
+      <div class="field">
+        <label class="field__label" for="guide-shop">Your business</label>
+        <span class="field__hint" id="guide-shop-hint">The name Kwame's AI will see.</span>
+        <input class="input" id="guide-shop" type="text" value="Lerato's shop" aria-describedby="guide-shop-hint">
+      </div>
+      <div class="field">
+        <label class="field__label" for="guide-goal">What do you want from this?</label>
+        <span class="field__hint" id="guide-goal-hint">A sentence or two is plenty.</span>
+        <textarea class="textarea" id="guide-goal" aria-describedby="guide-goal-hint">Refund the customers who were charged twice.</textarea>
+      </div>
+      <div class="field">
+        <label class="field__label" for="guide-off">A field you can't change right now</label>
+        <input class="input" id="guide-off" type="text" value="Locked for this room" disabled>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="form-fields"></code></pre></div></details>
+
+    <div class="cluster"><p class="eyebrow-label">Field with an error</p><span class="pill pill--warn">New, not on the canvas</span></div>
+    <div class="guide-example stack" data-snippet="form-error">
+      <div class="field field--error">
+        <label class="field__label" for="guide-email">Where should we send the summary?</label>
+        <input class="input" id="guide-email" type="text" value="lerato@" aria-invalid="true" aria-describedby="guide-email-error">
+        <span class="field__error" id="guide-email-error">That doesn't look like a full email address.</span>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="form-error"></code></pre></div></details>
+
+    <div class="cluster"><p class="eyebrow-label">Select, with a disabled option</p><span class="pill pill--warn">New, not on the canvas</span></div>
+    <div class="guide-example stack" data-snippet="form-select">
+      <div class="field">
+        <label class="field__label" for="guide-mode">Who talks for you?</label>
+        <select class="select" id="guide-mode">
+          <option value="ai" selected>Your AI</option>
+          <option value="agent">An AI you already use</option>
+          <option value="human" disabled>You, live (coming soon)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="guide-mode-off">A select you can't change</label>
+        <select class="select" id="guide-mode-off" disabled>
+          <option>Your AI</option>
+        </select>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="form-select"></code></pre></div></details>
+
+    <p class="eyebrow-label">Radio cards, one checked and one not</p>
+    <div class="guide-example" data-snippet="form-radio">
+      <fieldset>
+        <legend class="field__label">How should your AI start?</legend>
+        <div class="stack stack--sm">
+          <label class="radio-card">
+            <input type="radio" name="guide-start" value="draft" checked>
+            <span class="radio-card__body"><span class="radio-card__title">Write it for me</span><span class="radio-card__hint">Describe your situation and your AI drafts your instructions.</span></span>
+          </label>
+          <label class="radio-card">
+            <input type="radio" name="guide-start" value="own">
+            <span class="radio-card__body"><span class="radio-card__title">I'll write it myself</span><span class="radio-card__hint">Start from a blank page.</span></span>
+          </label>
+          <a class="btn btn--link" href="/spec">What happens next?</a>
+        </div>
+      </fieldset>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="form-radio"></code></pre></div></details>
+
+    <p class="eyebrow-label">Copy field and copy button</p>
+    <p class="text-caption">The value is set from script through the <code>.value</code> property, never from the markup. The button names the field with <code>data-copy="field-id"</code>.</p>
+    <div class="guide-example" data-snippet="form-copy">
+      <div class="field">
+        <label class="field__label" for="guide-seat-link">Your private link</label>
+        <span class="field__hint" id="guide-seat-link-hint">Anyone with this link can speak for you. Keep it to yourself.</span>
+        <div class="copy-field">
+          <input class="input" id="guide-seat-link" type="text" readonly aria-describedby="guide-seat-link-hint">
+          <button class="btn btn--secondary" type="button" data-copy="guide-seat-link"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>Copy link</button>
+        </div>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="form-copy"></code></pre></div></details>
+  </section>
+
+  <!-- ============================================================ pills -->
+  <section class="stack stack--md" id="pills" aria-labelledby="h-pills">
+    <h2 id="h-pills">Pills and status</h2>
+    <p class="eyebrow-label">Pills</p>
+    <div class="guide-example cluster" data-snippet="pill-kinds">
+      <span class="pill">Neutral</span>
+      <span class="pill pill--info">Good to know</span>
+      <span class="pill pill--party party-a">Said by Lerato</span>
+      <span class="pill pill--party party-b">Said by Kwame</span>
+      <span class="pill pill--warn">Not confirmed</span>
+      <span class="pill pill--ok">Deal reached</span>
+      <span class="pill pill--danger">Record was changed</span>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="pill-kinds"></code></pre></div></details>
+    <p class="text-caption">The danger pill is <span class="pill pill--warn">New, not on the canvas</span></p>
+
+    <div class="cluster"><p class="eyebrow-label">Info and party A, side by side</p><span class="pill pill--warn">New, not on the canvas</span></div>
+    <p class="text-caption">They look the same today, but they are separate tokens (<code>--info-*</code> and <code>--seat-a-*</code>). Use info for general news and party A for Lerato's side, so changing one never recolours the other.</p>
+    <div class="guide-example cluster" data-snippet="pill-info-vs-party">
+      <span class="pill pill--info">Good to know</span>
+      <span class="pill pill--party party-a">Said by Lerato</span>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="pill-info-vs-party"></code></pre></div></details>
+
+    <p class="eyebrow-label">Status (a pill with a dot)</p>
+    <div class="guide-example cluster" data-snippet="status-kinds">
+      <span class="status" role="status">Waiting for Kwame</span>
+      <span class="status status--info" role="status">Your AI is writing</span>
+      <span class="status status--warn" role="status">Your AI needs you</span>
+      <span class="status status--ok" role="status">Record checks out</span>
+      <span class="status status--danger" role="status">Record was changed</span>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="status-kinds"></code></pre></div></details>
+  </section>
+
+  <!-- ========================================================= chat -->
+  <section class="stack stack--md" id="conversation" aria-labelledby="h-conversation">
+    <h2 id="h-conversation">Conversation</h2>
+    <p class="text-muted">Colour follows the side, not the viewer. A line your AI could not back up carries the "Not confirmed" mark and a short note.</p>
+    <div class="guide-example card" data-snippet="chat">
+      <div class="chat" role="log" aria-live="polite" aria-label="Conversation">
+        <div class="bubble bubble--end party-a">
+          <span class="bubble__name">Your AI</span>
+          <div class="bubble__body">
+            <p>Some customers were charged twice. <span class="mark-unconfirmed">I think the duplicate notification caused it.</span></p>
+            <span class="pill pill--warn">Not confirmed</span>
+            <span class="bubble__note">Kwame's AI couldn't verify this.</span>
+          </div>
+        </div>
+        <div class="bubble party-b">
+          <span class="bubble__name">Kwame's AI</span>
+          <div class="bubble__body">
+            <p>I can't see a duplicate on our side. Can you send the order numbers?</p>
+          </div>
+        </div>
+        <p class="chat__event">Kwame's AI asked for the order numbers</p>
+        <div class="thinking thinking--end party-a" role="status" aria-label="Your AI is thinking"><span class="thinking__dot"></span><span class="thinking__dot"></span><span class="thinking__dot"></span></div>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="chat"></code></pre></div></details>
+    <p class="text-caption">The thinking dots and <code>.bubble--enter</code> are <span class="pill pill--warn">New, not on the canvas</span></p>
+
+    <div class="cluster"><p class="eyebrow-label">A bubble that slides in</p><span class="pill pill--warn">New, not on the canvas</span></div>
+    <p class="text-caption">Entrance motion is opt-in. Add <code>.bubble--enter</code> only to a message that has just arrived, so a re-render does not replay it. Reload the page to see it.</p>
+    <div class="guide-example card" data-snippet="bubble-enter">
+      <div class="bubble bubble--enter party-b">
+        <span class="bubble__name">Kwame's AI</span>
+        <div class="bubble__body"><p>Thanks. I've found the order numbers.</p></div>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="bubble-enter"></code></pre></div></details>
+  </section>
+
+  <!-- ======================================================== decision -->
+  <section class="stack stack--md" id="decision" aria-labelledby="h-decision">
+    <h2 id="h-decision">Decision and outcome</h2>
+    <p class="eyebrow-label">Your AI needs you</p>
+    <p class="text-caption">The page moves focus to the heading when this card appears.</p>
+    <div class="guide-example" data-snippet="decision-card">
+      <div class="decision decision--party party-a">
+        <h3 class="decision__title" tabindex="-1">Your AI needs you</h3>
+        <p>Kwame's AI wants you to take back what you said about the duplicate notification. Do you want to?</p>
+        <div class="cluster">
+          <button class="btn btn--primary" type="button">Yes, take it back</button>
+          <button class="btn btn--secondary" type="button">No, keep it</button>
+        </div>
+        <p class="decision__note">Nothing is agreed until you answer.</p>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="decision-card"></code></pre></div></details>
+
+    <p class="eyebrow-label">Both outcomes</p>
+    <div class="guide-example stack" data-snippet="outcomes">
+      <div class="outcome outcome--ok">
+        <div class="outcome__body">
+          <h3 class="outcome__title">Deal reached</h3>
+          <p>Both sides agreed to refund the customers who were charged twice.</p>
+        </div>
+        <a class="btn btn--primary" href="/room/EXAMPLE?seat=A&amp;t=EXAMPLE-TOKEN">Read the summary</a>
+      </div>
+      <div class="outcome outcome--warn">
+        <div class="outcome__body">
+          <h3 class="outcome__title">No deal yet</h3>
+          <p>The two sides could not agree, so nothing was decided.</p>
+        </div>
+        <a class="btn btn--secondary" href="/room/EXAMPLE?seat=A&amp;t=EXAMPLE-TOKEN">See what happened</a>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="outcomes"></code></pre></div></details>
+  </section>
+
+  <!-- ========================================================= points -->
+  <section class="stack stack--md" id="points" aria-labelledby="h-points">
+    <h2 id="h-points">Points</h2>
+    <p class="text-muted">A numbered list of what was agreed, each with the reason it was allowed. A flagged point is one your AI could not back up.</p>
+    <div class="guide-example" data-snippet="points">
+      <ol class="points">
+        <li class="points__item">
+          <span class="points__num">1</span>
+          <div class="points__body">
+            <p class="points__text">Kwame's company refunds every customer who was charged twice.</p>
+            <p class="points__why">Allowed because Lerato's instructions say customers come first.</p>
+          </div>
+        </li>
+        <li class="points__item points__item--flagged">
+          <span class="points__num">2</span>
+          <div class="points__body">
+            <p class="points__text">Both sides treat the duplicate notification as the cause.</p>
+            <span class="pill pill--warn">Not confirmed</span>
+            <p class="points__why">Nobody could show this. It rests on a guess.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="points"></code></pre></div></details>
+  </section>
+
+  <!-- ======================================================== callouts -->
+  <section class="stack stack--md" id="callouts" aria-labelledby="h-callouts">
+    <h2 id="h-callouts">Callouts</h2>
+    <div class="guide-example stack" data-snippet="callouts">
+      <div class="callout callout--info">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        <div class="callout__body"><p>Your instructions are locked once you send them.</p></div>
+      </div>
+      <div class="callout callout--ok">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+        <div class="callout__body"><p>Kwame's AI has joined the room.</p></div>
+      </div>
+      <div class="callout callout--warn">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>
+        <div class="callout__body"><p>The room stopped this: your AI tried to call a guess a fact.</p></div>
+      </div>
+      <div class="callout callout--lg callout--warn">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>
+        <div class="callout__body">
+          <p class="callout__title">Check this before you agree</p>
+          <p>One point depends on something nobody has confirmed yet.</p>
+        </div>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="callouts"></code></pre></div></details>
+
+    <div class="cluster"><p class="eyebrow-label">Danger</p><span class="pill pill--warn">New, not on the canvas</span></div>
+    <div class="guide-example" data-snippet="callout-danger">
+      <div class="callout callout--danger" role="alert">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>
+        <div class="callout__body"><p>The record was changed after it was written. Don't rely on this summary.</p></div>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="callout-danger"></code></pre></div></details>
+  </section>
+
+  <!-- ===================================================== cards, etc -->
+  <section class="stack stack--md" id="blocks" aria-labelledby="h-blocks">
+    <h2 id="h-blocks">Cards and blocks</h2>
+
+    <p class="eyebrow-label">Steps</p>
+    <div class="guide-example stack" data-snippet="steps">
+      <ol class="steps">
+        <li class="steps__item">
+          <span class="steps__num" aria-hidden="true">1</span>
+          <div class="steps__body"><h3 class="steps__title">Tell your AI what you want</h3><p class="text-muted">A few sentences about the problem and what a good result looks like.</p></div>
+        </li>
+        <li class="steps__item">
+          <span class="steps__num" aria-hidden="true">2</span>
+          <div class="steps__body"><h3 class="steps__title">Send Kwame his link</h3><p class="text-muted">His AI joins the same room.</p></div>
+        </li>
+      </ol>
+      <ol class="steps steps--grid">
+        <li class="steps__item">
+          <span class="steps__num" aria-hidden="true">1</span>
+          <h3 class="steps__title">Describe it</h3>
+          <p class="text-muted">Say what happened.</p>
+        </li>
+        <li class="steps__item">
+          <span class="steps__num" aria-hidden="true">2</span>
+          <h3 class="steps__title">Watch it</h3>
+          <p class="text-muted">Both AIs talk it through.</p>
+        </li>
+        <li class="steps__item">
+          <span class="steps__num" aria-hidden="true">3</span>
+          <h3 class="steps__title">Decide</h3>
+          <p class="text-muted">You approve the result.</p>
+        </li>
+      </ol>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="steps"></code></pre></div></details>
+
+    <p class="eyebrow-label">Cards</p>
+    <div class="guide-example grid-auto" data-snippet="cards">
+      <div class="card">
+        <h3 class="card__title">Plain card</h3>
+        <p class="card__text">Lerato's shop was charged twice by Kwame's payment provider.</p>
+      </div>
+      <div class="card card--raised">
+        <h3 class="card__title">Raised card</h3>
+        <p class="card__text">The same card with a soft shadow.</p>
+      </div>
+      <a class="card card--link" href="/ui/">
+        <h3 class="card__title">Card that is a link</h3>
+        <p class="card__text">Hover to see the border change.</p>
+      </a>
+      <div class="card card--flush">
+        <div class="card"><h3 class="card__title">Flush card</h3><p class="card__text">No padding, so a child can reach the edge.</p></div>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="cards"></code></pre></div></details>
+
+    <p class="eyebrow-label">Quote</p>
+    <div class="guide-example" data-snippet="quote">
+      <figure class="quote">
+        <blockquote class="quote__text">"Two customers got charged twice and nobody could say why."</blockquote>
+        <cite>Lerato, shop owner</cite>
+      </figure>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="quote"></code></pre></div></details>
+
+    <p class="eyebrow-label">Call-to-action band</p>
+    <p class="text-caption">Press Tab to reach the buttons. On this band the focus ring uses <code>--focus-inverse</code>, so it stays visible on the dark (or, in dark theme, light) background. The ring colour is <span class="pill pill--warn">New, not on the canvas</span></p>
+    <div class="guide-example" data-snippet="cta-band">
+      <div class="cta-band">
+        <div class="cta-band__body">
+          <h2 class="cta-band__title">Try it with a made-up dispute</h2>
+          <p class="cta-band__text">No sign-up. It takes about two minutes.</p>
+        </div>
+        <a class="btn btn--on-inverse" href="/">Start the demo</a>
+        <a class="btn btn--ghost-on-inverse" href="/spec">How it works</a>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="cta-band"></code></pre></div></details>
+
+    <p class="eyebrow-label">Rule row</p>
+    <p class="text-caption">The grey <code>.rule-row__spec</code> caption is the one place spec terms may show in user-facing copy. Use it on the protocol reading page only.</p>
+    <div class="guide-example card card--flush" data-snippet="rule-row">
+      <div class="rule-row">
+        <h3>Say where it came from</h3>
+        <div class="rule-row__body">
+          <p>Every claim says whether it was stated, came from a document, or is a guess.</p>
+          <p class="rule-row__spec">Protocol: each claim is tagged stated, sourced or assumed.</p>
+        </div>
+      </div>
+      <div class="rule-row">
+        <h3>Ask a person at the limit</h3>
+        <div class="rule-row__body">
+          <p>When a deal would go past what you allowed, your AI stops and asks you.</p>
+          <p class="rule-row__spec">Protocol: the proxy escalates to its principal.</p>
+        </div>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="rule-row"></code></pre></div></details>
+  </section>
+
+  <!-- ================================================ header, footers -->
+  <section class="stack stack--md" id="page-parts" aria-labelledby="h-parts">
+    <h2 id="h-parts">Brand, header and footers</h2>
+    <p class="text-muted">Footer rule: the full footer on reading pages, the slim footer on stopping points, no footer on task pages. The "Runs on…" line is a slot, so a page fills it in.</p>
+
+    <p class="eyebrow-label">Brand</p>
+    <div class="guide-example cluster" data-snippet="brand">
+      <a class="brand" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+      <a class="brand brand--small" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="brand"></code></pre></div></details>
+
+    <p class="eyebrow-label">Site header</p>
+    <p class="text-caption">One with navigation (the current page is underlined), one with a status in the right slot.</p>
+    <div class="guide-example stack" data-snippet="site-header">
+      <header class="site-header">
+        <div class="site-header__inner">
+          <a class="brand" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+          <nav class="site-header__nav" aria-label="Example">
+            <a href="/ui/" aria-current="page">Home</a>
+            <a href="/spec">How it works</a>
+            <a class="btn btn--primary btn--small" href="/">Start a room</a>
+          </nav>
+        </div>
+      </header>
+      <header class="site-header">
+        <div class="site-header__inner">
+          <a class="brand" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+          <div class="site-header__end"><span class="status status--info" role="status">Step 2 of 3</span></div>
+        </div>
+      </header>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="site-header"></code></pre></div></details>
+
+    <p class="eyebrow-label">Full footer</p>
+    <div class="guide-example" data-snippet="footer-full">
+      <footer class="footer footer--full">
+        <div class="footer__cols">
+          <div class="footer__col footer__col--lead">
+            <a class="brand" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+            <p>Two AIs talk it through. You make the final call.</p>
+          </div>
+          <div class="footer__col">
+            <h2 class="footer__heading">Product</h2>
+            <a href="/">Try the demo</a>
+            <a href="/ui/">UI library</a>
+          </div>
+          <div class="footer__col">
+            <h2 class="footer__heading">Learn</h2>
+            <a href="/spec">How it works</a>
+            <a href="/room/EXAMPLE?seat=B&amp;t=EXAMPLE-TOKEN">An example room</a>
+          </div>
+          <div class="footer__col">
+            <h2 class="footer__heading">Elsewhere</h2>
+            <a href="https://example.com/" rel="noopener noreferrer">An outside link</a>
+          </div>
+        </div>
+        <div class="footer__inner">
+          <span>Behalf</span>
+          <span class="footer__spacer"></span>
+          <span class="footer__status">Runs on <a href="/spec">PXP v0, an open draft protocol</a></span>
+        </div>
+      </footer>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="footer-full"></code></pre></div></details>
+
+    <p class="eyebrow-label">Slim footer</p>
+    <div class="guide-example" data-snippet="footer-slim">
+      <footer class="footer footer--slim">
+        <div class="footer__inner">
+          <a class="brand brand--small" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+          <a href="/spec">How it works</a>
+          <span class="footer__spacer"></span>
+          <span class="footer__status">Runs on <a href="/spec">PXP v0, an open draft protocol</a></span>
+        </div>
+      </footer>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="footer-slim"></code></pre></div></details>
+  </section>
+
+  <!-- ======================================================== helpers -->
+  <section class="stack stack--md" id="helpers" aria-labelledby="h-helpers">
+    <div class="cluster"><h2 id="h-helpers">Layout and helpers</h2><span class="pill pill--warn">New, not on the canvas</span></div>
+
+    <p class="eyebrow-label">Page widths</p>
+    <p class="text-caption">Use <code>.container</code> for the full page width, then one of three narrower widths: form (640px), intro (720px) or read (760px).</p>
+    <div class="guide-example stack stack--sm" data-snippet="container-widths">
+      <div class="container container--form"><div class="card guide-width-bar">Form width</div></div>
+      <div class="container container--intro"><div class="card guide-width-bar">Intro width</div></div>
+      <div class="container container--read"><div class="card guide-width-bar">Read width</div></div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="container-widths"></code></pre></div></details>
+
+    <p class="eyebrow-label">Heading sizes</p>
+    <p class="text-caption">Change the size without changing the heading level. The two big ones shrink on a phone.</p>
+    <div class="guide-example stack stack--sm" data-snippet="heading-sizes">
+      <h1 class="h1--display">Display heading</h1>
+      <h1 class="h1--xl">Extra large heading</h1>
+      <h2 class="h2--lg">Large section heading</h2>
+      <h2 class="h2--section">Section heading</h2>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="heading-sizes"></code></pre></div></details>
+
+    <p class="eyebrow-label">Code block with a copy button</p>
+    <p class="text-caption">For a prompt or a command someone pastes elsewhere. The button names the block with <code>data-copy="block-id"</code>.</p>
+    <div class="guide-example stack stack--sm" data-snippet="code-block">
+      <pre class="code-block" id="guide-prompt">Please act for Lerato.
+Ask Kwame's AI to refund every customer who was charged twice.
+Stop and ask me before you agree to pay any fee.</pre>
+      <div><button class="btn btn--secondary btn--small" type="button" data-copy="guide-prompt">Copy these instructions</button></div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="code-block"></code></pre></div></details>
+
+    <p class="eyebrow-label">Hide on a phone</p>
+    <p class="text-caption">Narrow the window to 640px or less and the first line disappears.</p>
+    <div class="guide-example stack stack--sm" data-snippet="hide-sm">
+      <p class="hide-sm">You can see this on a wide screen only.</p>
+      <p>You can see this everywhere.</p>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="hide-sm"></code></pre></div></details>
+
+    <p class="eyebrow-label">Hide when printing</p>
+    <p class="text-caption">Use the print preview to check: the first line is left out of the printed page.</p>
+    <div class="guide-example stack stack--sm" data-snippet="no-print">
+      <p class="no-print">This line is on the screen only.</p>
+      <p>This line is on the screen and on paper.</p>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="no-print"></code></pre></div></details>
+
+    <p class="eyebrow-label">Screen-reader-only text</p>
+    <p class="text-caption">Use <code>.sr-only</code> for text that only assistive technology should read, such as a label for an icon-only button.</p>
+    <div class="guide-example cluster" data-snippet="sr-only">
+      <button class="btn btn--secondary btn--small" type="button"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg><span class="sr-only">Copy the link</span></button>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="sr-only"></code></pre></div></details>
+  </section>
+
+  <!-- ============================================================ dock -->
+  <section class="stack stack--md" id="dock" aria-labelledby="h-dock">
+    <div class="cluster"><h2 id="h-dock">Dock</h2><span class="pill pill--warn">New, not on the canvas</span></div>
+    <p class="text-muted">A bar that sticks to the bottom of the screen. Put it last in the page, after the content: it takes its own space there, and the page keeps focused content from scrolling under it. Put the bar's content inside <code>.dock__inner</code>, which lines it up with the page. Each box below is a small scrollable page. Scroll it to see the bar stay put.</p>
+    <div class="grid-auto grid-auto--wide">
+      <div class="stack stack--sm">
+        <div class="guide-dock-demo" data-snippet="dock-default">
+          <p class="text-caption">Page content. Scroll this box.</p>
+          <div class="dock">
+            <div class="dock__inner">
+              <div class="dock__body"><strong>Your AI is working.</strong> You can leave this page.</div>
+              <button class="btn btn--secondary btn--small" type="button">Pause</button>
+            </div>
+          </div>
+        </div>
+        <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="dock-default"></code></pre></div></details>
+      </div>
+      <div class="stack stack--sm">
+        <div class="guide-dock-demo" data-snippet="dock-warn">
+          <p class="text-caption">Page content. Scroll this box.</p>
+          <div class="dock dock--warn">
+            <div class="dock__inner">
+              <div class="dock__body"><strong>Your AI needs you.</strong> It's waiting for your answer.</div>
+              <button class="btn btn--primary btn--small" type="button">Answer</button>
+            </div>
+          </div>
+        </div>
+        <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="dock-warn"></code></pre></div></details>
+      </div>
+      <div class="stack stack--sm">
+        <div class="guide-dock-demo" data-snippet="dock-ok">
+          <p class="text-caption">Page content. Scroll this box.</p>
+          <div class="dock dock--ok">
+            <div class="dock__inner">
+              <div class="dock__body"><strong>Deal reached.</strong> Both sides agreed.</div>
+              <a class="btn btn--primary btn--small" href="/room/EXAMPLE?seat=A&amp;t=EXAMPLE-TOKEN">Read the summary</a>
+            </div>
+          </div>
+        </div>
+        <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="dock-ok"></code></pre></div></details>
+      </div>
+      <div class="stack stack--sm">
+        <div class="guide-dock-demo" data-snippet="dock-danger">
+          <p class="text-caption">Page content. Scroll this box.</p>
+          <div class="dock dock--danger" role="alert">
+            <div class="dock__inner">
+              <div class="dock__body"><strong>Something went wrong.</strong> Your AI stopped.</div>
+              <button class="btn btn--primary btn--small" type="button">Try again</button>
+            </div>
+          </div>
+        </div>
+        <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="dock-danger"></code></pre></div></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================================================== details -->
+  <section class="stack stack--md" id="details" aria-labelledby="h-details">
+    <div class="cluster"><h2 id="h-details">Details and record</h2><span class="pill pill--warn">New, not on the canvas</span></div>
+    <p class="eyebrow-label">Disclosure</p>
+    <div class="guide-example stack" data-snippet="disclosure">
+      <details class="disclosure">
+        <summary>Details</summary>
+        <div class="disclosure__body"><p>Technical references live here, off the main view: <code class="mono">must_never[0]</code>.</p></div>
+      </details>
+      <details class="disclosure" open>
+        <summary>Open by default</summary>
+        <div class="disclosure__body"><p>The same component, already open.</p></div>
+      </details>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="disclosure"></code></pre></div></details>
+
+    <p class="eyebrow-label">Record list, with its check</p>
+    <div class="guide-example stack" data-snippet="record-list">
+      <span class="status status--ok" role="status">Record checks out</span>
+      <details class="disclosure">
+        <summary>See the record</summary>
+        <div class="disclosure__body">
+          <ol class="record-list">
+            <li class="record-list__item"><span>1 Room opened</span><span class="record-list__hash">EXAMPLE-HASH-0001</span></li>
+            <li class="record-list__item"><span>2 Your AI spoke</span><span class="record-list__hash">EXAMPLE-HASH-0002</span></li>
+            <li class="record-list__item"><span>3 Deal reached</span><span class="record-list__hash">EXAMPLE-HASH-0003</span></li>
+          </ol>
+        </div>
+      </details>
+      <span class="status status--danger" role="status">Record was changed</span>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="record-list"></code></pre></div></details>
+  </section>
+
+  <!-- ===================================================== instructions -->
+  <section class="stack stack--md" id="instructions" aria-labelledby="h-instructions">
+    <div class="cluster"><h2 id="h-instructions">Instructions and proposal</h2><span class="pill pill--warn">New, not on the canvas</span></div>
+    <p class="eyebrow-label">Locked instructions</p>
+    <div class="guide-example" data-snippet="instructions-locked">
+      <article class="instructions instructions--party party-a">
+        <div class="instructions__head">
+          <h3>Lerato's instructions</h3>
+          <span class="pill pill--ok"><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Locked</span>
+        </div>
+        <div class="instructions__section">
+          <h4 class="instructions__label">What I want</h4>
+          <ul class="instructions__list"><li>Every customer who was charged twice gets their money back.</li><li>A short written answer on what went wrong.</li></ul>
+        </div>
+        <div class="instructions__section">
+          <h4 class="instructions__label">Never agree to</h4>
+          <ul class="instructions__list"><li>Paying any fee for the refunds.</li></ul>
+        </div>
+      </article>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="instructions-locked"></code></pre></div></details>
+
+    <p class="eyebrow-label">Proposal</p>
+    <div class="guide-example stack" data-snippet="proposal">
+      <div class="proposal proposal--party party-b">
+        <span class="proposal__label">Kwame's AI proposes</span>
+        <ul class="proposal__list"><li>Refund the double charges within five days.</li><li>Split the cost of the investigation.</li></ul>
+        <span class="pill pill--warn">Depends on something not confirmed</span>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="proposal"></code></pre></div></details>
+
+    <div class="cluster"><p class="eyebrow-label">Party tint on instructions and the decision card</p><span class="pill pill--warn">New, not on the canvas</span></div>
+    <p class="text-caption">Tint is opt-in. Inside <code>.party-a</code> or <code>.party-b</code>, add <code>.card--party</code>, <code>.instructions--party</code>, <code>.decision--party</code> or <code>.proposal--party</code> and that block takes the side's colour on its border. Without the modifier the border stays neutral.</p>
+    <div class="guide-example grid-auto" data-snippet="party-tint">
+      <article class="instructions instructions--party party-a">
+        <div class="instructions__head"><h3>Lerato's instructions</h3></div>
+        <p>Every customer who was charged twice gets their money back.</p>
+      </article>
+      <article class="instructions instructions--party party-b">
+        <div class="instructions__head"><h3>Kwame's instructions</h3></div>
+        <p>Only refund what the records can prove.</p>
+      </article>
+      <div class="card card--party party-b">
+        <h3 class="card__title">Kwame's note</h3>
+        <p class="card__text">A plain card with the party tint switched on.</p>
+      </div>
+      <div class="decision decision--party party-a">
+        <h3 class="decision__title">Lerato's AI needs her</h3>
+        <p>Does she want to keep this point?</p>
+      </div>
+      <div class="decision decision--party party-b">
+        <h3 class="decision__title">Kwame's AI needs him</h3>
+        <p>Does he want to accept this offer?</p>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="party-tint"></code></pre></div></details>
+  </section>
+
+  <!-- ============================================================ prose -->
+  <section class="stack stack--md" id="prose" aria-labelledby="h-prose">
+    <div class="cluster"><h2 id="h-prose">Prose</h2><span class="pill pill--warn">New, not on the canvas</span></div>
+    <p class="text-muted">For rendered markdown, such as the protocol page. Wide tables and code scroll inside their own box.</p>
+    <div class="guide-example" data-snippet="prose">
+      <div class="prose">
+        <h2>What was agreed</h2>
+        <p>Kwame's company refunds the customers who were charged twice. The cause is <code>still unknown</code>.</p>
+        <ul><li>Refunds within five days</li><li>No fee for Lerato's shop</li></ul>
+        <table>
+          <thead><tr><th>Customer</th><th>Charged</th><th>Refunded</th></tr></thead>
+          <tbody>
+            <tr><td>Order EXAMPLE-1</td><td>R 450</td><td>Yes</td></tr>
+            <tr><td>Order EXAMPLE-2</td><td>R 1 200</td><td>Not yet</td></tr>
+          </tbody>
+        </table>
+        <pre><code>seat link: /room/EXAMPLE?seat=B&amp;t=EXAMPLE-TOKEN</code></pre>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="prose"></code></pre></div></details>
+  </section>
+
+  <!-- ========================================================= toasts -->
+  <section class="stack stack--md" id="toasts" aria-labelledby="h-toasts">
+    <div class="cluster"><h2 id="h-toasts">Toasts</h2><span class="pill pill--warn">New, not on the canvas</span></div>
+    <p class="text-caption">Toasts never hold controls. They ignore clicks, so put anything the person must act on in a callout or the dock.</p>
+    <p class="eyebrow-label">How each kind looks</p>
+    <div class="guide-example cluster" data-snippet="toast-kinds">
+      <div class="toast toast--info">Your AI is working on it</div>
+      <div class="toast toast--ok">Link copied</div>
+      <div class="toast toast--warn">Kwame's AI couldn't verify this</div>
+      <div class="toast toast--danger">Couldn't reach the room</div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="toast-kinds"></code></pre></div></details>
+
+    <p class="eyebrow-label">Try them live</p>
+    <p class="text-caption">These call <code>UI.toast(message, kind)</code>. Messages are set as text, so markup in a message is never run.</p>
+    <div class="guide-example cluster" data-snippet="toast-live">
+      <button class="btn btn--secondary btn--small" type="button" data-toast="info" data-message="Your AI is working on it">Info toast</button>
+      <button class="btn btn--secondary btn--small" type="button" data-toast="ok" data-message="Link copied">OK toast</button>
+      <button class="btn btn--secondary btn--small" type="button" data-toast="warn" data-message="Kwame's AI couldn't verify this">Warning toast</button>
+      <button class="btn btn--secondary btn--small" type="button" data-toast="danger" data-message="Couldn't reach the room">Danger toast</button>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="toast-live"></code></pre></div></details>
+  </section>
+
+  <!-- ========================================================= states -->
+  <section class="stack stack--md" id="states" aria-labelledby="h-states">
+    <div class="cluster"><h2 id="h-states">Empty and error states</h2><span class="pill pill--warn">New, not on the canvas</span></div>
+    <div class="guide-example stack" data-snippet="states">
+      <div class="state">
+        <h3 class="state__title">Nothing here yet</h3>
+        <p>Your AI hasn't said anything. Messages will show up as they arrive.</p>
+      </div>
+      <div class="state state--error" role="alert">
+        <svg class="icon icon--lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>
+        <h3 class="state__title">We couldn't open this room</h3>
+        <p>The link may be wrong or out of date. Ask for a new one.</p>
+        <a class="btn btn--secondary btn--small" href="/">Back to the start</a>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="states"></code></pre></div></details>
+  </section>
+
+  <!-- ========================================================= icons -->
+  <section class="stack stack--md" id="icons" aria-labelledby="h-icons">
+    <div class="cluster"><h2 id="h-icons">Icons</h2><span class="pill pill--warn">New, not on the canvas</span></div>
+    <p class="text-muted">Inline SVG, drawn with <code>currentColor</code> so they follow the text colour. Hide decorative ones with <code>aria-hidden="true"</code>. There is no icon font.</p>
+    <div class="guide-example cluster" data-snippet="icons">
+      <span class="pill"><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Lock</span>
+      <span class="pill pill--ok"><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Check</span>
+      <span class="pill pill--warn"><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>Alert</span>
+      <span class="pill pill--info"><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>Link</span>
+      <span class="pill"><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>Copy</span>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="icons"></code></pre></div></details>
+    <p class="text-caption">Sizes: <code>.icon</code> (20px), <code>.icon--sm</code> (14px) and <code>.icon--lg</code> (28px).</p>
+  </section>
+
+</div>
+</main>
+
+<footer class="footer footer--slim">
+  <div class="footer__inner">
+    <a class="brand brand--small" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+    <span class="footer__spacer"></span>
+    <span class="footer__status">Runs on <a href="/spec">PXP v0, an open draft protocol</a></span>
+  </div>
+</footer>
+
+</div>
+</body>
+</html>

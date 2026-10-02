@@ -1,0 +1,5 @@
+/* Guide-only helpers for the /ui style guide. Not part of the library; pages never load this. */
+.guide-swatch { height: 48px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); }
+.guide-dock-demo { height: 170px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+.guide-dock-demo > p { min-height: 240px; padding: var(--space-4); }
+.guide-width-bar { text-align: center; }

@@ -10,7 +10,10 @@ const proxy = require('./lib/proxy');
 const demo = require('./lib/demo');
 const mcp = require('./lib/mcp');
 
-const PORT = Number(process.env.PORT) || 3000;
+const parsePort = (s) => { const p = (s || '').trim(); return /^\d+$/.test(p) && Number(p) <= 65535 ? Number(p) : 3000; };
+const PORT = parsePort(process.env.PORT);
+const HOST = process.env.BIND_HOST; // not HOST: csh-style shells export that as the machine name
+const SEC_HEADERS = { 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff' };
 const DATA_DIR = process.env.DROP_DATA_DIR || path.join(__dirname, '.data');
 const STORE = path.join(DATA_DIR, 'rooms.json');
 const PUBLIC = path.join(__dirname, 'web');
@@ -460,24 +463,25 @@ async function api(req, res, url) {
 const BUILD = (() => {
   const h = crypto.createHash('sha256');
   const walk = d => fs.readdirSync(d, { withFileTypes: true })
-    .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules')
+    .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules' && !(d === __dirname && e.name === 'docs'))
     .sort((a, b) => a.name.localeCompare(b.name))
     .forEach(e => { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else h.update(path.relative(__dirname, p) + '\0').update(fs.readFileSync(p)); });
   try { walk(__dirname); } catch {}
   return h.digest('hex').slice(0, 12);
 })();
 
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.md': 'text/markdown; charset=utf-8', '.svg': 'image/svg+xml' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.md': 'text/markdown; charset=utf-8', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
 
 function serveFile(res, file) {
   fs.readFile(file, (err, buf) => {
     if (err) return send(res, 404, 'Not found');
-    res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache' });
+    res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache', 'content-security-policy': "frame-ancestors 'none'" });
     res.end(buf);
   });
 }
 
 const server = http.createServer(async (req, res) => {
+  for (const [k, v] of Object.entries(SEC_HEADERS)) res.setHeader(k, v);
   const url = new URL(req.url, 'http://x');
   try {
     if (url.pathname === '/health') return send(res, 200, { ok: true, live: proxy.live(), rooms: rooms.size, build: BUILD });
@@ -488,8 +492,9 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/spec/')) return serveFile(res, path.join(__dirname, 'spec', path.basename(url.pathname)));
     if (url.pathname === '/spec') return serveFile(res, path.join(PUBLIC, 'spec.html'));
     if (url.pathname === '/connect') return serveFile(res, path.join(PUBLIC, 'connect.html'));
+    if (url.pathname === '/ui' || url.pathname === '/ui/') return serveFile(res, path.join(PUBLIC, 'ui', 'index.html'));
     const f = path.join(PUBLIC, url.pathname === '/' ? 'index.html' : path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, ''));
-    if (!f.startsWith(PUBLIC)) return send(res, 403, 'Forbidden');
+    if (!(f === PUBLIC || f.startsWith(PUBLIC + path.sep))) return send(res, 403, 'Forbidden');
     return serveFile(res, f);
   } catch (e) {
     if (!(e instanceof ApiError)) console.error('[http]', e.stack || e.message);
@@ -497,4 +502,5 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`Proxy Room (PXP/0) on :${PORT} · live=${proxy.live()} · model=${proxy.MODEL} · data=${DATA_DIR} · mcp=${PUBLIC_URL}/mcp`));
+const onListen = () => console.log(`Proxy Room (PXP/0) on :${server.address().port} · live=${proxy.live()} · model=${proxy.MODEL} · data=${DATA_DIR} · mcp=${PUBLIC_URL}/mcp`);
+server.listen(PORT, HOST || undefined, onListen); // unset or empty BIND_HOST binds all interfaces
