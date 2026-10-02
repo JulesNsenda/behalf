@@ -275,7 +275,7 @@ async function advance(room, seatId, raw) {
   if (env.status === 'escalate') {
     room.pending = {
       seat: seatId, seq: env.seq, question: env.escalation.question, reason: env.escalation.reason,
-      options: room.demo ? [{ key: 'dedupe', label: 'Require deduplication' }, { key: 'accept', label: 'Accept as proposed' }] : null,
+      options: room.demo ? demo.options : null,
     };
     room.status = 'paused';
     pxp.appendLedger(room, 'escalation', { seat: seatId, seq: env.seq, question_hash: pxp.sha256(env.escalation.question) });
@@ -444,7 +444,7 @@ async function api(req, res, url) {
     if (action === 'answer') {
       if (room.demo) {
         if (!room.pending || room.pending.seat !== seatId) return send(res, 409, { error: 'No question is waiting for this seat.' });
-        const key = body.option === 'accept' ? 'accept' : 'dedupe';
+        const key = Object.prototype.hasOwnProperty.call(demo.choices, body.option) ? body.option : 'dedupe';
         room.branch = key;
         room.script = demo.branches[key].slice();
         answerEscalation(room, seatId, demo.answers[key], 'web');
