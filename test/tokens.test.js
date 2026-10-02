@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
-const { UI_CSS } = require('./helpers/paths');
+const { UI_CSS } = require('../test-support/paths');
 
 const css = fs.readFileSync(UI_CSS, 'utf8');
 const pairs = JSON.parse(fs.readFileSync(path.join(__dirname, 'contrast-pairs.json'), 'utf8'));
@@ -160,6 +160,27 @@ test('every var() refers to a property declared in ui.css', () => {
 
 test('component-scoped properties are the expected ones', () => {
   for (const n of ['--party', '--stack-gap', '--cluster-gap', '--grid-min']) assert.ok(scoped.has(n), n + ' should be scoped');
+});
+
+// ---- helpers live only in the utilities layer ----
+// The utilities layer also holds class-level print rules for layout and component classes, so only
+// the single-purpose helpers are listed here. Each must be defined in the layer and appear nowhere else.
+const HELPERS = ['sr-only', 'text-muted', 'text-caption', 'text-small', 'lead', 'eyebrow-label', 'h1--xl', 'h1--display', 'h2--section', 'h2--lg', 'hide-sm', 'no-print', 'mono'];
+const utilitiesNode = (find((n) => n.prelude === '@layer utilities')[0] || {}).node;
+const classesIn = (selector) => Array.from(selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g), (m) => m[1]);
+
+test('every helper class appears only inside @layer utilities', () => {
+  assert.ok(utilitiesNode, '@layer utilities block missing');
+  const inLayer = new Set();
+  const outside = [];
+  walk(tree, (n, parents) => {
+    if (n.prelude.startsWith('@')) return;
+    const hit = classesIn(n.prelude).filter((c) => HELPERS.includes(c));
+    if (parents.includes(utilitiesNode)) hit.forEach((c) => inLayer.add(c));
+    else hit.forEach((c) => outside.push('.' + c + ' in "' + n.prelude + '"'));
+  });
+  assert.deepStrictEqual(HELPERS.filter((h) => !inLayer.has(h)), [], 'helpers missing from @layer utilities');
+  assert.deepStrictEqual(outside, []);
 });
 
 // ---- no literal colours outside the token blocks ----

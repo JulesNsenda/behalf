@@ -37,7 +37,7 @@
     --on-inverse-muted: #C9CED6;
 
     /* seats are fixed by seat, never by viewer */
-    --seat-a: var(--accent);
+    --seat-a: #2448B8;
     --seat-a-soft: #EAF0FD;
     --seat-a-ink: #1F3A8F;
     --seat-b: #B4561C;
@@ -134,10 +134,9 @@
       --line: #2A303B;
       --line-strong: #6B7383;
       --accent: #7C9CF2;
-      --focus: var(--accent);
       --focus-inverse: #2448B8;
       --on-inverse-muted: #4A505C;
-      --seat-a: var(--accent);
+      --seat-a: #7C9CF2;
       --seat-a-soft: #1B2744;
       --seat-a-ink: #B5C7F7;
       --seat-b: #E08A52;
@@ -174,10 +173,9 @@
       --line: #2A303B;
       --line-strong: #6B7383;
       --accent: #7C9CF2;
-      --focus: var(--accent);
       --focus-inverse: #2448B8;
       --on-inverse-muted: #4A505C;
-      --seat-a: var(--accent);
+      --seat-a: #7C9CF2;
       --seat-a-soft: #1B2744;
       --seat-a-ink: #B5C7F7;
       --seat-b: #E08A52;
@@ -227,7 +225,7 @@
   legend { padding: 0; }
   a { color: var(--accent); text-underline-offset: .18em; }
   a:hover { color: var(--ink); }
-  code, kbd, pre, samp, .mono { font-family: var(--font-mono); }
+  code, kbd, pre, samp { font-family: var(--font-mono); }
   mark { background: var(--warn-mark); color: var(--ink); }
 
   /* [hidden] is the one show/hide convention. There is no .hidden class. */
@@ -319,7 +317,10 @@
   }
   .footer__col { display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-start; }
   .footer__col--lead { gap: var(--space-4); }
-  .footer__heading { color: var(--ink); margin-bottom: var(--space-1); }
+  .footer__heading {
+    color: var(--ink); margin-bottom: var(--space-1);
+    font-size: var(--size-13); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  }
   .footer--full .footer__inner {
     margin-top: var(--space-8); padding-block: var(--space-3) var(--space-5); border-top: 1px solid var(--line); font-size: var(--size-14);
   }
@@ -384,7 +385,7 @@
   .field__label { font-weight: 600; }
   .field__hint { font-size: var(--size-15); color: var(--ink-subtle); }
   .field__error { font-size: var(--size-15); font-weight: 600; color: var(--danger-ink); }
-  .field--error .input, .field--error .textarea, .field--error .select { border-color: var(--tone-ink); }
+  .field--error .input, .field--error .textarea, .field--error .select { border-color: var(--danger-ink); }
 
   .input, .textarea, .select {
     display: block; width: 100%; min-height: var(--target-min); padding: var(--space-3) var(--space-3-5);
@@ -424,7 +425,7 @@
   .pill--info, .status--info, .callout--info, .toast--info { --tone-soft: var(--info-soft); --tone-ink: var(--info-ink); --tone-strong: var(--info-ink); }
   .pill--ok, .status--ok, .callout--ok, .toast--ok, .dock--ok, .outcome--ok { --tone-soft: var(--ok-soft); --tone-ink: var(--ok-ink); --tone-strong: var(--ok-ink); }
   .pill--warn, .status--warn, .callout--warn, .toast--warn, .dock--warn, .outcome--warn { --tone-soft: var(--warn-soft); --tone-ink: var(--warn-ink); --tone-strong: var(--warn-strong); }
-  .pill--danger, .status--danger, .callout--danger, .toast--danger, .dock--danger, .state--error, .field--error { --tone-soft: var(--danger-soft); --tone-ink: var(--danger-ink); --tone-strong: var(--danger-ink); }
+  .pill--danger, .status--danger, .callout--danger, .toast--danger, .dock--danger { --tone-soft: var(--danger-soft); --tone-ink: var(--danger-ink); --tone-strong: var(--danger-ink); }
 
   /* pills and status */
   .pill {
@@ -441,7 +442,7 @@
   }
   .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
   .pill--info, .pill--ok, .pill--warn, .pill--danger,
-  .status--info, .status--ok, .status--warn, .status--danger { background: var(--tone-soft); color: var(--tone-ink); }
+  .status--info, .status--ok, .status--warn, .status--danger { background: var(--tone-soft, var(--surface-hover)); color: var(--tone-ink, var(--ink)); }
 
   /* seat hooks: colour is fixed by seat, so the demo, spectators and the brief all agree */
   .party-a { --party: var(--seat-a); --party-soft: var(--seat-a-soft); --party-ink: var(--seat-a-ink); }
@@ -494,9 +495,9 @@
   .outcome { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-5); padding: var(--space-6); border-radius: var(--radius); }
   .outcome__body { flex: 1 1 300px; display: flex; flex-direction: column; gap: var(--space-1); }
   .outcome__title { font-size: var(--size-22); font-weight: 800; }
-  .outcome--ok, .outcome--warn { background: var(--tone-soft); color: var(--tone-ink); }
+  .outcome--ok, .outcome--warn { background: var(--tone-soft, var(--surface)); color: var(--tone-ink, var(--ink)); }
   .outcome--ok { color: var(--ok-muted); }
-  .outcome--ok .outcome__title, .outcome--warn .outcome__title { color: var(--tone-strong); }
+  .outcome--ok .outcome__title, .outcome--warn .outcome__title { color: var(--tone-strong, var(--ink)); }
 
   .points {
     list-style: none; padding: 0; overflow: hidden;
@@ -520,7 +521,7 @@
   .callout__title { font-size: var(--size-18); font-weight: 700; }
   .callout > .icon { margin-top: var(--space-0-5); }
   .callout--lg { gap: var(--space-3-5); padding: var(--space-5) var(--space-5-5); border-radius: var(--radius); font-size: var(--size-17); }
-  .callout--info, .callout--ok, .callout--warn, .callout--danger { background: var(--tone-soft); color: var(--tone-strong); }
+  .callout--info, .callout--ok, .callout--warn, .callout--danger { background: var(--tone-soft, var(--surface)); color: var(--tone-strong, var(--ink)); }
 
   /* cards and blocks */
   .card, .instructions, .proposal {
@@ -529,7 +530,7 @@
   }
   .card, .instructions { padding: var(--space-6); border-radius: var(--radius); }
   .card { color: var(--ink); }
-  .card--party { border-color: var(--party, var(--line)); }
+  .card--party, .instructions--party, .proposal--party { border-color: var(--party, var(--line)); }
   .card--flush { padding: 0; gap: 0; overflow: hidden; }
   .card--raised { box-shadow: var(--shadow); }
   .card--link { text-decoration: none; }
@@ -588,7 +589,7 @@
   }
   .dock__inner { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
   .dock__body { flex: 1 1 280px; min-width: 0; }
-  .dock--ok, .dock--warn, .dock--danger { background: var(--tone-soft); color: var(--tone-strong); }
+  .dock--ok, .dock--warn, .dock--danger { background: var(--tone-soft, var(--surface)); color: var(--tone-strong, var(--ink)); }
   :root:has(.dock:not([hidden])) { scroll-padding-bottom: var(--dock-reserve); }
 
   .disclosure { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); }
@@ -612,22 +613,18 @@
   .record-list__item:last-child { border-bottom: 0; }
   .record-list__hash { color: var(--ink-subtle); overflow-wrap: anywhere; }
 
-  /* small uppercase labels; the colour is set per class */
-  .instructions__label, .proposal__label, .footer__heading {
-    font-size: var(--size-13); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-  }
-
   /* locked instructions card */
   .instructions { gap: var(--space-4); }
-  .instructions--party { border-color: var(--party, var(--line)); }
   .instructions__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
   .instructions__section { display: flex; flex-direction: column; gap: var(--space-1-5); }
-  .instructions__label, .proposal__label { color: var(--ink-muted); }
+  /* small uppercase label; .footer__heading and .eyebrow-label carry the same type in their own layers */
+  .instructions__label, .proposal__label {
+    font-size: var(--size-13); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-muted);
+  }
   .instructions__list, .proposal__list { padding-left: var(--space-5-5); display: flex; flex-direction: column; gap: var(--space-1); }
 
   /* proposed points, with an optional "depends on something not confirmed" pill */
   .proposal { padding: var(--space-4) var(--space-4-5); border-radius: var(--radius-md); }
-  .proposal--party { border-color: var(--party, var(--line)); }
 
   /* rendered markdown */
   .prose { max-width: var(--w-read); overflow-wrap: anywhere; }
@@ -651,7 +648,7 @@
     pointer-events: none; max-width: min(100%, 420px); padding: var(--space-3) var(--space-4-5);
     border-radius: var(--radius-sm); background: var(--ink); color: var(--surface); font-size: var(--size-15); box-shadow: var(--shadow);
   }
-  .toast--info, .toast--ok, .toast--warn, .toast--danger { background: var(--tone-soft); color: var(--tone-strong); }
+  .toast--info, .toast--ok, .toast--warn, .toast--danger { background: var(--tone-soft, var(--ink)); color: var(--tone-strong, var(--surface)); }
 
   /* empty and error states */
   .state {
@@ -659,8 +656,8 @@
     text-align: center; color: var(--ink-muted); border: 1.5px dashed var(--line-strong); border-radius: var(--radius);
   }
   .state__title { font-size: var(--size-19); font-weight: 700; color: var(--ink); }
-  .state--error { border-style: solid; border-color: var(--tone-ink); background: var(--tone-soft); color: var(--tone-ink); }
-  .state--error .state__title { color: var(--tone-ink); }
+  .state--error { border-style: solid; border-color: var(--danger-ink); background: var(--danger-soft); color: var(--danger-ink); }
+  .state--error .state__title { color: var(--danger-ink); }
 
   /* for prompt and command blocks; pairs with data-copy */
   .code-block {
@@ -686,6 +683,7 @@
   .h1--display { font-size: var(--size-52); line-height: var(--lh-tight); }
   .h2--section { font-size: var(--size-24); font-weight: 800; }
   .h2--lg { font-size: var(--size-28); font-weight: 800; }
+  .mono { font-family: var(--font-mono); }
 
   @media (max-width: 640px) {
     .h1--xl, .h1--display { font-size: var(--size-36); }
@@ -696,7 +694,7 @@
   @media print {
     .no-print { display: none !important; }
     .site-header, .footer, .dock, .toast-region { display: none !important; }
-    .card, .points, .decision, .outcome, .bubble { break-inside: avoid; }
+    .card, .points, .decision, .outcome, .bubble, .instructions, .proposal { break-inside: avoid; }
     .page { min-height: 0; }
   }
 }

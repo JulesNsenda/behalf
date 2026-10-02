@@ -22,5 +22,7 @@ Based on the essay *Agentic Proxies: When Humans Become Routing Nodes* by Jules 
 | `PER_IP_DAILY` | 3 | Live rooms per day per IP |
 | `MAX_TURNS` | 10 | Proxy turns before a room stalls |
 | `PUBLIC_URL` | `https://proxy-room.dropkit.sh` | Base URL used in seat links handed to agents |
+| `PORT` | 3000 | Listen port. `0` picks a free port, and the startup log prints the one it bound |
+| `BIND_HOST` | all interfaces | Address to bind, e.g. `127.0.0.1`. It isn't called `HOST`, because some shells set `HOST` to the machine name |
 
 State persists to `DROP_DATA_DIR/rooms.json`.

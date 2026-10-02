@@ -2,9 +2,10 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
 const http = require('node:http');
+const net = require('node:net');
 const path = require('node:path');
-const { ROOT } = require('./helpers/paths');
-const { start, mkTmp, rmTmp } = require('./helpers/server');
+const { ROOT } = require('../test-support/paths');
+const { start, mkTmp, rmTmp } = require('../test-support/server');
 
 let server = null;
 let dir = null;
@@ -28,6 +29,7 @@ after(async () => {
 function checkHeaders(get) {
   assert.strictEqual(get('referrer-policy'), 'no-referrer');
   assert.strictEqual(get('x-content-type-options'), 'nosniff');
+  assert.strictEqual(get('content-security-policy'), "frame-ancestors 'none'");
 }
 
 const routes = [
@@ -96,8 +98,9 @@ const TRAVERSAL = [
   ['/ui/..%2f..%2findex.js', true, false],
   ['/%2e%2e/index.js', false, true],
   ['/ui/%2e%2e/%2e%2e/index.js', false, true],
-  ['/..\index.js', false, true],
-  ['/ui/..\..\index.js', false, true],
+  // Raw backslash traversal: the doubled backslash is a real "\" in the request path.
+  ['/..\\index.js', false, true],
+  ['/ui/..\\..\\index.js', false, true],
 ];
 
 async function fetchGet(p) {
@@ -141,4 +144,29 @@ test('POST /mcp carries nosniff and no-referrer', async () => {
   assert.ok(res.status < 500, 'status ' + res.status);
   checkHeaders((h) => res.headers.get(h));
   await res.arrayBuffer();
+});
+
+// Send bytes as-is, so a request target that fetch or http.request would reject reaches the server.
+function rawStatusLine(request) {
+  return new Promise((resolve, reject) => {
+    const sock = net.connect(port, '127.0.0.1', () => sock.write(request));
+    let buf = '';
+    sock.setEncoding('latin1');
+    sock.setTimeout(5000, () => { sock.destroy(); reject(new Error('no response to ' + JSON.stringify(request))); });
+    sock.on('data', (d) => {
+      buf += d;
+      if (buf.includes('\r\n')) { sock.destroy(); resolve(buf.split('\r\n')[0]); }
+    });
+    sock.on('error', reject);
+    sock.on('close', () => resolve(buf.split('\r\n')[0]));
+  });
+}
+
+test('request targets that new URL rejects get 400 and do not crash the server', async () => {
+  for (const target of ['//', '//a:b']) {
+    const line = await rawStatusLine(`GET ${target} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`);
+    assert.match(line, /^HTTP\/1\.1 400 /, `status line for ${target}: ${line}`);
+  }
+  const j = await (await fetch(base + '/health')).json();
+  assert.strictEqual(j.ok, true, 'server stopped answering after the bad targets');
 });

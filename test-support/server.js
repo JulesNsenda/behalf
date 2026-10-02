@@ -1,5 +1,5 @@
 'use strict';
-// Shared by the tests that spawn index.js. Not named *.test.js, so `node --test` skips it.
+// Shared by the tests that spawn index.js. Lives outside test/, because `node --test` runs every .js file under it.
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -15,7 +15,11 @@ function baseEnv(extra) {
 
 // If a test crashes early, don't leave a server running.
 const children = new Set();
-process.on('exit', () => { for (const c of children) { try { if (c.exitCode === null) c.kill(); } catch (e) { /* gone */ } } });
+const killAll = () => { for (const c of children) { try { if (c.exitCode === null) c.kill(); } catch (e) { /* gone */ } } };
+process.on('exit', killAll);
+// A Ctrl-C or a kill would otherwise skip the exit handler and orphan the servers.
+process.on('SIGINT', () => { killAll(); process.exit(130); });
+process.on('SIGTERM', () => { killAll(); process.exit(143); });
 
 // Spawn a server; resolve with {port, out, stop} once it prints its port, or {exited, out, stop} if it dies first.
 function start(entry, env) {

@@ -4,13 +4,13 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { UI_DIR } = require('./helpers/paths');
+const { UI_DIR } = require('../test-support/paths');
 
 const GUIDE_SRC = fs.readFileSync(path.join(UI_DIR, 'guide.js'), 'utf8');
 
 // Runs guide.js (or a modified copy of its source) against a minimal DOM stub.
 function run(src) {
-  const props = { '--bg': '#fff', '--accent': 'rgb(1, 2, 3)', '--radius': '8px' };
+  const props = { '--bg': '#fff', '--accent': 'rgb(1, 2, 3)', '--radius': '8px', '--focus': 'var(--accent)' };
   const names = Object.keys(props);
   const style = { length: names.length, getPropertyValue: (n) => props[n] };
   names.forEach((n, i) => { style[i] = n; });
@@ -50,7 +50,7 @@ function run(src) {
   const ctx = {
     document,
     CSS: {
-      supports: (prop, v) => /^(#|rgb)/.test(v),
+      supports: (prop, v) => /^(#|rgb|var\()/.test(v), // browsers accept var() at parse time
       escape: (s) => s,
     },
   };
@@ -63,8 +63,9 @@ test('guide.js emits one swatch per colour token and skips non-colour tokens', (
   const { grid } = run(GUIDE_SRC);
   assert.strictEqual(grid.children.length, 1, 'fragment appended to grid');
   const labels = grid.children[0].children.map((card) => card.children[1].textContent);
-  assert.deepStrictEqual(labels, ['--bg', '--accent']);
+  assert.deepStrictEqual(labels, ['--bg', '--accent', '--focus']);
   assert.strictEqual(grid.children[0].children[0].children[0].style.background, 'var(--bg)');
+  assert.strictEqual(grid.children[0].children[2].children[0].style.background, 'var(--focus)', 'an aliased token gets a swatch');
 });
 
 test('guide.js writes dedented example markup into the matching snippet holder', () => {

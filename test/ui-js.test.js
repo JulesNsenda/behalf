@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const { UI_JS, THEME_JS } = require('./helpers/paths');
+const { UI_JS, THEME_JS } = require('../test-support/paths');
 
 function freshRequire() {
   delete require.cache[require.resolve(UI_JS)];

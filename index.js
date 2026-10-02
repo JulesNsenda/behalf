@@ -9,11 +9,12 @@ const pxp = require('./lib/pxp');
 const proxy = require('./lib/proxy');
 const demo = require('./lib/demo');
 const mcp = require('./lib/mcp');
+const { parsePort } = require('./lib/port');
 
-const parsePort = (s) => { const p = (s || '').trim(); return /^\d+$/.test(p) && Number(p) <= 65535 ? Number(p) : 3000; };
 const PORT = parsePort(process.env.PORT);
 const HOST = process.env.BIND_HOST; // not HOST: csh-style shells export that as the machine name
-const SEC_HEADERS = { 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff' };
+// Set before routing, so every response gets these, including /mcp (whose handler writes its own writeHead).
+const SEC_HEADERS = { 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff', 'content-security-policy': "frame-ancestors 'none'" };
 const DATA_DIR = process.env.DROP_DATA_DIR || path.join(__dirname, '.data');
 const STORE = path.join(DATA_DIR, 'rooms.json');
 const PUBLIC = path.join(__dirname, 'web');
@@ -475,14 +476,16 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 function serveFile(res, file) {
   fs.readFile(file, (err, buf) => {
     if (err) return send(res, 404, 'Not found');
-    res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache', 'content-security-policy': "frame-ancestors 'none'" });
+    res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache' });
     res.end(buf);
   });
 }
 
 const server = http.createServer(async (req, res) => {
   for (const [k, v] of Object.entries(SEC_HEADERS)) res.setHeader(k, v);
-  const url = new URL(req.url, 'http://x');
+  let url;
+  // A request target like "//" or "//a:b" makes new URL throw; outside the try that crashed the process.
+  try { url = new URL(req.url, 'http://x'); } catch { return send(res, 400, 'Bad request'); }
   try {
     if (url.pathname === '/health') return send(res, 200, { ok: true, live: proxy.live(), rooms: rooms.size, build: BUILD });
     if (url.pathname === '/mcp') return await mcp.handle(req, res, ops, { readBody, clientIp });

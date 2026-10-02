@@ -47,8 +47,8 @@
   function html(strings) {
     // Rejects accidental plain calls (arrays, strings, look-alike shapes from data). It is not
     // a boundary against deliberately forged first-party code; the lint in test/pages.test.js
-    // covers that. A real tagged-template call has frozen strings with a frozen .raw, and
-    // one argument per template slot.
+    // flags the common forgery shapes, which is a heuristic, not a boundary. A real
+    // tagged-template call has frozen strings with a frozen .raw, and one argument per template slot.
     if (!Array.isArray(strings) || !Array.isArray(strings.raw) ||
         !Object.isFrozen(strings) || !Object.isFrozen(strings.raw) ||
         strings.raw.length !== strings.length || arguments.length !== strings.length) {

@@ -1,7 +1,7 @@
 'use strict';
 const path = require('node:path');
 
-const ROOT = path.join(__dirname, '..', '..');
+const ROOT = path.join(__dirname, '..');
 const WEB = path.join(ROOT, 'web');
 const UI_DIR = path.join(WEB, 'ui');
 

@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
-const { WEB, UI_DIR } = require('./helpers/paths');
+const { WEB, UI_DIR } = require('../test-support/paths');
 
 function htmlFiles(dir) {
   const out = [];
@@ -47,50 +47,90 @@ test('style guide loads /ui/ui.css and not /style.css', () => {
 
 // ---- HTML sinks ----
 // Every way a page script could put a string into the DOM as markup. UI.render is the one sink.
+const ASSIGN = /(?:\+|\|\||\?\?|&&)?=(?!=)/.source;
 const SINK = new RegExp([
-  /\.\s*(?:inner|outer)HTML\s*\+?=(?!=)/,
-  /\[\s*['"`](?:inner|outer)HTML['"`]\s*\]\s*\+?=(?!=)/,
-  /\binsertAdjacentHTML\s*\(/,
-  /\[\s*['"`]insertAdjacentHTML['"`]\s*\]\s*\(/,
-  /\bdocument\s*\.\s*write(?:ln)?\s*\(/,
-  /\bcreateContextualFragment\s*\(/,
-  /\bsetHTMLUnsafe\s*\(/,
-].map((r) => r.source).join('|'));
-// The deliberate UI.html forgery shape: hand-building a frozen strings array with a .raw.
-const FORGERY = (src) => /\.raw\b|['"`]raw['"`]/.test(src) && /Object\s*\.\s*(?:freeze|defineProperty)\b/.test(src);
+  /\.\s*(?:inner|outer)HTML\s*/.source + ASSIGN,
+  /\[\s*['"`](?:inner|outer)HTML['"`]\s*\]\s*/.source + ASSIGN,
+  /\b(?:inner|outer)HTML\s*:/.source, // Object.assign(el, { innerHTML: x })
+  /\bsrcdoc\b/.source,
+  /\bsetAttribute\(\s*['"`](?:srcdoc|on\w+)/.source,
+  /\bparseHTMLUnsafe\b/.source,
+  /\bparseFromString\b/.source,
+  /\bsetHTMLUnsafe\s*\(/.source,
+  /\bcreateContextualFragment\s*\(/.source,
+  /\binsertAdjacentHTML\s*\(/.source,
+  /\bdocument\s*\.\s*write(?:ln)?\s*\(/.source,
+  /\[\s*['"`](?:setHTMLUnsafe|createContextualFragment|insertAdjacentHTML|write|writeln)['"`]\s*\]\s*\(/.source,
+].join('|'));
+// Hand-building a frozen strings array with a .raw, the shape that forges a UI.html template.
+// A heuristic that flags the common shapes, not a boundary.
+const FORGERY = (src) => /\.raw\b|\braw\s*:|['"`]raw['"`]/.test(src) && /(?:Object|Reflect)\s*\.\s*(?:freeze|defineProperty|defineProperties|preventExtensions)\b/.test(src);
 
 test('the sink lint catches each form and ignores UI.render', () => {
   for (const bad of [
     'el.innerHTML = x', 'el.innerHTML=x', 'el.innerHTML += x', 'el .innerHTML\n = x',
     'el.outerHTML = x', 'el.outerHTML += x', "el['innerHTML'] = x", 'el["innerHTML"] += x', "el['outerHTML'] = x",
+    'el.innerHTML ||= x', 'el.innerHTML ??= x', 'el.innerHTML &&= x', "el['innerHTML'] ||= x",
+    'Object.assign(el, { innerHTML: x })', 'Object.assign(el, { outerHTML : x })',
+    'f.srcdoc = x', 'iframe.setAttribute("srcdoc", x)', "el.setAttribute('onclick', x)", 'el.setAttribute( "onerror", x)',
+    'Document.parseHTMLUnsafe(x)', 'new DOMParser().parseFromString(x, "text/html")',
     'el.insertAdjacentHTML("beforeend", x)', "el['insertAdjacentHTML']('beforeend', x)",
-    'document.write(x)', 'document.writeln(x)', 'document . write (x)',
-    'range.createContextualFragment(x)', 'el.setHTMLUnsafe(x)',
+    'document.write(x)', 'document.writeln(x)', 'document . write (x)', "document['write'](x)", "d['writeln'](x)",
+    'range.createContextualFragment(x)', "range['createContextualFragment'](x)",
+    'el.setHTMLUnsafe(x)', "el['setHTMLUnsafe'](x)",
   ]) assert.ok(SINK.test(bad), 'should catch: ' + JSON.stringify(bad));
-  for (const ok of ['UI.render(el, UI.html`<p>x</p>`)', 'if (el.innerHTML == "") {}', 'el.textContent = x', 'var innerHTML = 1', 'el.write(x)']) {
+  for (const ok of ['UI.render(el, UI.html`<p>x</p>`)', 'if (el.innerHTML == "") {}', 'el.textContent = x', 'var innerHTML = 1', 'el.write(x)', 'el.setAttribute("title", x)', 'el.setAttribute("class", x)']) {
     assert.ok(!SINK.test(ok), 'should not match: ' + JSON.stringify(ok));
   }
   assert.ok(FORGERY('var s = Object.freeze(["a"]); s.raw = s;'));
   assert.ok(FORGERY('Object.defineProperty(a, "raw", {})'));
+  assert.ok(FORGERY('Object.defineProperties(a, { raw: {} })'));
+  assert.ok(FORGERY('Object.preventExtensions(s); s.raw = s'));
+  assert.ok(FORGERY('Reflect.defineProperty(a, "raw", {})'));
   assert.ok(!FORGERY('Object.freeze(x)') && !FORGERY('x.raw'));
 });
 
-// Scanned: every web/ui/*.js, plus every same-origin script a ui.css page loads. ui.js is the
-// sink itself and theme.js is its own tested file, so both are skipped.
-const SKIP = new Set(['ui.js', 'theme.js']);
+// Scanned: every web/ui/*.js, plus every same-origin script a ui.css page loads. Only ui.js is
+// skipped (by full path): it holds the one sanctioned sink (UI.render). Everything else, theme.js included, is linted.
+const SKIP = new Set([path.join(UI_DIR, 'ui.js')]);
+const SCRIPT_SRC = /<script\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
+const HAS_SCHEME = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i; // http:, data:, protocol-relative: not ours to read
+// Resolve a src the way a browser would for a page served from its path under web/.
+function resolveSrc(page, src) {
+  const clean = src.split(/[?#]/)[0];
+  const base = src.startsWith('/') ? WEB : path.dirname(page);
+  return path.join(base, ...clean.split('/').filter(Boolean));
+}
+function scriptSrcs(html) {
+  return [...html.matchAll(SCRIPT_SRC)].map((m) => (m[1] ?? m[2] ?? m[3]).trim()).filter((v) => !HAS_SCHEME.test(v));
+}
 function scannedScripts() {
-  const files = new Set(fs.readdirSync(UI_DIR).filter((n) => n.endsWith('.js') && !SKIP.has(n)).map((n) => path.join(UI_DIR, n)));
+  const files = new Set(fs.readdirSync(UI_DIR).filter((n) => n.endsWith('.js')).map((n) => path.join(UI_DIR, n)));
+  const missing = [];
   for (const f of uiPages) {
-    for (const m of read(f).matchAll(/<script\b[^>]*\bsrc\s*=\s*["'](\/[^"'?#]*)(?:[?#][^"']*)?["']/gi)) {
-      if (m[1].startsWith('//')) continue;
-      const p = path.join(WEB, ...m[1].split('/').filter(Boolean));
-      if (SKIP.has(path.basename(p))) continue;
+    for (const src of scriptSrcs(read(f))) {
+      const p = resolveSrc(f, src);
       if (fs.existsSync(p)) files.add(p);
+      else missing.push(rel(f) + ' -> ' + src);
     }
   }
-  return [...files];
+  for (const p of SKIP) files.delete(p);
+  return { files: [...files], missing };
 }
-const scripts = scannedScripts();
+const { files: scripts, missing: missingScripts } = scannedScripts();
+
+test('every same-origin script a ui.css page loads resolves to a file', () => {
+  assert.deepStrictEqual(missingScripts, []);
+});
+
+test('script src resolution handles quoting, absolute and relative paths, and schemes', () => {
+  const html = `<script src="/ui/a.js"></script><script src='b.js'></script><script src=c.js></script>
+    <script defer src="https://x.test/d.js"></script><script src="//x.test/e.js"></script><script src="data:text/javascript,1"></script>`;
+  assert.deepStrictEqual(scriptSrcs(html), ['/ui/a.js', 'b.js', 'c.js']);
+  assert.strictEqual(resolveSrc(path.join(UI_DIR, 'index.html'), 'theme.js?v=1'), path.join(UI_DIR, 'theme.js'));
+  assert.strictEqual(resolveSrc(path.join(UI_DIR, 'index.html'), '/ui/theme.js'), path.join(UI_DIR, 'theme.js'));
+  assert.strictEqual(resolveSrc(path.join(WEB, 'room.html'), 'ui/ui.js'), path.join(UI_DIR, 'ui.js'));
+});
 
 // ---- lint rules ----
 // [name, files to scan, does the source break the rule]. Keeps a future strict style-src CSP
@@ -111,18 +151,36 @@ for (const [name, files, breaks] of RULES) {
   });
 }
 
-test('style guide snippets pair up: each data-snippet has exactly one data-snippet-for, and vice versa', () => {
-  const src = read(guide);
-  const count = (attr) => {
+// Regex literals on purpose: a RegExp built from a '\b' string literal silently loses its escape and matches nothing.
+function snippetCounts(src) {
+  const tally = (re) => {
     const m = {};
-    for (const x of src.matchAll(new RegExp('\b' + attr + '\s*=\s*"([^"]*)"', 'g'))) m[x[1]] = (m[x[1]] || 0) + 1;
+    for (const x of src.matchAll(re)) m[x[1]] = (m[x[1]] || 0) + 1;
     return m;
   };
-  const shown = count('data-snippet');
-  const held = count('data-snippet-for');
+  return { shown: tally(/\bdata-snippet\s*=\s*"([^"]*)"/g), held: tally(/\bdata-snippet-for\s*=\s*"([^"]*)"/g) };
+}
+function snippetProblems(src) {
+  const { shown, held } = snippetCounts(src);
+  assert.ok(Object.keys(shown).length > 0, 'found no data-snippet attributes');
+  assert.ok(Object.keys(held).length > 0, 'found no data-snippet-for attributes');
   const problems = [];
   for (const id of new Set([...Object.keys(shown), ...Object.keys(held)])) {
     if (shown[id] !== 1 || held[id] !== 1) problems.push(id + ' (examples ' + (shown[id] || 0) + ', holders ' + (held[id] || 0) + ')');
   }
-  assert.deepStrictEqual(problems, []);
+  return problems;
+}
+
+test('style guide snippets pair up: each data-snippet has exactly one data-snippet-for, and vice versa', () => {
+  assert.deepStrictEqual(snippetProblems(read(guide)), []);
+});
+
+test('the snippet pairing check fails on a duplicated id and on an orphan', () => {
+  const ok = '<pre data-snippet="a"></pre><div data-snippet-for="a"></div>';
+  assert.deepStrictEqual(snippetProblems(ok), []);
+  assert.deepStrictEqual(snippetProblems(ok + '<pre data-snippet="a"></pre>'), ['a (examples 2, holders 1)']);
+  assert.deepStrictEqual(snippetProblems(ok + '<div data-snippet-for="a"></div>'), ['a (examples 1, holders 2)']);
+  assert.deepStrictEqual(snippetProblems(ok + '<pre data-snippet="b"></pre>'), ['b (examples 1, holders 0)']);
+  assert.deepStrictEqual(snippetProblems(ok + '<div data-snippet-for="c"></div>'), ['c (examples 0, holders 1)']);
+  assert.throws(() => snippetProblems('<p>nothing</p>'), /found no data-snippet/);
 });
