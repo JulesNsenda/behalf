@@ -1,0 +1,944 @@
+{
+  "rooms": {
+    "nomode01": {
+      "id": "nomode01",
+      "topic": "Fixture room nomode01",
+      "demo": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "drafting",
+      "seats": {
+        "A": {
+          "token": "fake-token-a-nomode01",
+          "name": "Fixture A",
+          "card": null,
+          "cardHash": null,
+          "sealed": false,
+          "draftText": "",
+          "agent": null
+        },
+        "B": {
+          "token": "fake-token-b-nomode01",
+          "name": "Fixture B",
+          "card": null,
+          "cardHash": null,
+          "sealed": false,
+          "draftText": "",
+          "agent": null,
+          "mode": "external"
+        }
+      },
+      "envelopes": [],
+      "claims": {},
+      "ledger": [
+        {
+          "n": 1,
+          "type": "room_opened",
+          "at": "2026-01-01T00:00:00.000Z",
+          "data": {
+            "topic": "Fixture room nomode01",
+            "protocol": "PXP/0"
+          },
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "a846e098a531b15123ae6bc218b0963b6e42d6317f8d667210bdef59d2e3974c"
+        }
+      ],
+      "turn": "A",
+      "turnCount": 0,
+      "maxTurns": 10,
+      "pending": null,
+      "brief": null,
+      "error": null,
+      "waitingOn": null
+    },
+    "interr001": {
+      "id": "interr001",
+      "topic": "Fixture room interr001",
+      "demo": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "negotiating",
+      "seats": {
+        "A": {
+          "token": "fake-token-a-interr001",
+          "name": "Fixture A",
+          "card": {
+            "pxp": "0",
+            "principal": {
+              "name": "Fixture A",
+              "role": "tester"
+            },
+            "goal": "Reach a fixture deal",
+            "must_haves": [
+              "A fixed must-have"
+            ],
+            "may_agree_to": [],
+            "must_never": [],
+            "escalate_when": [],
+            "known_facts": [],
+            "amendments": []
+          },
+          "cardHash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+          "sealed": true,
+          "draftText": "",
+          "agent": null,
+          "mode": "builtin",
+          "sealedVia": "mcp"
+        },
+        "B": {
+          "token": "fake-token-b-interr001",
+          "name": "Fixture B",
+          "card": {
+            "pxp": "0",
+            "principal": {
+              "name": "Fixture B",
+              "role": "tester"
+            },
+            "goal": "Reach a fixture deal",
+            "must_haves": [
+              "A fixed must-have"
+            ],
+            "may_agree_to": [],
+            "must_never": [],
+            "escalate_when": [],
+            "known_facts": [],
+            "amendments": []
+          },
+          "cardHash": "c329ce370feb5414e0e0c75171360662489d4208626d355ebcae94afbe471bbc",
+          "sealed": true,
+          "draftText": "",
+          "agent": null,
+          "mode": "builtin",
+          "sealedVia": "mcp"
+        }
+      },
+      "envelopes": [
+        {
+          "pxp": "0",
+          "room": "interr001",
+          "seq": 1,
+          "from": {
+            "seat": "A",
+            "principal": "Fixture A",
+            "speaker": "proxy"
+          },
+          "intent_hash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+          "message": "Opening.",
+          "claims": [
+            {
+              "id": "A1.1",
+              "text": "A claim",
+              "origin": "assumed"
+            }
+          ],
+          "reviews": [],
+          "status": "continue"
+        }
+      ],
+      "claims": {
+        "A1.1": {
+          "id": "A1.1",
+          "text": "A claim",
+          "origin": "assumed",
+          "seat": "A",
+          "seq": 1,
+          "verified": false,
+          "reviews": []
+        }
+      },
+      "ledger": [
+        {
+          "n": 1,
+          "type": "room_opened",
+          "at": "2026-01-01T00:00:00.000Z",
+          "data": {
+            "topic": "Fixture room interr001",
+            "protocol": "PXP/0"
+          },
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "9f7f768f5cdf54c806bf4fde8674ba33d33b3fbd0cf121b0801b3d1d94838f0f"
+        },
+        {
+          "n": 2,
+          "type": "card_sealed",
+          "at": "2026-01-01T00:00:01.000Z",
+          "data": {
+            "seat": "A",
+            "principal": "Fixture A",
+            "card_hash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+            "via": "mcp"
+          },
+          "prev": "9f7f768f5cdf54c806bf4fde8674ba33d33b3fbd0cf121b0801b3d1d94838f0f",
+          "hash": "8cd6549e4534d3074b0c929d3bdf847ff52c737b42f473af4a9ae143da742ab4"
+        },
+        {
+          "n": 3,
+          "type": "card_sealed",
+          "at": "2026-01-01T00:00:02.000Z",
+          "data": {
+            "seat": "B",
+            "principal": "Fixture B",
+            "card_hash": "c329ce370feb5414e0e0c75171360662489d4208626d355ebcae94afbe471bbc",
+            "via": "mcp"
+          },
+          "prev": "8cd6549e4534d3074b0c929d3bdf847ff52c737b42f473af4a9ae143da742ab4",
+          "hash": "0a13a759cb6ca280614e59de870bf28629bf15bf7a2b96759f24380e7865be54"
+        },
+        {
+          "n": 4,
+          "type": "envelope",
+          "at": "2026-01-01T00:00:03.000Z",
+          "data": {
+            "seq": 1,
+            "seat": "A",
+            "status": "continue",
+            "envelope_hash": "788db2189c1a8c3557fa724c6aed5d60bc7fd5889f70036f0db907ec1faac0cb"
+          },
+          "prev": "0a13a759cb6ca280614e59de870bf28629bf15bf7a2b96759f24380e7865be54",
+          "hash": "4e8ed3e5799784bc1ff51076a42dcb27efd89027839e4f5c0208462ba5b3cf7b"
+        }
+      ],
+      "turn": "B",
+      "turnCount": 1,
+      "maxTurns": 10,
+      "pending": null,
+      "brief": null,
+      "error": null,
+      "waitingOn": null,
+      "thinking": "B",
+      "running": true
+    },
+    "resume0001": {
+      "id": "resume0001",
+      "topic": "Fixture room resume0001",
+      "demo": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "negotiating",
+      "seats": {
+        "A": {
+          "token": "fake-token-a-resume0001",
+          "name": "Fixture A",
+          "card": {
+            "pxp": "0",
+            "principal": {
+              "name": "Fixture A",
+              "role": "tester"
+            },
+            "goal": "Reach a fixture deal",
+            "must_haves": [
+              "A fixed must-have"
+            ],
+            "may_agree_to": [],
+            "must_never": [],
+            "escalate_when": [],
+            "known_facts": [],
+            "amendments": []
+          },
+          "cardHash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+          "sealed": true,
+          "draftText": "",
+          "agent": null,
+          "mode": "builtin",
+          "sealedVia": "mcp"
+        },
+        "B": {
+          "token": "fake-token-b-resume0001",
+          "name": "Fixture B",
+          "card": {
+            "pxp": "0",
+            "principal": {
+              "name": "Fixture B",
+              "role": "tester"
+            },
+            "goal": "Reach a fixture deal",
+            "must_haves": [
+              "A fixed must-have"
+            ],
+            "may_agree_to": [],
+            "must_never": [],
+            "escalate_when": [],
+            "known_facts": [],
+            "amendments": []
+          },
+          "cardHash": "c329ce370feb5414e0e0c75171360662489d4208626d355ebcae94afbe471bbc",
+          "sealed": true,
+          "draftText": "",
+          "agent": null,
+          "mode": "builtin",
+          "sealedVia": "mcp"
+        }
+      },
+      "envelopes": [
+        {
+          "pxp": "0",
+          "room": "resume0001",
+          "seq": 1,
+          "from": {
+            "seat": "A",
+            "principal": "Fixture A",
+            "speaker": "proxy"
+          },
+          "intent_hash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+          "message": "Opening.",
+          "claims": [
+            {
+              "id": "A1.1",
+              "text": "A claim",
+              "origin": "assumed"
+            }
+          ],
+          "reviews": [],
+          "status": "continue"
+        }
+      ],
+      "claims": {
+        "A1.1": {
+          "id": "A1.1",
+          "text": "A claim",
+          "origin": "assumed",
+          "seat": "A",
+          "seq": 1,
+          "verified": false,
+          "reviews": []
+        }
+      },
+      "ledger": [
+        {
+          "n": 1,
+          "type": "room_opened",
+          "at": "2026-01-01T00:00:00.000Z",
+          "data": {
+            "topic": "Fixture room resume0001",
+            "protocol": "PXP/0"
+          },
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "3b3b1805127b0b900168fa06992b99ac2a8b36b1b16136e2f8b52e906f5ef4d0"
+        },
+        {
+          "n": 2,
+          "type": "card_sealed",
+          "at": "2026-01-01T00:00:01.000Z",
+          "data": {
+            "seat": "A",
+            "principal": "Fixture A",
+            "card_hash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+            "via": "mcp"
+          },
+          "prev": "3b3b1805127b0b900168fa06992b99ac2a8b36b1b16136e2f8b52e906f5ef4d0",
+          "hash": "7649c39dcf549db018300e1666fcc6ec80f869b398f3f3ec6344c5e96e3e4518"
+        },
+        {
+          "n": 3,
+          "type": "card_sealed",
+          "at": "2026-01-01T00:00:02.000Z",
+          "data": {
+            "seat": "B",
+            "principal": "Fixture B",
+            "card_hash": "c329ce370feb5414e0e0c75171360662489d4208626d355ebcae94afbe471bbc",
+            "via": "mcp"
+          },
+          "prev": "7649c39dcf549db018300e1666fcc6ec80f869b398f3f3ec6344c5e96e3e4518",
+          "hash": "1a79a947967be61f8710ca92ac6804a94f4664e819233cc160cb04c9fd634342"
+        },
+        {
+          "n": 4,
+          "type": "envelope",
+          "at": "2026-01-01T00:00:03.000Z",
+          "data": {
+            "seq": 1,
+            "seat": "A",
+            "status": "continue",
+            "envelope_hash": "dd141ba74fe102d9ca7229f05cfde3e10cedacd721ae284ed4bf9dbd434e1bf2"
+          },
+          "prev": "1a79a947967be61f8710ca92ac6804a94f4664e819233cc160cb04c9fd634342",
+          "hash": "e63bb3166fd8d420980f1af8f5290f86084ad88b97ee72237ca267d64fb5b9a4"
+        }
+      ],
+      "turn": "B",
+      "turnCount": 1,
+      "maxTurns": 10,
+      "pending": null,
+      "brief": null,
+      "error": null,
+      "waitingOn": null,
+      "thinking": "B",
+      "running": true
+    },
+    "waiting001": {
+      "id": "waiting001",
+      "topic": "Fixture room waiting001",
+      "demo": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "negotiating",
+      "seats": {
+        "A": {
+          "token": "fake-token-a-waiting001",
+          "name": "Fixture A",
+          "card": {
+            "pxp": "0",
+            "principal": {
+              "name": "Fixture A",
+              "role": "tester"
+            },
+            "goal": "Reach a fixture deal",
+            "must_haves": [
+              "A fixed must-have"
+            ],
+            "may_agree_to": [],
+            "must_never": [],
+            "escalate_when": [],
+            "known_facts": [],
+            "amendments": []
+          },
+          "cardHash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+          "sealed": true,
+          "draftText": "",
+          "agent": null,
+          "mode": "external",
+          "sealedVia": "mcp"
+        },
+        "B": {
+          "token": "fake-token-b-waiting001",
+          "name": "Fixture B",
+          "card": {
+            "pxp": "0",
+            "principal": {
+              "name": "Fixture B",
+              "role": "tester"
+            },
+            "goal": "Reach a fixture deal",
+            "must_haves": [
+              "A fixed must-have"
+            ],
+            "may_agree_to": [],
+            "must_never": [],
+            "escalate_when": [],
+            "known_facts": [],
+            "amendments": []
+          },
+          "cardHash": "c329ce370feb5414e0e0c75171360662489d4208626d355ebcae94afbe471bbc",
+          "sealed": true,
+          "draftText": "DRAFT-MARKER-OF-B-93177",
+          "agent": null,
+          "mode": "external",
+          "sealedVia": "mcp"
+        }
+      },
+      "envelopes": [],
+      "claims": {},
+      "ledger": [
+        {
+          "n": 1,
+          "type": "room_opened",
+          "at": "2026-01-01T00:00:00.000Z",
+          "data": {
+            "topic": "Fixture room waiting001",
+            "protocol": "PXP/0"
+          },
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "e4bc3c5e944c73df44fade03a308b98946267c5d5bdb6701c4da8b605cfdc925"
+        },
+        {
+          "n": 2,
+          "type": "card_sealed",
+          "at": "2026-01-01T00:00:01.000Z",
+          "data": {
+            "seat": "A",
+            "principal": "Fixture A",
+            "card_hash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+            "via": "mcp"
+          },
+          "prev": "e4bc3c5e944c73df44fade03a308b98946267c5d5bdb6701c4da8b605cfdc925",
+          "hash": "71a223541a18b0483b82e3092738b9b5a7e5823ba301e054d0e5d1439c1c4b03"
+        },
+        {
+          "n": 3,
+          "type": "card_sealed",
+          "at": "2026-01-01T00:00:02.000Z",
+          "data": {
+            "seat": "B",
+            "principal": "Fixture B",
+            "card_hash": "c329ce370feb5414e0e0c75171360662489d4208626d355ebcae94afbe471bbc",
+            "via": "mcp"
+          },
+          "prev": "71a223541a18b0483b82e3092738b9b5a7e5823ba301e054d0e5d1439c1c4b03",
+          "hash": "d87f171c02b1c6c69d8f2b3c4f3059afc1d8c90f1920a4995599ba5a2d305352"
+        }
+      ],
+      "turn": "A",
+      "turnCount": 0,
+      "maxTurns": 10,
+      "pending": null,
+      "brief": null,
+      "error": null,
+      "waitingOn": "A",
+      "thinking": "A"
+    },
+    "paused0001": {
+      "id": "paused0001",
+      "topic": "Fixture room paused0001",
+      "demo": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "paused",
+      "seats": {
+        "A": {
+          "token": "fake-token-a-paused0001",
+          "name": "Fixture A",
+          "card": {
+            "pxp": "0",
+            "principal": {
+              "name": "Fixture A",
+              "role": "tester"
+            },
+            "goal": "Reach a fixture deal",
+            "must_haves": [
+              "A fixed must-have"
+            ],
+            "may_agree_to": [],
+            "must_never": [],
+            "escalate_when": [],
+            "known_facts": [],
+            "amendments": []
+          },
+          "cardHash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+          "sealed": true,
+          "draftText": "",
+          "agent": null,
+          "mode": "external",
+          "sealedVia": "mcp"
+        },
+        "B": {
+          "token": "fake-token-b-paused0001",
+          "name": "Fixture B",
+          "card": {
+            "pxp": "0",
+            "principal": {
+              "name": "Fixture B",
+              "role": "tester"
+            },
+            "goal": "Reach a fixture deal",
+            "must_haves": [
+              "A fixed must-have"
+            ],
+            "may_agree_to": [],
+            "must_never": [],
+            "escalate_when": [],
+            "known_facts": [],
+            "amendments": []
+          },
+          "cardHash": "c329ce370feb5414e0e0c75171360662489d4208626d355ebcae94afbe471bbc",
+          "sealed": true,
+          "draftText": "",
+          "agent": null,
+          "mode": "external",
+          "sealedVia": "mcp"
+        }
+      },
+      "envelopes": [
+        {
+          "pxp": "0",
+          "room": "paused0001",
+          "seq": 1,
+          "from": {
+            "seat": "A",
+            "principal": "Fixture A",
+            "speaker": "proxy"
+          },
+          "intent_hash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+          "message": "Need a decision.",
+          "claims": [],
+          "reviews": [],
+          "status": "escalate",
+          "escalation": {
+            "question": "May I go higher?",
+            "reason": "Outside the card"
+          }
+        }
+      ],
+      "claims": {},
+      "ledger": [
+        {
+          "n": 1,
+          "type": "room_opened",
+          "at": "2026-01-01T00:00:00.000Z",
+          "data": {
+            "topic": "Fixture room paused0001",
+            "protocol": "PXP/0"
+          },
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "b8682397590839015b88a4f08d94458a3a62edd97ec4beca42a451827cb93a5a"
+        },
+        {
+          "n": 2,
+          "type": "card_sealed",
+          "at": "2026-01-01T00:00:01.000Z",
+          "data": {
+            "seat": "A",
+            "principal": "Fixture A",
+            "card_hash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+            "via": "mcp"
+          },
+          "prev": "b8682397590839015b88a4f08d94458a3a62edd97ec4beca42a451827cb93a5a",
+          "hash": "0615bc5c5074f34f5b02dad70eb33aca3dc0a69f1077559905324be49582e875"
+        },
+        {
+          "n": 3,
+          "type": "card_sealed",
+          "at": "2026-01-01T00:00:02.000Z",
+          "data": {
+            "seat": "B",
+            "principal": "Fixture B",
+            "card_hash": "c329ce370feb5414e0e0c75171360662489d4208626d355ebcae94afbe471bbc",
+            "via": "mcp"
+          },
+          "prev": "0615bc5c5074f34f5b02dad70eb33aca3dc0a69f1077559905324be49582e875",
+          "hash": "2f1b8091cb3f3ca3e4022eea4dbf9c0439e97d736d4aa886bb9857bcba5b3ccc"
+        },
+        {
+          "n": 4,
+          "type": "envelope",
+          "at": "2026-01-01T00:00:03.000Z",
+          "data": {
+            "seq": 1,
+            "seat": "A",
+            "status": "escalate",
+            "envelope_hash": "e1208d33f8f989b9d2a1ac973391a3adabc7730fdf4b81fff2b2ebb7bc1ac8de"
+          },
+          "prev": "2f1b8091cb3f3ca3e4022eea4dbf9c0439e97d736d4aa886bb9857bcba5b3ccc",
+          "hash": "27316bb88c9638ac10ada8271bd26a3844f352bca6efcdc2f8fd297efde90f62"
+        },
+        {
+          "n": 5,
+          "type": "escalation",
+          "at": "2026-01-01T00:00:04.000Z",
+          "data": {
+            "seat": "A",
+            "seq": 1,
+            "question_hash": "a74c79d2f1accba541eb555e677b0fbe0195c74c27c268fcdbc0d9f66c05d6dc"
+          },
+          "prev": "27316bb88c9638ac10ada8271bd26a3844f352bca6efcdc2f8fd297efde90f62",
+          "hash": "44fb1c426e9b9aa0eb3e22430a9da2d07ebae453fb16d0da2f83bb920392f34c"
+        }
+      ],
+      "turn": "A",
+      "turnCount": 1,
+      "maxTurns": 10,
+      "pending": {
+        "seat": "A",
+        "seq": 1,
+        "question": "May I go higher?",
+        "reason": "Outside the card",
+        "options": null
+      },
+      "brief": null,
+      "error": null,
+      "waitingOn": null
+    },
+    "demo000001": {
+      "id": "demo000001",
+      "topic": "Fixture room demo000001",
+      "demo": true,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "negotiating",
+      "seats": {
+        "A": {
+          "token": "fake-token-a-demo000001",
+          "name": "Fixture A",
+          "card": {
+            "pxp": "0",
+            "principal": {
+              "name": "Fixture A",
+              "role": "tester"
+            },
+            "goal": "Reach a fixture deal",
+            "must_haves": [
+              "A fixed must-have"
+            ],
+            "may_agree_to": [],
+            "must_never": [],
+            "escalate_when": [],
+            "known_facts": [],
+            "amendments": []
+          },
+          "cardHash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+          "sealed": true,
+          "draftText": "",
+          "agent": null,
+          "mode": "builtin",
+          "sealedVia": "mcp"
+        },
+        "B": {
+          "token": "fake-token-a-demo000001",
+          "name": "Fixture B",
+          "card": {
+            "pxp": "0",
+            "principal": {
+              "name": "Fixture B",
+              "role": "tester"
+            },
+            "goal": "Reach a fixture deal",
+            "must_haves": [
+              "A fixed must-have"
+            ],
+            "may_agree_to": [],
+            "must_never": [],
+            "escalate_when": [],
+            "known_facts": [],
+            "amendments": []
+          },
+          "cardHash": "c329ce370feb5414e0e0c75171360662489d4208626d355ebcae94afbe471bbc",
+          "sealed": true,
+          "draftText": "",
+          "agent": null,
+          "mode": "builtin",
+          "sealedVia": "mcp"
+        }
+      },
+      "envelopes": [],
+      "claims": {},
+      "ledger": [
+        {
+          "n": 1,
+          "type": "room_opened",
+          "at": "2026-01-01T00:00:00.000Z",
+          "data": {
+            "topic": "Fixture room demo000001",
+            "protocol": "PXP/0"
+          },
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "a8048c4fa7f566ed99bfec80ead405e3b6c09a033ef5664e1541f3f82097c783"
+        },
+        {
+          "n": 2,
+          "type": "card_sealed",
+          "at": "2026-01-01T00:00:01.000Z",
+          "data": {
+            "seat": "A",
+            "principal": "Fixture A",
+            "card_hash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+            "via": "mcp"
+          },
+          "prev": "a8048c4fa7f566ed99bfec80ead405e3b6c09a033ef5664e1541f3f82097c783",
+          "hash": "2f12920abb5ac78c88afd5879fee3f25d99ab5433f9467ae59fa53b2e986d3bb"
+        },
+        {
+          "n": 3,
+          "type": "card_sealed",
+          "at": "2026-01-01T00:00:02.000Z",
+          "data": {
+            "seat": "B",
+            "principal": "Fixture B",
+            "card_hash": "c329ce370feb5414e0e0c75171360662489d4208626d355ebcae94afbe471bbc",
+            "via": "mcp"
+          },
+          "prev": "2f12920abb5ac78c88afd5879fee3f25d99ab5433f9467ae59fa53b2e986d3bb",
+          "hash": "4fc366ded4b31e9e39c059c89f536695c932ded5dd70c993a91dbba068eebdd1"
+        }
+      ],
+      "turn": "A",
+      "turnCount": 0,
+      "maxTurns": 10,
+      "pending": null,
+      "brief": null,
+      "error": null,
+      "waitingOn": null,
+      "thinking": "A",
+      "script": [
+        {
+          "raw": {
+            "message": "Scripted fixture turn.",
+            "claims": [
+              {
+                "text": "Scripted claim",
+                "origin": "assumed"
+              }
+            ],
+            "status": "continue"
+          }
+        }
+      ]
+    },
+    "finalgap01": {
+      "id": "finalgap01",
+      "topic": "Fixture room finalgap01",
+      "demo": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "negotiating",
+      "seats": {
+        "A": {
+          "token": "fake-token-a-finalgap01",
+          "name": "Fixture A",
+          "card": {
+            "pxp": "0",
+            "principal": {
+              "name": "Fixture A",
+              "role": "tester"
+            },
+            "goal": "Reach a fixture deal",
+            "must_haves": [
+              "A fixed must-have"
+            ],
+            "may_agree_to": [],
+            "must_never": [],
+            "escalate_when": [],
+            "known_facts": [],
+            "amendments": []
+          },
+          "cardHash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+          "sealed": true,
+          "draftText": "",
+          "agent": null,
+          "mode": "external",
+          "sealedVia": "mcp"
+        },
+        "B": {
+          "token": "fake-token-b-finalgap01",
+          "name": "Fixture B",
+          "card": {
+            "pxp": "0",
+            "principal": {
+              "name": "Fixture B",
+              "role": "tester"
+            },
+            "goal": "Reach a fixture deal",
+            "must_haves": [
+              "A fixed must-have"
+            ],
+            "may_agree_to": [],
+            "must_never": [],
+            "escalate_when": [],
+            "known_facts": [],
+            "amendments": []
+          },
+          "cardHash": "c329ce370feb5414e0e0c75171360662489d4208626d355ebcae94afbe471bbc",
+          "sealed": true,
+          "draftText": "",
+          "agent": null,
+          "mode": "external",
+          "sealedVia": "mcp"
+        }
+      },
+      "envelopes": [
+        {
+          "pxp": "0",
+          "room": "finalgap01",
+          "seq": 1,
+          "from": {
+            "seat": "A",
+            "principal": "Fixture A",
+            "speaker": "proxy"
+          },
+          "intent_hash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+          "message": "Offer.",
+          "claims": [],
+          "reviews": [],
+          "status": "continue",
+          "proposal": {
+            "terms": [
+              "Fixture term"
+            ],
+            "depends_on": []
+          },
+          "proposal_hash": "f5ce04f61ac1fa32e918443654de22fabc564e8149b69f66c033b06f0c7814d3"
+        },
+        {
+          "pxp": "0",
+          "room": "finalgap01",
+          "seq": 2,
+          "from": {
+            "seat": "B",
+            "principal": "Fixture B",
+            "speaker": "proxy"
+          },
+          "intent_hash": "c329ce370feb5414e0e0c75171360662489d4208626d355ebcae94afbe471bbc",
+          "message": "Agreed.",
+          "claims": [],
+          "reviews": [],
+          "status": "agree",
+          "accepts": {
+            "seq": 1,
+            "proposal_hash": "f5ce04f61ac1fa32e918443654de22fabc564e8149b69f66c033b06f0c7814d3"
+          }
+        }
+      ],
+      "claims": {},
+      "ledger": [
+        {
+          "n": 1,
+          "type": "room_opened",
+          "at": "2026-01-01T00:00:00.000Z",
+          "data": {
+            "topic": "Fixture room finalgap01",
+            "protocol": "PXP/0"
+          },
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "fb40982b7110e639738b7cde5eb70f6528a29baef8f2611532d3bef8faf96a76"
+        },
+        {
+          "n": 2,
+          "type": "card_sealed",
+          "at": "2026-01-01T00:00:01.000Z",
+          "data": {
+            "seat": "A",
+            "principal": "Fixture A",
+            "card_hash": "83a05bea371eca4164e405717c3fdd17c7c2785b36d8bee359f0f36511f58dd7",
+            "via": "mcp"
+          },
+          "prev": "fb40982b7110e639738b7cde5eb70f6528a29baef8f2611532d3bef8faf96a76",
+          "hash": "c8c98b41b04ac4d8cba6e094d1736ae8c0986c35ccf4c41638a4be3b95822eb2"
+        },
+        {
+          "n": 3,
+          "type": "card_sealed",
+          "at": "2026-01-01T00:00:02.000Z",
+          "data": {
+            "seat": "B",
+            "principal": "Fixture B",
+            "card_hash": "c329ce370feb5414e0e0c75171360662489d4208626d355ebcae94afbe471bbc",
+            "via": "mcp"
+          },
+          "prev": "c8c98b41b04ac4d8cba6e094d1736ae8c0986c35ccf4c41638a4be3b95822eb2",
+          "hash": "44adc0a3f430a742eb1d0ee1b715adf401561489fd1ceb5ad25a9fd21232632b"
+        },
+        {
+          "n": 4,
+          "type": "envelope",
+          "at": "2026-01-01T00:00:03.000Z",
+          "data": {
+            "seq": 1,
+            "seat": "A",
+            "status": "continue",
+            "envelope_hash": "04dbfaf20630202f415003a415992345a591b0e180ca7e1c841473398429656e"
+          },
+          "prev": "44adc0a3f430a742eb1d0ee1b715adf401561489fd1ceb5ad25a9fd21232632b",
+          "hash": "01e58ce2062fb822b5a94c3db2cfcc5847751a4564ddd2f59427ca7cf54caab8"
+        },
+        {
+          "n": 5,
+          "type": "envelope",
+          "at": "2026-01-01T00:00:04.000Z",
+          "data": {
+            "seq": 2,
+            "seat": "B",
+            "status": "agree",
+            "envelope_hash": "b27b6ead7aa6a5c5eef72f63c625ca07e0115862dd694f7f8408e86cc0cb5987"
+          },
+          "prev": "01e58ce2062fb822b5a94c3db2cfcc5847751a4564ddd2f59427ca7cf54caab8",
+          "hash": "96cdcd95dfc21823d10fe880a302df7084b12cb405feb0514268f9e5707a4788"
+        }
+      ],
+      "turn": "A",
+      "turnCount": 2,
+      "maxTurns": 10,
+      "pending": null,
+      "brief": null,
+      "error": null,
+      "waitingOn": null
+    }
+  },
+  "usage": {
+    "day": "2026-01-01",
+    "total": 3,
+    "byIp": {
+      "203.0.113.9": 3
+    }
+  }
+}

@@ -1,0 +1,340 @@
+[
+  {
+    "name": "create_room",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string"
+        },
+        "your_principal": {
+          "type": "string"
+        },
+        "counterpart": {
+          "type": "string"
+        },
+        "counterpart_proxy": {
+          "type": "string",
+          "enum": [
+            "external",
+            "builtin"
+          ]
+        },
+        "passcode": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic",
+        "your_principal",
+        "counterpart"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "join_room",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "link": {
+          "type": "string"
+        },
+        "agent_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "link"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "seal_intent_card",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "link": {
+          "type": "string"
+        },
+        "card": {
+          "type": "object",
+          "properties": {
+            "principal": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "org": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            },
+            "goal": {
+              "type": "string"
+            },
+            "must_haves": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "may_agree_to": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "must_never": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "escalate_when": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "known_facts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "principal",
+            "goal",
+            "must_haves"
+          ]
+        }
+      },
+      "required": [
+        "link",
+        "card"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_room",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "link": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "link"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "wait_for_turn",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "link": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 25
+        }
+      },
+      "required": [
+        "link"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "send_envelope",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "link": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "claims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "string",
+                "enum": [
+                  "stated",
+                  "sourced",
+                  "assumed"
+                ]
+              },
+              "ref": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "origin"
+            ]
+          }
+        },
+        "reviews": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "claim_id": {
+                "type": "string"
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "accept",
+                  "challenge",
+                  "conflict"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "claim_id",
+              "verdict"
+            ]
+          }
+        },
+        "proposal": {
+          "type": "object",
+          "properties": {
+            "terms": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "depends_on": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "terms"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "continue",
+            "agree",
+            "escalate"
+          ]
+        },
+        "escalation": {
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "question"
+          ]
+        }
+      },
+      "required": [
+        "link",
+        "message",
+        "status"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "answer_escalation",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "link": {
+          "type": "string"
+        },
+        "answer": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "link",
+        "answer"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_brief",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "room_id": {
+          "type": "string"
+        },
+        "link": {
+          "type": "string"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": true
+    }
+  }
+]
