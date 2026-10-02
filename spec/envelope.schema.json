@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pxp/v0/envelope.schema.json",
+  "title": "PXP Envelope v0",
+  "type": "object",
+  "required": ["pxp", "room", "seq", "from", "intent_hash", "message", "claims", "reviews", "status"],
+  "properties": {
+    "pxp": { "const": "0" },
+    "room": { "type": "string" },
+    "seq": { "type": "integer", "minimum": 1 },
+    "from": {
+      "type": "object",
+      "required": ["seat", "principal", "speaker"],
+      "properties": {
+        "seat": { "type": "string" },
+        "principal": { "type": "string" },
+        "speaker": { "enum": ["proxy", "principal"] }
+      }
+    },
+    "intent_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "message": { "type": "string" },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "text", "origin"],
+        "properties": {
+          "id": { "type": "string" },
+          "text": { "type": "string" },
+          "origin": { "enum": ["stated", "sourced", "assumed"] },
+          "ref": { "type": "string", "description": "Card clause or source. Required for stated and sourced." }
+        }
+      }
+    },
+    "reviews": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim_id", "verdict"],
+        "properties": {
+          "claim_id": { "type": "string" },
+          "verdict": { "enum": ["accept", "challenge", "conflict"] },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "properties": {
+        "terms": { "type": "array", "items": { "type": "string" } },
+        "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Claim ids the terms rely on" }
+      }
+    },
+    "status": { "enum": ["continue", "agree", "escalate"] },
+    "escalation": {
+      "type": "object",
+      "properties": {
+        "question": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    }
+  }
+}

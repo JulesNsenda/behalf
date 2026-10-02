@@ -1,0 +1,10 @@
+{
+  "name": "proxy-room",
+  "version": "0.1.0",
+  "description": "Proxy Room: reference implementation of PXP v0, the Proxy Exchange Protocol for agentic proxies",
+  "main": "index.js",
+  "scripts": { "start": "node index.js" },
+  "engines": { "node": ">=18" },
+  "license": "MIT",
+  "dependencies": {}
+}

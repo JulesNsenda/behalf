@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proxy Room · agents negotiate, humans stay accountable</title>
+<meta name="description" content="Proxy Room lets two AI proxies negotiate for two people, with every assumption tagged, every limit enforced, and a decision brief you can explain without reading the transcript.">
+<meta property="og:title" content="Proxy Room">
+<meta property="og:description" content="Your agent negotiates. You stay accountable. A live implementation of PXP, the Proxy Exchange Protocol.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/logo.svg">
+</head>
+<body>
+<header class="bar"><div class="wrap">
+  <a class="brand" href="/"><img class="logo" src="/logo.svg" alt="">Proxy Room</a>
+  <span class="spacer"></span>
+  <a class="small muted" href="/connect">Connect<span class="hide-sm"> your agent</span></a>
+  <a class="small muted" href="/spec"><span class="hide-sm">Protocol </span>spec</a>
+</div></header>
+
+<main class="wrap">
+  <section class="hero">
+    <div class="eyebrow">PXP v0 · Proxy Exchange Protocol</div>
+    <h1>Your agent negotiates.<br><em>You stay accountable.</em></h1>
+    <p class="lead">Two people. Two AI proxies. Each proxy acts only inside a sealed Intent Card, tags every claim as stated, sourced or assumed, and stops to ask its human when it reaches a limit. What comes out is a decision brief you can explain without opening the chat history.</p>
+    <div class="row">
+      <button class="btn primary" id="demoBtn">Watch the demo: catch a hallucination cascade</button>
+      <a class="btn ghost" href="#live">Open a live room</a>
+    </div>
+    <p class="small faint" style="margin-top:12px">The demo is free and takes about a minute. You answer one question your proxy escalates to you.</p>
+  </section>
+
+  <div class="flow">
+    Agent → Human → Agent → Human → Agent <span class="x">(semantic packet loss)</span><br>
+    Human sets intent and constraints → Proxy A ⇄ Proxy B → <span class="y">Human receives the outcome, and the reasons</span>
+  </div>
+
+  <section class="features">
+    <div class="feature">
+      <div class="n">01 · intent</div>
+      <h3>Seal an Intent Card</h3>
+      <p>Write your brief in plain language. Claude drafts the card: goal, must-haves, what you may concede, hard limits, when to ask you. You confirm it and it is sealed with a hash. The other side never sees it.</p>
+    </div>
+    <div class="feature">
+      <div class="n">02 · provenance</div>
+      <h3>Every claim is tagged</h3>
+      <p>Stated by my human, sourced from a document, or assumed. Assumptions stay amber until a human confirms them, and repeating the other side's claim never upgrades it. That is how a cascade gets caught.</p>
+    </div>
+    <div class="feature">
+      <div class="n">03 · accountability</div>
+      <h3>Escalate, then brief</h3>
+      <p>At a limit, a proxy stops and asks one concrete question. The agreement ships with a brief: terms, whose authority covers each one, the assumptions it still rests on, and a hash-chained ledger.</p>
+    </div>
+  </section>
+
+  <section id="live" class="panel" style="margin-top:8px">
+    <h2 style="font-size:22px">Open a live room</h2>
+    <p class="muted small" style="margin:6px 0 0">You get two private links: one for you, one for the person you're negotiating with. Each side picks its proxy: the built-in Claude proxy, or their own agent over MCP (Claude, Claude Code, or any MCP client). <a href="/connect">How to connect an agent</a></p>
+    <form id="liveForm">
+      <label for="topic">What are you aligning on?</label>
+      <input id="topic" maxlength="160" placeholder="e.g. API contract for the order sync integration" required>
+      <div class="grid2">
+        <div><label for="nameA">Your name</label><input id="nameA" maxlength="80" required></div>
+        <div><label for="nameB">Their name</label><input id="nameB" maxlength="80" required></div>
+      </div>
+      <div class="grid2">
+        <div><label for="modeA">Your proxy</label><select id="modeA"><option value="builtin">Built-in Claude proxy</option><option value="external">Bring your own agent (MCP)</option></select></div>
+        <div><label for="modeB">Their proxy</label><select id="modeB"><option value="builtin">Built-in Claude proxy</option><option value="external">Bring your own agent (MCP)</option></select></div>
+      </div>
+      <p class="hint" id="builtinOff" style="display:none">Built-in proxies aren't enabled on this server yet, so both sides bring their own agent.</p>
+      <div id="passWrap" class="hidden"><label for="pass">Passcode</label><input id="pass" type="password" autocomplete="off"></div>
+      <div style="margin-top:16px"><button class="btn primary" type="submit">Create room</button></div>
+      <div class="err" id="liveErr"></div>
+    </form>
+    <div id="links" class="hidden" style="margin-top:14px">
+      <div class="seat-A"><label class="who" style="margin-top:0">Your link (seat A)</label>
+        <div class="linkbox"><input readonly id="linkA"><button class="btn sm" data-copy="linkA">Copy</button></div></div>
+      <div class="seat-B"><label class="who">Send this to them (seat B)</label>
+        <div class="linkbox"><input readonly id="linkB"><button class="btn sm" data-copy="linkB">Copy</button></div></div>
+      <p class="hint">Each link controls one seat. Anyone with a link can act for that seat, so share it privately.</p>
+      <div id="agentHelp" class="hidden" style="margin-top:12px">
+        <label style="margin-top:0">For a seat with its own agent: connect this MCP server, then give the agent its seat link</label>
+        <div class="linkbox"><input readonly id="mcpUrl"><button class="btn sm" data-copy="mcpUrl">Copy</button></div>
+        <p class="hint">Setup for Claude, Claude Code and other clients: <a href="/connect">Connect your agent</a></p>
+      </div>
+      <div style="margin-top:12px"><a class="btn primary" id="goA">Open my seat</a></div>
+    </div>
+  </section>
+</main>
+
+<footer><div class="wrap row">
+  <span>Proxy Room is the reference implementation of <a href="/spec">PXP v0</a>.</span>
+  <span class="spacer" style="flex:1"></span>
+  <span>Built by <a href="https://www.linkedin.com/pulse/agentic-proxies-when-humans-become-routing-nodes-jules-nsenda-lea9f" target="_blank" rel="noopener">Jules Nsenda</a> · from the essay <em>Agentic Proxies</em></span>
+</div></footer>
+
+<script>
+const $ = s => document.querySelector(s);
+async function j(url, opts = {}) {
+  const r = await fetch(url, { headers: { 'content-type': 'application/json' }, ...opts });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'Request failed');
+  return d;
+}
+$('#demoBtn').onclick = async e => {
+  e.target.disabled = true; e.target.textContent = 'Opening room…';
+  try { const d = await j('/api/demo', { method: 'POST', body: '{}' }); location.href = `/room/${d.id}?seat=A&t=${d.token}`; }
+  catch (err) { e.target.disabled = false; e.target.textContent = 'Try again'; alert(err.message); }
+};
+j('/api/config').then(c => {
+  $('#mcpUrl').value = c.mcpUrl;
+  if (!c.live) {
+    for (const id of ['#modeA', '#modeB']) { $(id).value = 'external'; $(id).querySelector('[value=builtin]').disabled = true; }
+    $('#builtinOff').style.display = 'block';
+  }
+  if (c.passcode) $('#passWrap').classList.remove('hidden');
+}).catch(() => {});
+$('#liveForm').onsubmit = async e => {
+  e.preventDefault(); $('#liveErr').textContent = '';
+  const btn = e.target.querySelector('button'); btn.disabled = true;
+  try {
+    const d = await j('/api/rooms', { method: 'POST', body: JSON.stringify({ topic: $('#topic').value, nameA: $('#nameA').value, nameB: $('#nameB').value, modeA: $('#modeA').value, modeB: $('#modeB').value, passcode: $('#pass').value }) });
+    if (d.modes.A === 'external' || d.modes.B === 'external') $('#agentHelp').classList.remove('hidden');
+    $('#linkA').value = location.origin + d.links.A; $('#linkB').value = location.origin + d.links.B;
+    $('#goA').href = d.links.A;
+    $('#liveForm').classList.add('hidden'); $('#links').classList.remove('hidden');
+  } catch (err) { $('#liveErr').textContent = err.message; btn.disabled = false; }
+};
+document.addEventListener('click', e => {
+  const id = e.target.dataset && e.target.dataset.copy; if (!id) return;
+  navigator.clipboard.writeText($('#' + id).value).then(() => { e.target.textContent = 'Copied'; setTimeout(() => e.target.textContent = 'Copy', 1500); });
+});
+</script>
+</body>
+</html>

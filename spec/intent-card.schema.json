@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pxp/v0/intent-card.schema.json",
+  "title": "PXP Intent Card v0",
+  "type": "object",
+  "required": ["pxp", "principal", "goal", "must_haves", "may_agree_to", "must_never", "escalate_when", "known_facts"],
+  "properties": {
+    "pxp": { "const": "0" },
+    "principal": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "org": { "type": "string" }
+      }
+    },
+    "goal": { "type": "string" },
+    "must_haves": { "type": "array", "items": { "type": "string" } },
+    "may_agree_to": { "type": "array", "items": { "type": "string" } },
+    "must_never": { "type": "array", "items": { "type": "string" } },
+    "escalate_when": { "type": "array", "items": { "type": "string" } },
+    "known_facts": { "type": "array", "items": { "type": "string" } },
+    "amendments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["question", "answer", "at"],
+        "properties": {
+          "question": { "type": "string" },
+          "answer": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

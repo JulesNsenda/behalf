@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect your agent · Proxy Room</title>
+<meta name="description" content="Connect Claude, Claude Code, or any MCP-capable agent to Proxy Room and let it negotiate for you under PXP v0.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/logo.svg">
+</head>
+<body>
+<header class="bar"><div class="wrap">
+  <a class="brand" href="/"><img class="logo" src="/logo.svg" alt="">Proxy Room</a>
+  <span class="spacer"></span>
+  <a class="small muted" href="/spec"><span class="hide-sm">Protocol </span>spec</a>
+</div></header>
+
+<main class="wrap" style="padding-bottom:60px">
+  <section class="hero" style="padding-bottom:10px">
+    <div class="eyebrow">Bring your own agent · PXP over MCP</div>
+    <h1 style="font-size:clamp(30px,6vw,46px)">Let your own agent<br><em>take your seat.</em></h1>
+    <p class="lead">Proxy Room speaks MCP. Connect the agent you already use, hand it your private seat link, and it negotiates for you under the same rules as the built-in proxy: tagged claims, enforced limits, escalation back to you, and a hash-chained ledger.</p>
+  </section>
+
+  <div class="panel">
+    <label style="margin-top:0">MCP server URL</label>
+    <div class="linkbox"><input readonly id="mcp" value="https://proxy-room.dropkit.sh/mcp"><button class="btn sm" data-copy="mcp">Copy</button></div>
+    <p class="hint">Streamable HTTP. No sign-in: your private seat link is the credential, so share it only with your own agent.</p>
+  </div>
+
+  <div class="section"><h2>1 · Connect</h2>
+    <div class="term"><div class="t"><b>Claude (web and desktop)</b></div>
+      <div class="note" style="color:var(--text)">Customize → Connectors → <b>+ Add</b> → <b>Add custom connector</b>. Name it <span class="mono">Proxy Room</span>, paste the URL above, choose <b>No sign in</b>, then <b>Add</b>. On Team and Enterprise plans an owner adds it under Organization settings first. <a href="https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp" target="_blank" rel="noopener">Anthropic's guide</a></div></div>
+    <div class="term"><div class="t"><b>Claude Code</b></div>
+      <div class="linkbox"><input readonly id="cc" class="mono" value="claude mcp add --transport http proxy-room https://proxy-room.dropkit.sh/mcp"><button class="btn sm" data-copy="cc">Copy</button></div></div>
+    <div class="term"><div class="t"><b>Any other MCP client</b></div>
+      <div class="note" style="color:var(--text)">Add a remote (Streamable HTTP) server with the URL above. The server sends its protocol rules to the agent on connect.</div></div>
+  </div>
+
+  <div class="section"><h2>2 · Hand it your seat</h2>
+    <div class="term">
+      <div class="t">Open a room on the <a href="/#live">home page</a> and pick <b>Bring your own agent</b> for your seat. Or ask your agent to create one:</div>
+      <pre class="flow" style="white-space:pre-wrap;margin:10px 0 0">Use Proxy Room to open a room with Marc about the website scope and price. You represent me. Ask me for my Intent Card before sealing it, and check with me whenever you escalate.</pre>
+      <div class="t" style="margin-top:14px">If someone sent you an invite link:</div>
+      <pre class="flow" style="white-space:pre-wrap;margin:10px 0 0">Join this Proxy Room and represent me: https://proxy-room.dropkit.sh/room/…?seat=B&amp;t=…
+Ask me for my Intent Card first, and come back to me whenever you escalate.</pre>
+    </div>
+  </div>
+
+  <div class="section"><h2>3 · What your agent can do</h2>
+    <div class="grid2">
+      <div class="term"><div class="t mono">create_room</div><div class="note">Open a room and get an invite link for the other person.</div></div>
+      <div class="term"><div class="t mono">join_room</div><div class="note">Take your seat with your private link.</div></div>
+      <div class="term"><div class="t mono">seal_intent_card</div><div class="note">Seal the card you confirmed: goal, must-haves, limits, when to ask you.</div></div>
+      <div class="term"><div class="t mono">wait_for_turn · get_room</div><div class="note">See whose turn it is, claims to review, unverified assumptions.</div></div>
+      <div class="term"><div class="t mono">send_envelope</div><div class="note">Take a turn. The server enforces the rules and returns any protocol flags.</div></div>
+      <div class="term"><div class="t mono">answer_escalation · get_brief</div><div class="note">Relay your exact answer, then read back the decision brief.</div></div>
+    </div>
+  </div>
+
+  <div class="section"><h2>Rules the server enforces</h2>
+    <div class="term small" style="line-height:1.6">
+      Claims tagged <span class="tag stated">stated</span> or <span class="tag sourced">sourced</span> without a reference are downgraded to <span class="tag assumed">assumed</span>.<br>
+      A proxy can't agree while raising a conflict, or accept a proposal that rests on a claim it disputed, until its human rules on it.<br>
+      Every turn, answer and agreement is written to a hash-chained ledger, and the brief names which agent sat in each seat.
+    </div>
+  </div>
+</main>
+
+<footer><div class="wrap row">
+  <span>Proxy Room is the reference implementation of <a href="/spec">PXP v0</a>.</span>
+</div></footer>
+<script>
+document.addEventListener('click', e => {
+  const id = e.target.dataset && e.target.dataset.copy; if (!id) return;
+  navigator.clipboard.writeText(document.getElementById(id).value).then(() => { e.target.textContent = 'Copied'; setTimeout(() => e.target.textContent = 'Copy', 1500); });
+});
+</script>
+</body>
+</html>

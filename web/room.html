@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proxy Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/logo.svg">
+</head>
+<body>
+<header class="bar"><div class="wrap">
+  <a class="brand" href="/"><img class="logo" src="/logo.svg" alt=""><span class="hide-sm">Proxy Room</span></a>
+  <span class="spacer"></span>
+  <span id="unv" class="pill warn hidden"></span>
+  <span id="status" class="pill"></span>
+</div></header>
+
+<main class="wrap">
+  <div style="padding:22px 0 6px">
+    <div class="eyebrow" id="kicker">Room</div>
+    <h1 id="topic" style="font-size:clamp(22px,4.4vw,32px)"></h1>
+    <p id="sub" class="muted small" style="margin:8px 0 0"></p>
+  </div>
+
+  <div id="setup" class="hidden" style="margin-top:14px"></div>
+  <details id="cardsDrawer" class="drawer hidden"><summary>Intent cards</summary><div class="body"><div class="grid2" id="cards"></div></div></details>
+  <div id="timeline" class="timeline"></div>
+  <details id="ledgerDrawer" class="drawer hidden" style="margin-bottom:180px"><summary>Ledger <span id="ledgerOk" class="pill xs"></span></summary><div class="body ledger" id="ledger"></div></details>
+</main>
+
+<div id="dock" class="dock hidden"><div class="inner" id="dockInner"></div></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const roomId = location.pathname.split('/')[2];
+const qs = new URLSearchParams(location.search);
+const seat = qs.get('seat');
+const token = qs.get('t');
+const auth = `seat=${encodeURIComponent(seat || '')}&t=${encodeURIComponent(token || '')}`;
+let R = null;              // current room view
+let seen = new Set();      // envelope seqs already animated
+let editing = null;        // local edits to my unsealed card
+let redrafting = false;  // user chose to rewrite their brief
+
+async function post(path, body) {
+  const r = await fetch(`/api/rooms/${roomId}/seats/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, ...body }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'Request failed');
+  return d;
+}
+
+const other = s => s === 'A' ? 'B' : 'A';
+const nm = s => R.seats[s].name;
+const first = s => nm(s).split(' ')[0];
+const LISTS = [
+  ['must_haves', 'Must have'], ['may_agree_to', 'May agree to'], ['must_never', 'Must never'],
+  ['escalate_when', 'Ask me when'], ['known_facts', 'Facts I know'],
+];
+
+function cardHTML(s, card, hash) {
+  if (!card) return `<div class="card seat-${s}"><div class="who"><span class="avatar">${s}</span>${esc(nm(s))}</div>
+    <p class="muted small" style="margin:10px 0 0">${R.seats[s].sealed ? 'Card sealed. Its contents are private to ' + esc(first(s)) + '.' : 'Not sealed yet.'}</p>
+    ${hash ? `<div class="seal">● sealed ${esc(hash.slice(0, 16))}…</div>` : ''}</div>`;
+  const lists = LISTS.map(([k, label]) => card[k] && card[k].length ? `<div class="clause ${k === 'must_never' ? 'never' : ''}"><div class="k">${label}</div><ul>${card[k].map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '').join('');
+  const am = (card.amendments || []).length ? `<div class="clause"><div class="k">Amendments (your answers)</div><ul>${card.amendments.map(a => `<li>${esc(a.answer)}</li>`).join('')}</ul></div>` : '';
+  return `<div class="card seat-${s}">
+    <div class="who"><span class="avatar">${s}</span>${esc(card.principal.name)}<span class="muted small" style="font-weight:500">${esc(card.principal.role || '')}${card.principal.org ? ' · ' + esc(card.principal.org) : ''}</span></div>
+    <div class="goal">${esc(card.goal)}</div>${lists}${am}
+    ${hash ? `<div class="seal">● sealed ${esc(hash.slice(0, 16))}…</div>` : ''}</div>`;
+}
+
+function renderHeader() {
+  document.title = `${R.topic} · Proxy Room`;
+  $('#topic').textContent = R.topic;
+  $('#kicker').textContent = R.demo ? 'Demo room · PXP v0' : `Room ${R.id} · PXP v0`;
+  const map = { drafting: ['Sealing cards', ''], negotiating: ['Proxies negotiating', 'live'], paused: [R.pending ? 'Waiting on a human' : 'Paused', 'warn'], agreed: ['Agreed', 'ok'], stalled: ['No agreement', 'bad'], error: ['Error', 'bad'] };
+  const [label, cls] = map[R.status] || [R.status, ''];
+  $('#status').className = 'pill ' + cls; $('#status').innerHTML = `<span class="dot"></span>${label}`;
+  const unv = R.claims.filter(c => !c.verified).length;
+  $('#unv').classList.toggle('hidden', !unv);
+  $('#unv').innerHTML = `<span class="dot"></span>${unv} unverified`;
+  $('#unv').title = 'Assumptions no human or source has confirmed';
+  const kind = s => R.demo ? '' : ` <span class="faint">(${R.seats[s].mode === 'external' ? esc(R.seats[s].agent || 'own agent') : 'built-in proxy'})</span>`;
+  const names = `<span class="seat-A"><b class="who">${esc(nm('A'))}</b></span>${kind('A')} and <span class="seat-B"><b class="who">${esc(nm('B'))}</b></span>${kind('B')}`;
+  $('#sub').innerHTML = R.demo
+    ? `${names} each sealed an Intent Card. Their proxies are aligning on a design. Watch the amber tags.`
+    : `${names}${R.seat ? ` · you are seat ${R.seat}` : ' · read-only view'} · turn ${R.turnCount} of ${R.maxTurns}`;
+}
+
+// ---------- setup phase ----------
+function renderSetup() {
+  const box = $('#setup');
+  const myS = R.seat && R.seats[R.seat];
+  if (R.status !== 'drafting' && myS && myS.mode === 'external' && !myS.agent && !['agreed', 'stalled'].includes(R.status)) {
+    box.classList.remove('hidden');
+    box.innerHTML = `<div class="panel seat-${R.seat}" style="border-color:rgba(251,191,36,.55)">
+      <div class="who"><span class="avatar">${R.seat}</span>Your agent hasn't joined yet</div>
+      <p class="muted small" style="margin:8px 0 10px">The room is waiting for it. Connect your agent to the MCP server and paste it this prompt. <a href="/connect" target="_blank">Setup steps</a></p>
+      <div class="linkbox"><input readonly id="mcpUrl" value="${esc(R.mcpUrl)}"><button class="btn sm" data-copy="mcpUrl">Copy</button></div>
+      <div class="linkbox"><input readonly id="agentPrompt" value="${esc(`Join this Proxy Room and represent me: ${location.href} Check with me whenever you escalate.`)}"><button class="btn sm" data-copy="agentPrompt">Copy</button></div></div>`;
+    return;
+  }
+  if (R.status !== 'drafting') { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  if (R.demo) {
+    box.innerHTML = `<div class="grid2">${cardHTML('A', R.seats.A.card)}${cardHTML('B', R.seats.B.card)}</div>
+      <div class="panel" style="margin-top:14px">
+        <p style="margin:0 0 12px">These are the two Intent Cards. Notice Lerato's <b style="color:var(--conflict)">must never: fulfil an order twice</b> and her rule to escalate when the design <b>relies on behaviour nobody has confirmed</b>. Seal both and let the proxies talk.</p>
+        <button class="btn primary" id="sealBoth">Seal both cards and start</button>
+      </div>`;
+    $('#sealBoth').onclick = async e => {
+      e.target.disabled = true; e.target.textContent = 'Sealing…';
+      try { await post('A/seal', {}); await post('B/seal', {}); } catch (err) { alert(err.message); e.target.disabled = false; }
+    };
+    return;
+  }
+  if (!R.seat) { box.innerHTML = `<div class="panel muted">Both people are writing their Intent Cards. This link is read-only.</div>`; return; }
+  const me = R.seat, them = other(me), mine = R.seats[me];
+  const otherState = R.seats[them].sealed ? `<span class="pill ok"><span class="dot"></span>${esc(first(them))} sealed their card</span>` : `<span class="pill"><span class="dot"></span>Waiting for ${esc(first(them))} to seal their card</span>`;
+  const agentPanel = mine.mode === 'external' ? `<div class="panel seat-${me}" style="margin-bottom:14px">
+      <div class="who"><span class="avatar">${me}</span>Your own agent takes this seat</div>
+      <p class="small" style="margin:8px 0 0">${mine.agent ? `<span class="pill ok"><span class="dot"></span>${esc(mine.agent)} connected</span>` : `<span class="pill"><span class="dot"></span>No agent connected yet</span>`}</p>
+      <p class="muted small">Connect your agent to this MCP server, then paste it the prompt below. It will ask you for your Intent Card, or you can seal it yourself here. <a href="/connect" target="_blank">Setup steps</a></p>
+      <label>MCP server</label><div class="linkbox"><input readonly id="mcpUrl" value="${esc(R.mcpUrl)}"><button class="btn sm" data-copy="mcpUrl">Copy</button></div>
+      <label>Prompt for your agent</label><div class="linkbox"><input readonly id="agentPrompt" value="${esc(`Join this Proxy Room and represent me: ${location.href} Ask me for my Intent Card before sealing it, and check with me whenever you escalate.`)}"><button class="btn sm" data-copy="agentPrompt">Copy</button></div>
+    </div>` : '';
+  if (mine.sealed) {
+    box.innerHTML = agentPanel + `<div class="grid2">${cardHTML(me, mine.card, mine.cardHash)}<div class="panel"><p style="margin-top:0">Your card is sealed. Your proxy starts as soon as ${esc(first(them))} seals theirs.</p>${otherState}<p class="small faint">Keep this page open, or come back to this link later.</p></div></div>`;
+    return;
+  }
+  if ((!mine.card || redrafting) && !R.live && !editing) {
+    editing = { principal: { name: R.seats[me].name || '', role: '' }, goal: '', must_haves: [], may_agree_to: [], must_never: [], escalate_when: [], known_facts: [] };
+  }
+  if ((!mine.card || redrafting) && R.live && !editing) {
+    box.innerHTML = agentPanel + `<div class="panel seat-${me}">
+      <div class="who"><span class="avatar">${me}</span>Brief your proxy</div>
+      <p class="muted small" style="margin:8px 0 0">Write it the way you'd brief a colleague. Claude turns it into an Intent Card you can edit before sealing. ${esc(first(them))} never sees it.</p>
+      <div class="grid2"><div><label>Your name</label><input id="fName" maxlength="80" value="${esc(R.seats[me].name || '')}"></div><div><label>Your role</label><input id="fRole" maxlength="120" placeholder="optional"></div></div>
+      <label>Your brief</label>
+      <textarea id="fText" style="min-height:170px" maxlength="4000" placeholder="What outcome do you want?\nWhat can you give up or agree to without asking?\nWhat must never happen?\nWhen should your proxy stop and ask you?\nAny facts you know for sure?">${esc(mine.draftText || '')}</textarea>
+      <div class="row" style="margin-top:14px"><button class="btn primary" id="draftBtn">Draft my Intent Card</button>${otherState}</div>
+      <div class="err" id="fErr"></div></div>`;
+    $('#draftBtn').onclick = async e => {
+      const b = e.target; b.disabled = true; b.textContent = 'Claude is drafting your card…'; $('#fErr').textContent = '';
+      try { const d = await post(`${me}/draft`, { name: $('#fName').value, role: $('#fRole').value, text: $('#fText').value }); editing = d.card; redrafting = false; render(); }
+      catch (err) { $('#fErr').textContent = err.message; b.disabled = false; b.textContent = 'Draft my Intent Card'; }
+    };
+    return;
+  }
+  const c = editing || mine.card;
+  const fresh = !mine.card;
+  box.innerHTML = agentPanel + `<div class="panel seat-${me}">
+    <div class="who"><span class="avatar">${me}</span>${fresh ? 'Write your Intent Card' : 'Check your Intent Card before sealing'}</div>
+    <p class="muted small" style="margin:8px 0 0">${fresh ? `One item per line. ${esc(first(them))} never sees it. Once sealed, your proxy can't act outside it.` : "One item per line. Remove anything Claude added that you didn't mean. Once sealed, your proxy can't act outside it."}</p>
+    <div class="grid2"><div><label>Name</label><input data-f="name" value="${esc(c.principal.name)}"></div><div><label>Role</label><input data-f="role" value="${esc(c.principal.role || '')}"></div></div>
+    <label>Goal</label><textarea data-f="goal" style="min-height:60px">${esc(c.goal)}</textarea>
+    ${LISTS.map(([k, label]) => `<label>${label}</label><textarea data-f="${k}" style="min-height:${k === 'must_never' ? 70 : 80}px">${esc((c[k] || []).join('\n'))}</textarea>`).join('')}
+    <div class="row" style="margin-top:16px"><button class="btn primary" id="sealBtn">Seal and send my proxy in</button>${R.live ? '<button class="btn ghost" id="redraft">Rewrite brief</button>' : ''}${otherState}</div>
+    <div class="err" id="sErr"></div></div>`;
+  box.querySelectorAll('[data-f]').forEach(el => el.oninput = () => { editing = readEditor(); });
+  if ($('#redraft')) $('#redraft').onclick = () => { editing = null; redrafting = true; render(); };
+  $('#sealBtn').onclick = async e => {
+    e.target.disabled = true; $('#sErr').textContent = '';
+    try { await post(`${me}/seal`, { card: readEditor() }); editing = null; }
+    catch (err) { $('#sErr').textContent = err.message; e.target.disabled = false; }
+  };
+}
+function readEditor() {
+  const v = f => ($(`[data-f="${f}"]`) || {}).value || '';
+  const card = { principal: { name: v('name'), role: v('role') }, goal: v('goal') };
+  for (const [k] of LISTS) card[k] = v(k).split('\n').map(s => s.trim()).filter(Boolean);
+  return card;
+}
+
+// ---------- timeline ----------
+function claimHTML(c) {
+  const full = R.claims.find(x => x.id === c.id) || c;
+  const flagged = (full.reviews || []).some(r => r.verdict !== 'accept');
+  const reviews = (full.reviews || []).map(r => `<div class="review ${r.verdict}"><span class="verdict">${esc(first(r.by))}: ${r.verdict}</span>${r.reason ? ' · ' + esc(r.reason) : ''}</div>`).join('');
+  return `<div class="claim ${c.origin} ${flagged ? 'flagged' : ''}">
+    <div class="claim-top"><span class="cid">${esc(c.id)}</span><span class="tag ${c.origin}">${c.origin}</span><span>${esc(c.text)}</span></div>
+    ${c.ref ? `<div class="ref">ref: ${esc(c.ref)}</div>` : c.origin === 'assumed' ? `<div class="ref" style="color:var(--assumed)">no human or source behind this</div>` : ''}
+    ${reviews}</div>`;
+}
+function envHTML(e) {
+  const s = e.from.seat, side = s === 'A' ? '' : 'right';
+  const anim = seen.has(e.seq) ? 'style="animation:none"' : '';
+  const deps = e.proposal && e.proposal.depends_on.length ? `<div class="deps">rests on ${e.proposal.depends_on.map(d => { const c = R.claims.find(x => x.id === d); return `<span class="dep ${c && !c.verified ? 'unv' : ''}">${esc(d)}</span>`; }).join('')}</div>` : '';
+  return `<article class="env seat-${s} ${side}" ${anim}>
+    <div class="env-head"><span class="who"><span class="avatar">${s}</span>${esc(e.from.principal)}'s proxy</span>${e.from.agent ? `<span class="pill xs">${esc(e.from.agent)}</span>` : ''}<span class="seq">#${e.seq}</span><span class="status ${e.status}">${e.status}</span></div>
+    <p class="env-msg">${esc(e.message)}</p>
+    ${e.claims.length ? `<div class="claims">${e.claims.map(claimHTML).join('')}</div>` : ''}
+    ${e.reviews.length && !e.claims.length ? `<div class="small muted" style="margin-top:8px">Reviewed ${e.reviews.map(r => `<span class="mono">${esc(r.claim_id)}</span> → <b style="color:${r.verdict === 'accept' ? 'var(--stated)' : 'var(--conflict)'}">${r.verdict}</b>`).join(', ')}</div>` : ''}
+    ${e.proposal ? `<div class="proposal"><div class="k">Proposal · ${esc(e.proposal_hash.slice(0, 10))}</div><ol>${e.proposal.terms.map(t => `<li>${esc(t)}</li>`).join('')}</ol>${deps}</div>` : ''}
+    ${e.accepts ? `<div class="accepts">✓ Accepts proposal #${e.accepts.seq}</div>` : ''}
+    ${e.escalation ? `<div class="esc"><div class="k">Escalated to ${esc(first(s))}</div>${esc(e.escalation.question)}${e.answer ? `<div class="answer"><b>${esc(first(s))} answered${e.answer_via === 'mcp' ? ' (relayed by their agent)' : ''}:</b> ${esc(e.answer)}</div>` : ''}</div>` : ''}
+    ${(e.protocol_flags || []).map(f => `<div class="flags">⚑ protocol: ${esc(f)}</div>`).join('')}
+  </article>`;
+}
+function renderTimeline() {
+  const t = $('#timeline');
+  if (R.status === 'drafting') { t.innerHTML = ''; return; }
+  let html = R.envelopes.map(envHTML).join('');
+  if (R.waitingOn && !R.pending) {
+    const s = R.waitingOn, ag = R.seats[s].agent;
+    html += `<div class="thinking seat-${s} ${s === 'B' ? 'right' : ''}"><span class="dots"><span></span><span></span><span></span></span>Waiting for ${esc(first(s))}'s agent${ag ? ` (${esc(ag)})` : ' to connect'}</div>`;
+  } else if (R.thinking) {
+    const s = R.thinking;
+    const verb = R.envelopes.length ? 'is reviewing the claims against ' + first(s) + "'s card" : 'is opening the exchange';
+    html += `<div class="thinking seat-${s} ${s === 'B' ? 'right' : ''}"><span class="dots"><span></span><span></span><span></span></span>${esc(first(s))}'s proxy ${verb}</div>`;
+  }
+  const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 220;
+  const grew = R.envelopes.some(e => !seen.has(e.seq)) || R.thinking || R.waitingOn;
+  t.innerHTML = html;
+  R.envelopes.forEach(e => seen.add(e.seq));
+  if (grew && (atBottom || R.demo)) requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+}
+
+function renderCards() {
+  const d = $('#cardsDrawer');
+  if (R.status === 'drafting') { d.classList.add('hidden'); return; }
+  d.classList.remove('hidden');
+  $('#cards').innerHTML = ['A', 'B'].map(s => cardHTML(s, R.seats[s].card, R.seats[s].cardHash)).join('');
+}
+
+function renderLedger() {
+  const d = $('#ledgerDrawer');
+  if (R.status === 'drafting') { d.classList.add('hidden'); return; }
+  d.classList.remove('hidden');
+  $('#ledgerOk').className = 'pill xs ' + (R.ledgerCheck.ok ? 'ok' : 'bad');
+  $('#ledgerOk').textContent = R.ledgerCheck.ok ? `chain intact · ${R.ledger.length} entries` : `broken at #${R.ledgerCheck.brokenAt}`;
+  $('#ledger').innerHTML = `<p class="muted" style="font-family:var(--sans);font-size:13px;margin:0 0 8px">Every event is hashed with the one before it. Change any entry and the chain breaks. <a href="/api/rooms/${roomId}/ledger" target="_blank">Raw JSON</a></p>` +
+    R.ledger.map(e => `<div class="e"><span class="faint">${e.n}</span><div><span class="t">${esc(e.type)}</span> <span class="faint">${esc(e.at.slice(11, 19))}</span>${e.data && e.data.seat ? ` <span class="faint">seat ${e.data.seat}</span>` : ''}<div class="h">${esc(e.hash)}</div></div></div>`).join('');
+}
+
+// ---------- dock ----------
+function renderDock() {
+  const dock = $('#dock'), inner = $('#dockInner');
+  let html = '', tone = '';
+  const unvDeps = R.brief ? R.brief.unverified_dependencies.length : 0;
+  if (R.pending) {
+    const s = R.pending.seat, mine = R.demo || R.seat === s;
+    tone = 'amber';
+    if (mine) {
+      html = `<div class="seat-${s}"><div class="who" style="margin-bottom:6px"><span class="avatar">${s}</span>Your proxy needs you${R.demo ? ` <span class="muted small" style="font-weight:500">(you're playing ${esc(first(s))})</span>` : ''}</div>
+        <p style="margin:0 0 12px">${esc(R.pending.question)}</p>
+        ${R.pending.options ? `<div class="row">${R.pending.options.map(o => `<button class="btn ${o.key === 'dedupe' ? 'primary' : 'amber'}" data-opt="${o.key}">${esc(o.label)}</button>`).join('')}</div>`
+          : `<textarea id="ans" style="min-height:70px" placeholder="${R.seats[s].mode === 'external' ? 'Answer here, or tell your agent and it will relay your words' : 'Your answer becomes part of your sealed card'}"></textarea><div class="row" style="margin-top:10px"><button class="btn primary" id="ansBtn">Answer my proxy</button></div>`}
+        <div class="err" id="aErr"></div></div>`;
+    } else {
+      html = `<div class="row"><span class="pill warn"><span class="dot"></span>Paused</span><span>${esc(first(s))}'s proxy escalated a question to ${esc(first(s))}. Waiting for their answer.</span></div>`;
+    }
+  } else if (R.status === 'agreed') {
+    tone = unvDeps ? 'red' : 'green';
+    html = `<div class="row"><div style="flex:1;min-width:200px"><b>${unvDeps ? `Agreed, but it rests on ${unvDeps} unverified assumption${unvDeps > 1 ? 's' : ''}` : 'Agreed, with no unverified assumptions underneath'}</b>
+      <div class="small muted">${unvDeps ? 'A human signed off. The brief shows exactly what they signed off on.' : 'Every term traces back to a human or a source.'}</div></div>
+      <a class="btn primary" href="/brief/${roomId}">Read the decision brief</a>${R.demo ? `<a class="btn ghost" href="/">Run it again</a>` : ''}</div>`;
+  } else if (R.status === 'stalled') {
+    tone = 'red';
+    html = `<div class="row"><div style="flex:1"><b>No agreement within ${R.maxTurns} turns.</b><div class="small muted">The brief records what was claimed and where they got stuck.</div></div><a class="btn primary" href="/brief/${roomId}">Read the brief</a></div>`;
+  } else if (R.status === 'error' || (R.status === 'paused' && R.interrupted)) {
+    tone = 'red';
+    html = `<div class="row"><div style="flex:1"><b>${R.status === 'error' ? 'A proxy hit an error.' : 'The room was interrupted.'}</b><div class="small muted">${esc(R.error || 'The server restarted mid-turn.')}</div></div>${R.seat ? `<button class="btn primary" id="resume">Resume</button>` : ''}</div>`;
+  }
+  dock.classList.toggle('hidden', !html);
+  inner.className = 'inner ' + tone;
+  if (inner.dataset.html !== html) { inner.innerHTML = html; inner.dataset.html = html; wireDock(); }
+}
+function wireDock() {
+  document.querySelectorAll('[data-opt]').forEach(b => b.onclick = async () => {
+    document.querySelectorAll('[data-opt]').forEach(x => x.disabled = true);
+    try { await post(`${R.pending.seat}/answer`, { option: b.dataset.opt }); } catch (err) { $('#aErr').textContent = err.message; }
+  });
+  const ab = $('#ansBtn');
+  if (ab) ab.onclick = async () => { ab.disabled = true; try { await post(`${R.pending.seat}/answer`, { answer: $('#ans').value }); } catch (err) { $('#aErr').textContent = err.message; ab.disabled = false; } };
+  const rb = $('#resume');
+  if (rb) rb.onclick = async () => { rb.disabled = true; try { await post(`${R.seat}/resume`, {}); } catch (err) { alert(err.message); rb.disabled = false; } };
+}
+
+document.addEventListener('click', e => {
+  const id = e.target.dataset && e.target.dataset.copy; if (!id) return;
+  navigator.clipboard.writeText($('#' + id).value).then(() => { e.target.textContent = 'Copied'; setTimeout(() => e.target.textContent = 'Copy', 1500); });
+});
+
+function render() {
+  if (!R) return;
+  renderHeader();
+  // don't clobber an editor the user is typing in
+  const typing = document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) && $('#setup').contains(document.activeElement);
+  if (!typing) renderSetup();
+  renderCards(); renderTimeline(); renderLedger(); renderDock();
+}
+
+function connect() {
+  const es = new EventSource(`/api/rooms/${roomId}/events?${auth}`);
+  es.onmessage = ev => {
+    const next = JSON.parse(ev.data);
+    R = next; render();
+  };
+  es.onerror = () => { es.close(); setTimeout(connect, 2500); };
+}
+fetch(`/api/rooms/${roomId}?${auth}`).then(r => r.ok ? r.json() : Promise.reject()).then(v => { R = v; render(); connect(); })
+  .catch(() => { $('#topic').textContent = 'Room not found'; $('#sub').innerHTML = '<a href="/">Back to Proxy Room</a>'; });
+</script>
+</body>
+</html>

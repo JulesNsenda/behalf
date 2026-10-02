@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PXP v0 · Proxy Exchange Protocol</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/logo.svg">
+</head>
+<body>
+<header class="bar"><div class="wrap">
+  <a class="brand" href="/"><img class="logo" src="/logo.svg" alt="">Proxy Room</a>
+  <span class="spacer"></span>
+  <a class="small" href="/spec/intent-card.schema.json">intent-card.schema.json</a>
+  <a class="small" href="/spec/envelope.schema.json">envelope.schema.json</a>
+</div></header>
+<main class="wrap md" id="md" style="padding-bottom:60px"><p class="muted">Loading spec…</p></main>
+<script>
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const inline = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\*([^*]+)\*/g, '<em>$1</em>');
+function md(src) {
+  const out = []; const lines = src.split('\n'); let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (l.startsWith('```')) { const buf = []; i++; while (i < lines.length && !lines[i].startsWith('```')) buf.push(lines[i++]); i++; out.push(`<pre><code>${esc(buf.join('\n'))}</code></pre>`); continue; }
+    const h = l.match(/^(#{1,3}) (.*)/); if (h) { out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); i++; continue; }
+    if (l.startsWith('|')) { const rows = []; while (i < lines.length && lines[i].startsWith('|')) rows.push(lines[i++]); const cells = r => r.split('|').slice(1, -1).map(c => c.trim());
+      out.push('<table><thead><tr>' + cells(rows[0]).map(c => `<th>${inline(c)}</th>`).join('') + '</tr></thead><tbody>' + rows.slice(2).map(r => '<tr>' + cells(r).map(c => `<td>${inline(c)}</td>`).join('') + '</tr>').join('') + '</tbody></table>'); continue; }
+    if (/^(\d+\.|-) /.test(l)) { const ordered = /^\d+\./.test(l); const items = []; while (i < lines.length && /^(\d+\.|-) /.test(lines[i])) { let item = lines[i++].replace(/^(\d+\.|-) /, ''); while (i < lines.length && /^ {2,}\S/.test(lines[i])) item += ' ' + lines[i++].trim(); items.push(`<li>${inline(item)}</li>`); } out.push(`<${ordered ? 'ol' : 'ul'}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`); continue; }
+    if (!l.trim()) { i++; continue; }
+    const buf = []; while (i < lines.length && lines[i].trim() && !/^(#|\||```|\d+\. |- )/.test(lines[i])) buf.push(lines[i++]); out.push(`<p>${inline(buf.join(' '))}</p>`);
+  }
+  return out.join('\n');
+}
+fetch('/spec/SPEC.md').then(r => r.text()).then(t => document.getElementById('md').innerHTML = md(t));
+</script>
+</body>
+</html>
