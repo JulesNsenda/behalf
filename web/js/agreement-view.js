@@ -8,9 +8,14 @@
  *  - Every function takes (R, viewerSeat, ...) and reads the brief from R.brief itself.
  *  - viewerSeat is the URL's ?seat=, which only chooses wording ("you" vs a name). It is never
  *    authority, and the agreement link never carries a token.
- *  - Server and model text is never returned as wording. Authority notes, claim text and answers
- *    come back as separate plain-text fields for the page to escape.
- *  - Summary text is built from brief fields only and contains no URLs.
+ *  - Server and model text is never returned as wording. Claim text and answers come back as
+ *    separate plain-text fields for the page to escape. This module never returns the authority notes
+ *    and the page never shows them: the model wrote them from both private cards, so the why-lines use
+ *    fixed wording only. The server still sends them in the brief, which is a recorded follow-up.
+ *  - Agent- and person-supplied strings go through RoomView.str, the one cleaner for format characters
+ *    (bidi controls and zero-width spaces go; the joiners that spelling and emoji need stay).
+ *  - The page adds no URLs. Summary text is built from brief fields only; text a person or an
+ *    agent wrote can itself contain a URL, and stays plain text.
  */
 (function () {
   'use strict';
@@ -19,6 +24,24 @@
   if (!RV) throw new Error('load room-view.js before agreement-view.js');
 
   var has = Object.prototype.hasOwnProperty;
+
+
+  // Every section heading and button, so the page and the copied summary say the same thing.
+  var TITLES = {
+    relied: 'The deal rests on a guess',
+    relies: 'Relies on points nobody confirmed',
+    guesses: 'Guesses on record but not relied on',
+    checked: 'What each AI checked with its person',
+    stopped: 'The room stopped these',
+    claimed: 'What was claimed',
+    stuck: 'Where they got stuck',
+    details: 'View the full record',
+    copy: 'Copy summary',
+    print: 'Print',
+    again: 'Start another room',
+    back: 'Back to the conversation',
+    start: 'Start a room'
+  };
 
   function viewerOf(viewerSeat) { return RV.isSeat(viewerSeat) ? viewerSeat : null; }
 
@@ -31,7 +54,7 @@
     ['A', 'B'].forEach(function (s) {
       var n = parties[s] && parties[s].name;
       var rs = rooms[s] || {};
-      seats[s] = { name: RV.str(n).trim() ? n : rs.name, mode: rs.mode, agent: rs.agent };
+      seats[s] = { name: RV.str(RV.str(n).trim() ? n : rs.name), mode: rs.mode, agent: rs.agent };
     });
     return { seat: viewerOf(viewerSeat), seats: seats };
   }
@@ -94,8 +117,22 @@
     return { seat: seat, kind: t ? kind : 'unknown', text: text, flagged: !t || kind === 'none' };
   }
 
+  var FLAG_LABELS = {
+    unknown: "We couldn't tell what allowed this",
+    both: "Not covered by anyone's instructions",
+    one: "Not covered by one person's instructions"
+  };
+
+  // The pill for a flagged term, or null.
+  function flagLabel(lines) {
+    if (!lines.some(function (l) { return l.flagged; })) return null;
+    if (lines.some(function (l) { return l.kind === 'unknown'; })) return FLAG_LABELS.unknown;
+    return lines.some(function (l) { return l.seat === 'both'; }) ? FLAG_LABELS.both : FLAG_LABELS.one;
+  }
+
   // Per-term "why this was allowed" lines. With no authority map there are no lines, plus one note.
-  // Returns {terms: [{number, term, lines: [{seat, kind, text, flagged}], note, flagged}], note, uncovered}.
+  // Returns {terms: [{number, term, lines: [{seat, kind, text, flagged}], flagged, flagLabel}], note, uncovered}.
+  // The model's own note per term is deliberately not returned (see the header).
   function points(R, viewerSeat) {
     var brief = R && R.brief;
     var N = namesView(R, viewerSeat);
@@ -110,10 +147,10 @@
           : ['A', 'B'].map(function (s) { return authorityLine(N, s, a[s]); });
       return {
         number: i + 1,
-        term: String(term),
+        term: RV.str(String(term)),
         lines: lines,
-        note: a ? RV.str(a.note) || null : null,
-        flagged: lines.some(function (l) { return l.flagged; })
+        flagged: lines.some(function (l) { return l.flagged; }),
+        flagLabel: flagLabel(lines)
       };
     });
 
@@ -131,8 +168,28 @@
     return (c.reviews || []).map(function (r) {
       return RV.reviewNote(N, { by: RV.isSeat(r.by) ? r.by : 'A', verdict: r.verdict, reason: r.reason });
     }).filter(function (n) { return n.verdict !== 'accept'; }).map(function (n) {
-      return { sentence: n.sentence, reason: n.reason };
+      return { sentence: n.sentence, reason: RV.str(n.reason) };
     });
+  }
+
+  function guessRow(N, c) {
+    var seat = RV.claimSeat(c);
+    return {
+      text: RV.str(c.text),
+      by: RV.aiName(N, seat),
+      note: RV.guessNote(N, seat),
+      reviews: problemReviews(N, c)
+    };
+  }
+
+  // What the deal relies on: unverified claims the agreement depends on. The brief doesn't say which
+  // term each one supports, so the page lists them together above the points. A per-term mapping
+  // would need the API to return it (a later follow-up).
+  function reliedGuesses(R, viewerSeat) {
+    var brief = R && R.brief;
+    var N = namesView(R, viewerSeat);
+    var deps = brief && Array.isArray(brief.unverified_dependencies) ? brief.unverified_dependencies : [];
+    return deps.map(function (c) { return guessRow(N, c); });
   }
 
   // "Guesses on record but not relied on": unverified claims in the record that the deal doesn't depend on.
@@ -142,15 +199,7 @@
     var relied = {};
     (brief && Array.isArray(brief.unverified_dependencies) ? brief.unverified_dependencies : []).forEach(function (c) { relied[c.id] = true; });
     var rec = brief && Array.isArray(brief.unverified_in_record) ? brief.unverified_in_record : [];
-    return rec.filter(function (c) { return !has.call(relied, c.id); }).map(function (c) {
-      var seat = RV.claimSeat(c);
-      return {
-        text: RV.str(c.text),
-        by: RV.aiName(N, seat),
-        note: RV.guessNote(N, seat),
-        reviews: problemReviews(N, c)
-      };
-    });
+    return rec.filter(function (c) { return !has.call(relied, c.id); }).map(function (c) { return guessRow(N, c); });
   }
 
   // "What each AI checked with its person". Uses the room page's sentences for asked and answered.
@@ -163,9 +212,9 @@
       var a = e.answer ? RV.answered(N, seat, e.answer, e.via) : null;
       return {
         asked: q.lead,
-        question: q.body,
+        question: RV.str(q.body),
         answered: a ? a.lead : RV.who(N, seat, 'You') + " didn't answer.",
-        answer: a ? a.body : ''
+        answer: a ? RV.str(a.body) : ''
       };
     });
   }
@@ -173,7 +222,10 @@
   // "The room stopped these": fixed sentences from RoomView, never the raw flag.
   function flags(R) {
     var b = R && R.brief;
-    return (b && Array.isArray(b.protocol_flags) ? b.protocol_flags : []).map(function (f) { return RV.flagSentence(f); });
+    return (b && Array.isArray(b.protocol_flags) ? b.protocol_flags : []).map(function (f) {
+      var s = RV.flagSentence(f);
+      return { sentence: s.sentence, detail: s.detail === null ? null : RV.str(s.detail) };
+    });
   }
 
   // ---------- AI labels and details ----------
@@ -204,7 +256,12 @@
     if (brief && brief.ledger_head) rows.push({ label: 'Record', value: brief.ledger_head, mono: true });
     var live = R && R.ledgerCheck && typeof R.ledgerCheck.ok === 'boolean' ? R.ledgerCheck.ok : null;
     var ok = live !== null ? live : Boolean(brief && brief.ledger_ok);
-    return { rows: rows, recordOk: ok, recordLabel: RV.recordStatus(ok) };
+    return {
+      rows: rows,
+      recordOk: ok,
+      recordLabel: RV.recordStatus(ok),
+      recordLine: 'This room has a tamper-proof record, and ' + (ok ? 'it checks out.' : 'it was changed.')
+    };
   }
 
   // ---------- no deal ----------
@@ -221,12 +278,39 @@
     var b = R && R.brief;
     return {
       claimed: claims.map(function (c) {
-        return Object.assign(claimRow(N, c), { confirmed: c.origin !== 'assumed' });
+        var confirmed = c.origin !== 'assumed';
+        return Object.assign(claimRow(N, c), { confirmed: confirmed, pill: confirmed ? null : 'Not confirmed' });
       }),
       stuck: (b && Array.isArray(b.challenged) ? b.challenged : []).map(function (c) {
         return Object.assign(claimRow(N, c), { reviews: problemReviews(N, c) });
       })
     };
+  }
+
+  // The outcome line and tone for the page: the room page's wording, from the brief alone.
+  function outcome(R) {
+    var st = state(R);
+    var o = st === 'agreed' ? RV.outcome({ status: 'agreed', brief: R.brief })
+      : st === 'no-deal' ? RV.outcome({ status: 'stalled', brief: R.brief, maxTurns: R.maxTurns }) : null;
+    return o && { tone: o.tone, text: o.text };
+  }
+
+  // Why there was no deal: the room page's reason, as its own line under the heading.
+  function noDealReason(R) { return state(R) === 'no-deal' ? RV.noDealReason(R) : null; }
+
+  // The room's topic as plain text, or ''.
+  function topic(R) { return RV.str(R && R.topic).trim(); }
+
+  // The line under the heading: the topic, then what the points tell the reader. Neutral for a
+  // spectator, and "your AI" with a viewer seat.
+  function subtitle(R, viewerSeat) {
+    var N = namesView(R, viewerSeat);
+    var lead = topic(R).replace(/[.!?]+$/, '');
+    var who = N.seat
+      ? 'your AI and ' + RV.firstName(N, RV.otherOf(N.seat)) + "'s AI were"
+      : 'the AIs were';
+    var rest = 'Each point says why ' + who + ' allowed to agree to it.';
+    return lead ? lead + '. ' + rest : rest;
   }
 
   // ---------- plain-text summary ("Copy summary") ----------
@@ -245,32 +329,32 @@
     out.push('Between ' + partyName(N, 'A') + ' and ' + partyName(N, 'B'));
     out.push('');
     if (st === 'agreed') {
-      out.push(RV.outcome({ status: 'agreed', brief: b }).text);
+      out.push(outcome(R).text);
       out.push('');
       var pts = points(R, viewerSeat);
       pts.terms.forEach(function (t) {
-        out.push(t.number + '. ' + t.term + (t.flagged ? ' (not covered by the instructions)' : ''));
+        out.push(t.number + '. ' + t.term + (t.flagged ? ' (' + t.flagLabel.charAt(0).toLowerCase() + t.flagLabel.slice(1) + ')' : ''));
       });
       if (pts.note) { out.push(''); out.push(pts.note); }
       var deps = Array.isArray(b.unverified_dependencies) ? b.unverified_dependencies : [];
       if (deps.length) {
         out.push('');
-        out.push('Relies on points nobody confirmed:');
-        deps.forEach(function (c) { out.push('- ' + (c.text || '')); });
+        out.push(TITLES.relies + ':');
+        deps.forEach(function (c) { out.push('- ' + RV.str(c.text)); });
       }
     } else {
-      out.push('No deal was reached.');
+      out.push('No deal was reached. ' + RV.noDealReason(R));
       var nd = noDeal(R, viewerSeat);
       if (nd.stuck.length) {
         out.push('');
-        out.push('Where they got stuck:');
+        out.push(TITLES.stuck + ':');
         nd.stuck.forEach(function (c) { out.push('- ' + c.text); });
       }
     }
     var esc = escalations(R, viewerSeat);
     if (esc.length) {
       out.push('');
-      out.push('What each AI checked with its person:');
+      out.push(TITLES.checked + ':');
       esc.forEach(function (e) {
         out.push('- ' + e.asked + ' ' + e.question);
         out.push('  ' + e.answered + (e.answer ? ' ' + e.answer : ''));
@@ -279,17 +363,23 @@
     var fl = flags(R);
     if (fl.length) {
       out.push('');
-      out.push('The room stopped these:');
+      out.push(TITLES.stopped + ':');
       fl.forEach(function (f) { out.push('- ' + f.sentence); });
     }
     return out.join('\n');
   }
 
   var AgreementView = {
+    TITLES: TITLES,
     state: state,
+    outcome: outcome,
+    noDealReason: noDealReason,
+    topic: topic,
+    subtitle: subtitle,
     heading: heading,
     noAuthorityNote: noAuthorityNote,
     points: points,
+    reliedGuesses: reliedGuesses,
     guessesOnRecord: guessesOnRecord,
     escalations: escalations,
     flags: flags,

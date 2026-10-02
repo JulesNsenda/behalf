@@ -5,14 +5,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { WEB } = require('../test-support/paths');
-const { codeOf, assertPure } = require('../test-support/source');
+const { codeOf, loadPure } = require('../test-support/source');
 const { JARGON } = require('../test-support/copy');
-const AV_PATH = path.join(WEB, 'js', 'agreement-view.js');
 
 // No window here, so both scripts set module.exports. agreement-view reads room-view itself.
-assert.strictEqual(typeof globalThis.window, 'undefined');
-const AV = require(AV_PATH);
-const RV = require(path.join(WEB, 'js', 'room-view.js'));
+const { mod: AV, file: AV_PATH, assertClean } = loadPure('agreement-view', { allowRequire: true });
+const { mod: RV } = loadPure('room-view');
 
 // ---- hand-built fixtures (no demo text) ----
 function claim(id, over) {
@@ -144,13 +142,14 @@ test('points: every authority kind, for the viewer and for the other side', () =
   }
 });
 
-test('points: terms are numbered, carry the model note and a flag when nothing covers them', () => {
+test('points: terms are numbered and flagged when nothing covers them; the model note is never returned', () => {
   const p = AV.points(room(), 'A');
   assert.strictEqual(p.note, null);
   assert.strictEqual(p.uncovered, 0);
   assert.deepStrictEqual(p.terms.map(t => [t.number, t.term, t.flagged]), [[1, 'First term', false], [2, 'Second term', false]]);
-  assert.strictEqual(p.terms[0].note, 'Matches the list');
-  assert.strictEqual(p.terms[1].note, null, 'an empty note is no note');
+  assert.ok(p.terms.every(t => !('note' in t)), 'no note field');
+  assert.ok(!JSON.stringify(p).includes('Matches the list'));
+  assert.ok(p.terms.every(t => t.flagLabel === null));
   assert.deepStrictEqual(p.terms[0].lines.map(l => l.seat), ['A', 'B']);
 });
 
@@ -181,7 +180,7 @@ test('points: no authority map -> no lines and a single note that follows the vi
     const p = AV.points(R, 'A');
     assert.strictEqual(p.note, "We couldn't check each point against your instructions.");
     assert.strictEqual(p.terms.length, 2);
-    assert.ok(p.terms.every(t => t.lines.length === 0 && !t.flagged && t.note === null));
+    assert.ok(p.terms.every(t => t.lines.length === 0 && !t.flagged && t.flagLabel === null));
     assert.strictEqual(p.uncovered, 0);
     assert.strictEqual(AV.points(R, null).note, "We couldn't check each point against their instructions.");
   }
@@ -325,8 +324,8 @@ test('noDeal: what was claimed, and where they got stuck', () => {
   });
   const nd = AV.noDeal(R, 'A');
   assert.deepStrictEqual(nd.claimed, [
-    { by: 'Your AI', text: 'Mine', confirmed: true },
-    { by: "Kwame's AI", text: 'Stuck here', confirmed: false },
+    { by: 'Your AI', text: 'Mine', confirmed: true, pill: null },
+    { by: "Kwame's AI", text: 'Stuck here', confirmed: false, pill: 'Not confirmed' },
   ]);
   assert.deepStrictEqual(nd.stuck, [{ by: "Kwame's AI", text: 'Stuck here', reviews: [{ sentence: 'Your AI disagrees with this', reason: 'It is wrong' }] }]);
   assert.strictEqual(AV.noDeal(R, null).claimed[0].by, "Lerato's AI");
@@ -367,7 +366,7 @@ test('summaryText: spectator wording, gaps and no authority map', () => {
   const t = AV.summaryText(gap, null);
   assert.ok(t.startsWith('What Lerato and Kwame agreed\n'));
   assert.ok(t.includes('Deal reached. Nothing unconfirmed.'));
-  assert.ok(t.includes('1. First term (not covered by the instructions)'));
+  assert.ok(t.includes("1. First term (not covered by anyone's instructions)"));
   assert.ok(!t.includes('2. Second term (not'));
   const none = roomOf(brief({ authority: null }));
   assert.ok(AV.summaryText(none, 'A').includes("We couldn't check each point against your instructions."));
@@ -418,7 +417,7 @@ test('agreement-view reads room-view for shared wording and keeps no copies', ()
 
 // ---------- purity ----------
 test('agreement-view is pure: no DOM, UI, markup, storage or regex constructor', () => {
-  assertPure(codeOf(AV_PATH), { allowRequire: true });
+  assertClean();
 });
 
 test('reader-facing strings avoid protocol jargon', () => {
@@ -436,4 +435,116 @@ test('reader-facing strings avoid protocol jargon', () => {
 test('summaryText: an agreed summary includes the topic, and omits the line when there is none', () => {
   assert.ok(AV.summaryText(roomOf(brief({})), 'A').includes('Topic: A topic'));
   assert.ok(!AV.summaryText(roomOf(brief({}), { topic: '' }), 'A').includes('Topic:'));
+});
+
+// ---------- authority notes never reach the page or the summary ----------
+test('an authority note that quotes a private card never appears in points() or summaryText()', () => {
+  const secret = 'limit was $5,000';
+  const R = roomOf(brief({ authority: [
+    { term: 'First term', A: 'must_haves', B: 'may_agree_to', note: "Lerato's " + secret },
+    { term: 'Second term', A: 'none', B: 'none', note: secret },
+  ] }));
+  for (const seat of ['A', 'B', null]) {
+    assert.ok(!JSON.stringify(AV.points(R, seat)).includes('5,000'), String(seat));
+    assert.ok(!AV.summaryText(R, seat).includes('5,000'), String(seat));
+  }
+});
+
+// ---------- pills, titles and outcome ----------
+test('points: flagLabel names the gap; unknown, one-sided and nobody-covers differ', () => {
+  const pts = (A, B) => AV.points(roomOf(brief({ agreement: { terms: ['t'] }, authority: [{ term: 't', A, B }] })), 'A').terms[0];
+  assert.strictEqual(pts('none', 'none').flagLabel, "Not covered by anyone's instructions");
+  assert.strictEqual(pts('weird', 'must_haves').flagLabel, "We couldn't tell what allowed this");
+  assert.strictEqual(pts('weird', 'none').flagLabel, "We couldn't tell what allowed this");
+  assert.strictEqual(pts('none', 'must_haves').flagLabel, "Not covered by one person's instructions");
+  assert.strictEqual(pts('must_haves', 'must_haves').flagLabel, null);
+});
+
+test('TITLES: one home for the headings, used by the summary too', () => {
+  assert.ok(AV.TITLES.details && AV.TITLES.guesses && AV.TITLES.checked && AV.TITLES.stopped && AV.TITLES.claimed && AV.TITLES.stuck);
+  const R = roomOf(brief({
+    unverified_dependencies: [claim('A1.1', { text: 'Dep' })],
+    escalations: [{ seat: 'A', principal: 'L', question: 'q', answer: 'a', via: 'web' }],
+    protocol_flags: [{ seq: 1, seat: 'A', flag: 'x' }],
+  }));
+  const t = AV.summaryText(R, null);
+  for (const k of ['relies', 'checked', 'stopped']) assert.ok(t.includes(AV.TITLES[k] + ':'), k);
+  const stuck = claim('B1.1', { text: 'S' });
+  assert.ok(AV.summaryText(room({ brief: brief({ outcome: 'no_agreement', agreement: undefined, challenged: [stuck] }), claims: [stuck] }), null).includes(AV.TITLES.stuck + ':'));
+  for (const v of Object.values(AV.TITLES)) assert.ok(!JARGON.test(v), v);
+});
+
+test('outcome: the room page wording from the brief, for agreed and no-deal only', () => {
+  assert.deepStrictEqual(AV.outcome(room()), { tone: 'ok', text: 'Deal reached. Nothing unconfirmed.' });
+  assert.deepStrictEqual(AV.outcome(roomOf(brief({ unverified_dependencies: [claim('A1.1')] }))), { tone: 'warn', text: 'Deal reached, with 1 unconfirmed point' });
+  const nodeal = brief({ outcome: 'no_agreement', agreement: undefined });
+  assert.deepStrictEqual(AV.outcome(room({ brief: nodeal, maxTurns: 12 })), { tone: 'warn', text: "No deal. The AIs didn't agree within 12 turns." });
+  assert.deepStrictEqual(AV.outcome(room({ brief: nodeal, maxTurns: undefined })), { tone: 'warn', text: "No deal. The AIs didn't agree in the turns they had." }, 'no number: the fallback reason');
+  assert.strictEqual(AV.noDealReason(room({ brief: nodeal, maxTurns: 12 })), "The AIs didn't agree within 12 turns.");
+  assert.strictEqual(AV.noDealReason(room()), null, 'only a no-deal has a reason');
+  assert.strictEqual(AV.noDealReason(room({ brief: null })), null);
+  assert.strictEqual(AV.noDealReason(null), null);
+  assert.match(AV.summaryText(room({ brief: nodeal, maxTurns: 12 }), 'A'), /No deal was reached\. The AIs didn't agree within 12 turns\./);
+  assert.strictEqual(AV.outcome(room({ brief: null })), null);
+  assert.strictEqual(AV.outcome(null), null);
+});
+
+test('subtitle: topic then why-line, neutral or "your AI", no doubled full stop', () => {
+  assert.strictEqual(AV.subtitle(room({ topic: 'The roof.' }), null), 'The roof. Each point says why the AIs were allowed to agree to it.');
+  assert.strictEqual(AV.subtitle(room({ topic: 'The roof' }), 'A'), "The roof. Each point says why your AI and Kwame's AI were allowed to agree to it.");
+  assert.strictEqual(AV.subtitle(room({ topic: '' }), null), 'Each point says why the AIs were allowed to agree to it.');
+});
+
+// ---------- what the deal relies on ----------
+test('reliedGuesses: the guesses the agreement rests on, with who made them and what reviewers said', () => {
+  const dep = claim('B1.1', { text: 'It never retries', reviews: [{ by: 'A', verdict: 'challenge', reason: 'Unverified', seq: 3 }] });
+  const R = roomOf(brief({ unverified_dependencies: [dep], unverified_in_record: [dep, claim('A2.1', { text: 'Spare' })] }));
+  assert.deepStrictEqual(AV.reliedGuesses(R, 'A'), [{
+    text: 'It never retries', by: "Kwame's AI", note: "Not confirmed. Kwame's AI guessed this.",
+    reviews: [{ sentence: "Your AI couldn't confirm this", reason: 'Unverified' }],
+  }]);
+  assert.strictEqual(AV.reliedGuesses(R, 'B')[0].by, 'Your AI');
+  assert.strictEqual(AV.guessesOnRecord(R, 'A').length, 1, 'the spare guess stays in the other list');
+  assert.deepStrictEqual(AV.reliedGuesses(room(), 'A'), []);
+  assert.deepStrictEqual(AV.reliedGuesses(null, 'A'), []);
+});
+
+// ---------- hostile text ----------
+test('bidi controls are stripped from every agent- or person-supplied string; URLs stay plain text', () => {
+  const RLO = '\u202E';
+  const hostile = 'Pay https://evil.example/x' + RLO + 'txt.exe now' + '\u2066\u200F';
+  const dep = claim('B1.1', { text: hostile, reviews: [{ by: 'A', verdict: 'challenge', reason: 'r' + RLO + 'z' }] });
+  const R = roomOf(brief({
+    agreement: { terms: [hostile], proposal_hash: 'p'.repeat(64) },
+    authority: [{ term: 't', A: 'must_haves', B: 'must_haves' }],
+    unverified_dependencies: [dep], unverified_in_record: [dep], challenged: [dep],
+    escalations: [{ seat: 'A', principal: 'L', question: 'q' + RLO + '1', answer: 'a' + RLO + '2', via: 'web' }],
+    protocol_flags: [{ seq: 1, seat: 'A', flag: 'Claim "d' + RLO + 'x" was tagged stated without a reference; downgraded to assumed.' }],
+    parties: { A: { name: 'Le' + RLO + 'rato Dlamini' }, B: { name: 'Kwame Mensah' } },
+  }), { topic: 'Topic' + RLO + '!', claims: [dep], seats: { A: { name: 'L', mode: 'external', agent: 'Ag' + RLO + 'ent' }, B: { name: 'K', mode: 'builtin' } } });
+  const BIDI = /[\u202A-\u202E\u2066-\u2069\u200E\u200F]/;
+  const all = JSON.stringify([
+    AV.points(R, 'A'), AV.reliedGuesses(R, 'A'), AV.guessesOnRecord(R, 'A'), AV.escalations(R, 'A'), AV.flags(R),
+    AV.detailRows(R, 'A'), AV.noDeal(R, 'A'), AV.subtitle(R, 'A'), AV.heading(R, null),
+  ]) + AV.summaryText(R, 'A');
+  assert.doesNotMatch(all, BIDI);
+  assert.ok(AV.points(R, 'A').terms[0].term.includes('https://evil.example/xtxt.exe now'), 'the URL text stays as plain text');
+  assert.ok(AV.summaryText(R, null).includes('Lerato'), 'names are cleaned too');
+});
+
+test('the one cleaner is RoomView.str: the joiners stay in a term, a name and a topic, the zero-width space goes', () => {
+  const ZWNJ = '\u200C';
+  const ZWJ = '\u200D';
+  const persian = 'می' + ZWNJ + 'خواهم';
+  const family = '👩' + ZWJ + '👩' + ZWJ + '👧';
+  const R = roomOf(brief({
+    agreement: { terms: [persian + '\u200B ' + family], proposal_hash: 'p'.repeat(64) },
+    authority: [{ term: 't', A: 'must_haves', B: 'must_haves' }],
+    parties: { A: { name: persian + ' Rezai' }, B: { name: 'Kwame Mensah' } },
+  }), { topic: family + ' plan' });
+  assert.strictEqual(AV.points(R, 'A').terms[0].term, persian + ' ' + family);
+  assert.strictEqual(AV.topic(R), family + ' plan');
+  assert.ok(AV.summaryText(R, null).includes('Between ' + persian + ' Rezai and Kwame'));
+  assert.ok(AV.heading(R, null).includes(persian));
+  assert.doesNotMatch(JSON.stringify(AV.points(R, 'A')), /u200B/);
 });

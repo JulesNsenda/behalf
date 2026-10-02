@@ -118,6 +118,8 @@
     --w-page: 1080px;
     --target-min: 44px;
     --dock-reserve: 180px;
+    --header-h: 64px; /* where toasts sit: ui.js replaces it with the header's measured height */
+    --header-min: 64px; /* the header's own minimum height: never measured, so measuring can't grow it */
   }
 
   /* Dark blocks are screen-only, so printing always uses the light palette. */
@@ -282,7 +284,7 @@
 
   .brand {
     display: inline-flex; align-items: center; gap: var(--space-2-5); min-height: var(--target-min);
-    color: var(--ink); font-weight: 800; font-size: var(--size-18); text-decoration: none;
+    color: var(--ink); font-weight: 800; font-size: var(--size-18); text-decoration: none; min-width: 0;
   }
   .brand:hover { color: var(--ink); }
   .brand__logo { width: 30px; height: 30px; border-radius: 25%; box-shadow: 0 0 0 1px var(--logo-ring); }
@@ -291,14 +293,15 @@
 
   .site-header { background: var(--surface); border-bottom: 1px solid var(--line); }
   .site-header__inner {
-    display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-6); min-height: 64px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-6); min-height: var(--header-min);
   }
   .site-header__nav { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-6); margin-inline-start: auto; font-size: var(--size-15); font-weight: 600; }
   .site-header__nav a:not(.btn) {
     display: inline-flex; align-items: center; min-height: var(--target-min); color: var(--ink); text-decoration: none;
   }
   .site-header__nav a:not(.btn):hover, .site-header__nav a[aria-current="page"] { text-decoration: underline; text-underline-offset: 6px; }
-  /* right slot for a step label or status pill */
+  /* right slot for a step label or status pill; the pill stays on one line and the header wraps around it */
+  .site-header__end .status { white-space: nowrap; }
   .site-header__end { margin-inline-start: auto; display: flex; align-items: center; gap: var(--space-3); font-size: var(--size-15); color: var(--ink-subtle); }
 
   .footer { background: var(--surface); border-top: 1px solid var(--line); color: var(--ink-muted); font-size: var(--size-14); }
@@ -325,9 +328,11 @@
     margin-top: var(--space-8); padding-block: var(--space-3) var(--space-5); border-top: 1px solid var(--line); font-size: var(--size-14);
   }
   .footer__spacer { flex-grow: 1; }
-  /* slot for the "Runs on…" line */
-  .footer__status { display: inline-flex; align-items: center; gap: var(--space-2); }
-  .footer__status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok-dot); flex: none; }
+  /* slot for the "Runs on…" line: inline flow, so the words keep their one natural space; only the dot has a margin */
+  .footer__status::before {
+    content: ""; display: inline-block; vertical-align: middle; width: 8px; height: 8px; margin-inline-end: var(--space-2);
+    border-radius: 50%; background: var(--ok-dot);
+  }
 
   @media (max-width: 900px) {
     .footer__cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -641,7 +646,7 @@
 
   /* toasts live in a region outside any re-rendered container */
   .toast-region {
-    position: fixed; inset: calc(var(--space-4) + env(safe-area-inset-top, 0px)) 0 auto 0; z-index: 40;
+    position: fixed; inset: calc(var(--header-h) + var(--space-2) + env(safe-area-inset-top, 0px)) 0 auto 0; z-index: 40;
     display: flex; flex-direction: column; align-items: center; gap: var(--space-2); padding-inline: var(--space-4); pointer-events: none;
   }
   .toast {

@@ -8,7 +8,7 @@ const { ROOT, readRepo } = require('../test-support/paths');
 const { JARGON } = require('../test-support/copy');
 const { PLAIN_WRITING, BANNED_LIST } = require('../lib/writing');
 const { INSTRUCTIONS } = require('../lib/mcp');
-const { start, mkTmp, rmTmp } = require('../test-support/server');
+const { start, mkTmp, rmTmp, postJson, getView } = require('../test-support/server');
 const demo = require('../lib/demo');
 
 // Every string a person can read. Refs, claim IDs, depends_on and branch keys are protocol and are left out.
@@ -161,10 +161,7 @@ after(async () => {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function post(p, body) {
-  const res = await fetch(base + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
-  return { status: res.status, json: await res.json() };
-}
+const post = (p, body) => postJson(base, p, body);
 
 async function until(get, ok) {
   let v;
@@ -175,7 +172,7 @@ async function until(get, ok) {
 async function runBranch(option) {
   const { json: d } = await post('/api/demo');
   for (const seat of ['A', 'B']) assert.strictEqual((await post(`/api/rooms/${d.id}/seats/${seat}/seal`, { token: d.token })).status, 200);
-  const get = () => fetch(`${base}/api/rooms/${d.id}?seat=A&t=${d.token}`).then(r => r.json());
+  const get = async () => (await getView(base, d.id, 'A', d.token)).R;
   const asked = await until(get, v => v.status === 'paused' && v.pending);
   assert.strictEqual((await post(`/api/rooms/${d.id}/seats/A/answer`, { token: d.token, option: option })).status, 200);
   const done = await until(get, v => v.status !== 'negotiating' && v.status !== 'paused');

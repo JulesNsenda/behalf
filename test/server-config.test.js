@@ -11,46 +11,49 @@ const { parsePort } = require('../lib/port');
 
 const INDEX = path.join(ROOT, 'index.js');
 
-test('PORT with surrounding whitespace is trimmed and 0 binds a free port', async () => {
-  const dir = mkTmp('port-test-');
-  const s = await start(INDEX, { PORT: ' 0 ', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir });
-  try {
-    assert.strictEqual(s.exited, undefined, 'server exited: ' + s.out);
-    assert.ok(s.port > 0 && s.port !== 3000, 'port was ' + s.port);
-  } finally {
-    await s.stop();
-    rmTmp(dir);
-  }
-});
-
-test('parsePort accepts whole numbers 0..65535, trimmed, and falls back to 3000 otherwise', () => {
-  for (const [input, want] of [['0', 0], [' 0 ', 0], ['8080', 8080], [' 8080\n', 8080], ['65535', 65535], ['007', 7]]) {
-    assert.strictEqual(parsePort(input), want, JSON.stringify(input));
-  }
-  for (const bad of ['', '   ', '99999', '65536', 'abc', '8080abc', '-1', '1.5', '0x10', undefined]) {
-    assert.strictEqual(parsePort(bad), 3000, JSON.stringify(bad));
-  }
-});
-
-// One end-to-end check that index.js really applies the fallback. We hold 3000 ourselves so the
-// child dies with EADDRINUSE, which proves it tried 3000 without us ever serving on it.
-test('an invalid PORT makes the server try 3000', async (t) => {
-  const holder = net.createServer();
-  const held = await new Promise((resolve) => {
-    holder.once('error', (err) => resolve(err.code === 'EADDRINUSE' ? 'busy' : err)); // busy: someone else holds it, same effect
-    holder.listen(3000, '127.0.0.1', () => resolve('held'));
+// The servers these start are independent, so the tests run side by side.
+describe('PORT', { concurrency: true }, () => {
+  test('PORT with surrounding whitespace is trimmed and 0 binds a free port', async () => {
+    const dir = mkTmp('port-test-');
+    const s = await start(INDEX, { PORT: ' 0 ', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir });
+    try {
+      assert.strictEqual(s.exited, undefined, 'server exited: ' + s.out);
+      assert.ok(s.port > 0 && s.port !== 3000, 'port was ' + s.port);
+    } finally {
+      await s.stop();
+      rmTmp(dir);
+    }
   });
-  if (held instanceof Error) return t.skip('cannot bind 3000 here (' + held.code + ')');
-  const dir = mkTmp('port-test-');
-  try {
-    const s = await start(INDEX, { PORT: 'abc', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir });
-    await s.stop();
-    assert.strictEqual(s.port, undefined, `bound port ${s.port} instead of 3000`);
-    assert.ok(/EADDRINUSE/.test(s.out) && /3000/.test(s.out), 'expected EADDRINUSE on 3000, got:\n' + s.out);
-  } finally {
-    if (held === 'held') await new Promise((r) => holder.close(r));
-    rmTmp(dir);
-  }
+
+  test('parsePort accepts whole numbers 0..65535, trimmed, and falls back to 3000 otherwise', () => {
+    for (const [input, want] of [['0', 0], [' 0 ', 0], ['8080', 8080], [' 8080\n', 8080], ['65535', 65535], ['007', 7]]) {
+      assert.strictEqual(parsePort(input), want, JSON.stringify(input));
+    }
+    for (const bad of ['', '   ', '99999', '65536', 'abc', '8080abc', '-1', '1.5', '0x10', undefined]) {
+      assert.strictEqual(parsePort(bad), 3000, JSON.stringify(bad));
+    }
+  });
+
+  // One end-to-end check that index.js really applies the fallback. We hold 3000 ourselves so the
+  // child dies with EADDRINUSE, which proves it tried 3000 without us ever serving on it.
+  test('an invalid PORT makes the server try 3000', async (t) => {
+    const holder = net.createServer();
+    const held = await new Promise((resolve) => {
+      holder.once('error', (err) => resolve(err.code === 'EADDRINUSE' ? 'busy' : err)); // busy: someone else holds it, same effect
+      holder.listen(3000, '127.0.0.1', () => resolve('held'));
+    });
+    if (held instanceof Error) return t.skip('cannot bind 3000 here (' + held.code + ')');
+    const dir = mkTmp('port-test-');
+    try {
+      const s = await start(INDEX, { PORT: 'abc', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir });
+      await s.stop();
+      assert.strictEqual(s.port, undefined, `bound port ${s.port} instead of 3000`);
+      assert.ok(/EADDRINUSE/.test(s.out) && /3000/.test(s.out), 'expected EADDRINUSE on 3000, got:\n' + s.out);
+    } finally {
+      if (held === 'held') await new Promise((r) => holder.close(r));
+      rmTmp(dir);
+    }
+  });
 });
 
 // ---- BUILD fingerprint ignores docs/ ----

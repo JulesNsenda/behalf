@@ -57,4 +57,18 @@ function makeSrc(extra = {}) {
   return dir;
 }
 
-module.exports = { baseEnv, start, mkTmp, rmTmp, makeSrc };
+// POST a JSON body to a running server: resolves {status, json}. headers adds to the defaults (the /mcp
+// endpoint wants an accept header).
+async function postJson(base, p, body, headers) {
+  const res = await fetch(base + p, { method: 'POST', headers: Object.assign({ 'content-type': 'application/json' }, headers), body: JSON.stringify(body || {}) });
+  return { status: res.status, json: await res.json() };
+}
+
+// One room's view as a seat (or as a spectator, with no seat): resolves {status, R}, R null unless it was a 200.
+async function getView(base, id, seat, token) {
+  const q = seat ? `?seat=${seat}&t=${encodeURIComponent(token)}` : '';
+  const res = await fetch(`${base}/api/rooms/${id}${q}`);
+  return { status: res.status, R: res.status === 200 ? await res.json() : null };
+}
+
+module.exports = { baseEnv, start, mkTmp, rmTmp, makeSrc, postJson, getView };

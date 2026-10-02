@@ -1,17 +1,14 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
-const path = require('node:path');
 
-const { WEB, readRepo } = require('../test-support/paths');
-const { codeOf, assertPure } = require('../test-support/source');
+const { readRepo } = require('../test-support/paths');
+const { loadPure } = require('../test-support/source');
 const { JARGON } = require('../test-support/copy');
 const pxp = require('../lib/pxp');
 
-const RV_PATH = path.join(WEB, 'js', 'room-view.js');
 // No window here, so room-view.js sets module.exports.
-assert.strictEqual(typeof globalThis.window, 'undefined');
-const RV = require(RV_PATH);
+const { mod: RV, assertClean } = loadPure('room-view');
 
 // ---- hand-built view fixtures (no demo text) ----
 function seat(name, over) {
@@ -55,28 +52,29 @@ test('step: every key it can return is a declared step', () => {
       }
     }
   }
-  for (const k of ['invalid-link', 'preview', 'welcome', 'instructions', 'ready', 'conversation', 'spectator-drafting', 'demo-intro']) {
-    assert.ok(seen.has(k), `${k} is reachable`);
-  }
+  for (const k of RV.STEPS.filter((k) => k !== 'not-found')) assert.ok(seen.has(k), `${k} is reachable`);
+  assert.ok(!RV.STEPS.includes('invalid-link') && !RV.STEPS.includes('preview'), 'banners, not steps');
 });
 
 test('step: invalid link (credentials in the URL, no confirmed seat)', () => {
   const s = RV.step(view(), { hadCredentials: true });
-  assert.strictEqual(s.key, 'invalid-link');
+  assert.strictEqual(s.key, 'spectator-drafting');
+  assert.strictEqual(s.banner, 'invalid-link');
   assert.strictEqual(s.readOnly, true);
-  assert.strictEqual(s.then, 'spectator-drafting');
-  assert.strictEqual(RV.step(view({ status: 'negotiating' }), { hadCredentials: true }).then, 'conversation');
+  const later = RV.step(view({ status: 'negotiating' }), { hadCredentials: true });
+  assert.deepStrictEqual([later.key, later.banner, later.readOnly, later.connectCallout], ['conversation', 'invalid-link', true, false]);
 });
 
 test('step: bad token behaves like a missing seat, whatever the URL said', () => {
   // The server confirms seats. A URL that says seat=A with a wrong token arrives as R.seat === null.
   const s = RV.step(view({ seat: null }), { hadCredentials: true, welcomeSeen: true, previewSeat: 'B' });
-  assert.strictEqual(s.key, 'invalid-link');
+  assert.strictEqual(s.banner, 'invalid-link');
   assert.notStrictEqual(s.key, 'instructions');
 });
 
 test('step: no credentials in the URL and no seat is a spectator, not an invalid link', () => {
   assert.strictEqual(RV.step(view(), { hadCredentials: false }).key, 'spectator-drafting');
+  assert.strictEqual(RV.step(view(), { hadCredentials: false }).banner, null);
   const s = RV.step(view({ status: 'negotiating' }), {});
   assert.strictEqual(s.key, 'conversation');
   assert.strictEqual(s.readOnly, true);
@@ -84,11 +82,11 @@ test('step: no credentials in the URL and no seat is a spectator, not an invalid
 
 test('step: a demo room never shows the invalid-link step', () => {
   assert.strictEqual(RV.step(view({ demo: true }), { hadCredentials: true }).key, 'spectator-drafting');
+  assert.strictEqual(RV.step(view({ demo: true }), { hadCredentials: true }).banner, null);
 });
 
 test('step: preview only while the previewed seat has not locked, and only without a seat', () => {
-  assert.strictEqual(RV.step(view(), { previewSeat: 'B' }).key, 'preview');
-  assert.strictEqual(RV.step(view(), { previewSeat: 'B' }).readOnly, true);
+  assert.deepStrictEqual(RV.step(view(), { previewSeat: 'B' }), { key: 'welcome', banner: 'preview', readOnly: true, connectCallout: false });
   assert.strictEqual(RV.step(view(), { previewSeat: 'C' }).key, 'spectator-drafting');
   assert.strictEqual(RV.step(view(), { previewSeat: 'A' }).key, 'spectator-drafting', 'only the invited person is previewed');
   assert.strictEqual(RV.step(view({ seats: { A: seat('L'), B: seat('K', sealed) } }), { previewSeat: 'B' }).key, 'spectator-drafting');
@@ -252,8 +250,15 @@ test('canAnswer / waitingEvent / problem', () => {
   // R.turn is whose turn it was when it failed, read relative to the viewer
   assert.deepStrictEqual(RV.problem(view({ status: 'error', seat: 'A', turn: 'A' })), { text: 'Your AI hit a problem.', canResume: true });
   assert.deepStrictEqual(RV.problem(view({ status: 'error', seat: 'A', turn: 'B' })), { text: "Kwame's AI hit a problem.", canResume: true });
-  assert.deepStrictEqual(RV.problem(view({ status: 'paused', interrupted: true, seat: 'B', turn: 'B' })), { text: 'Your AI hit a problem.', canResume: true });
-  assert.deepStrictEqual(RV.problem(view({ status: 'paused', interrupted: true, seat: 'B', turn: 'A' })), { text: "Lerato's AI hit a problem.", canResume: true });
+  // a restart is nobody's fault: interrupted with no error says so, and a seat can resume
+  const RESTART = 'The room was interrupted when the server restarted.';
+  assert.deepStrictEqual(RV.problem(view({ status: 'paused', interrupted: true, seat: 'B', turn: 'B' })), { text: RESTART, canResume: true });
+  assert.deepStrictEqual(RV.problem(view({ status: 'paused', interrupted: true, seat: 'B', turn: 'A' })), { text: RESTART, canResume: true });
+  assert.deepStrictEqual(RV.problem(view({ status: 'paused', interrupted: true, turn: 'A' })), { text: RESTART, canResume: false });
+  // a real failure still blames the AI, even if the flag is also set
+  assert.deepStrictEqual(RV.problem(view({ status: 'error', interrupted: true, error: 'boom', seat: 'B', turn: 'A' })), { text: "Lerato's AI hit a problem.", canResume: true });
+  assert.deepStrictEqual(RV.problem(view({ status: 'error', interrupted: false, error: 'boom', seat: 'B', turn: 'B' })), { text: 'Your AI hit a problem.', canResume: true });
+  assert.ok(!JARGON.test(RESTART));
   assert.deepStrictEqual(RV.problem(view({ status: 'error', turn: 'A' })), { text: 'An AI hit a problem.', canResume: false });
   assert.deepStrictEqual(RV.problem(view({ status: 'error', seat: 'A', turn: null })), { text: 'An AI hit a problem.', canResume: true });
   assert.strictEqual(RV.problem(view({ status: 'paused', interrupted: true, pending: p })), null);
@@ -277,17 +282,40 @@ test('guessCount: after an agreement counts brief.unverified_dependencies only',
   assert.strictEqual(RV.guessCount(view({ status: 'agreed', claims, brief: {} })), 0);
 });
 
+test('noDealReason: names the turn limit only when it is a positive whole number', () => {
+  assert.strictEqual(RV.noDealReason(view({ maxTurns: 8 })), "The AIs didn't agree within 8 turns.");
+  const FALLBACK = "The AIs didn't agree in the turns they had.";
+  for (const bad of [undefined, null, 0, -3, 2.5, NaN, Infinity, '12', {}, [12]]) {
+    assert.strictEqual(RV.noDealReason(view({ maxTurns: bad })), FALLBACK, String(bad));
+    assert.strictEqual(RV.outcome(view({ status: 'stalled', maxTurns: bad })).text, 'No deal. ' + FALLBACK);
+  }
+  assert.strictEqual(RV.noDealReason(null), FALLBACK);
+  assert.ok(!JARGON.test(FALLBACK));
+});
+
 test('guessPill and outcome wording', () => {
   assert.strictEqual(RV.guessPill(view({ claims: [] })), null);
   assert.strictEqual(RV.guessPill(view({ claims: [{ id: 'A1.1', verified: false }] })), '1 guess not confirmed');
   assert.strictEqual(RV.guessPill(view({ claims: [{ verified: false }, { verified: false }] })), '2 guesses not confirmed');
   const dep = (n) => ({ unverified_dependencies: Array.from({ length: n }, (_, i) => ({ id: 'A1.' + i })) });
-  assert.deepStrictEqual(RV.outcome(view({ status: 'agreed', brief: dep(0) })), { tone: 'ok', text: 'Deal reached. Nothing unconfirmed.' });
-  assert.deepStrictEqual(RV.outcome(view({ status: 'agreed', brief: dep(1) })), { tone: 'warn', text: 'Deal reached, with 1 unconfirmed point' });
-  assert.deepStrictEqual(RV.outcome(view({ status: 'agreed', brief: dep(3) })), { tone: 'warn', text: 'Deal reached, with 3 unconfirmed points' });
-  assert.deepStrictEqual(RV.outcome(view({ status: 'stalled' })), { tone: 'warn', text: 'No deal' });
+  const SEE = 'See the agreement';
+  const FAILED = 'See what happened';
+  assert.deepStrictEqual(RV.outcome(view({ status: 'agreed', brief: dep(0) })), { tone: 'ok', text: 'Deal reached. Nothing unconfirmed.', linkLabel: SEE, replayable: false });
+  assert.deepStrictEqual(RV.outcome(view({ status: 'agreed', brief: dep(1) })), { tone: 'warn', text: 'Deal reached, with 1 unconfirmed point', linkLabel: SEE, replayable: false });
+  assert.deepStrictEqual(RV.outcome(view({ status: 'agreed', brief: dep(3) })), { tone: 'warn', text: 'Deal reached, with 3 unconfirmed points', linkLabel: SEE, replayable: false });
+  assert.deepStrictEqual(RV.outcome(view({ status: 'stalled' })), { tone: 'warn', text: "No deal. The AIs didn't agree within 12 turns.", linkLabel: FAILED, replayable: false });
+  assert.deepStrictEqual(RV.outcome(view({ status: 'stalled', maxTurns: 1 })), { tone: 'warn', text: "No deal. The AIs didn't agree within 1 turn.", linkLabel: FAILED, replayable: false });
   assert.strictEqual(RV.outcome(view({ status: 'negotiating' })), null);
   assert.strictEqual(RV.outcome(null), null);
+});
+
+test('outcome: replayable only for the viewer of a demo that has ended', () => {
+  const ended = { status: 'agreed', brief: { unverified_dependencies: [] } };
+  assert.strictEqual(RV.outcome(view({ ...ended, demo: true, seat: 'A' })).replayable, true);
+  assert.strictEqual(RV.outcome(view({ ...ended, demo: true, seat: null })).replayable, false, 'a spectator can not replay');
+  assert.strictEqual(RV.outcome(view({ ...ended, demo: false, seat: 'A' })).replayable, false, 'a real room is not replayed');
+  assert.strictEqual(RV.outcome(view({ status: 'stalled', demo: true, seat: 'B' })).replayable, true);
+  assert.strictEqual(RV.outcome(view({ status: 'negotiating', demo: true, seat: 'A' })), null);
 });
 
 // ---------- names ----------
@@ -335,6 +363,28 @@ test('names: a reserved name or the other person\'s first name becomes "Person A
   // the viewer's own labels stay unambiguous
   const R = names('You', 'Kwame', { seat: 'B' });
   assert.notStrictEqual(RV.aiName(R, 'A'), RV.aiName(view({ seat: 'A' }), 'A'));
+});
+
+test('names: the joiners a spelling needs stay, the rest of the format characters go', () => {
+  const ZWNJ = '\u200C';
+  const ZWJ = '\u200D';
+  const persian = 'می' + ZWNJ + 'خواهم'; // "mi-khaham": the ZWNJ is part of the spelling
+  assert.strictEqual(RV.str(persian), persian);
+  assert.strictEqual(RV.str(persian + '\u200B'), persian, 'the zero-width space still goes');
+  const family = '👩' + ZWJ + '👩' + ZWJ + '👧'; // an emoji sequence held together by joiners
+  assert.strictEqual(RV.str(family), family);
+  assert.strictEqual(RV.str('a\u200Bb\u00ADc\uFEFFd\u202Ee\u2066f\u200Eg'), 'abcdefg');
+  // a name keeps its joiners when shown
+  const R = named(persian + ' Rezai', 'Kwame');
+  assert.strictEqual(RV.firstName(R, 'A'), persian);
+  assert.strictEqual(RV.aiName(R, 'A'), persian + "'s AI");
+  assert.strictEqual(RV.firstName(named('Sam' + ZWJ + '👩', 'Kwame'), 'A'), 'Sam' + ZWJ + '👩');
+  // ...but a joiner can't be used to slip past the reserved-name guard or the clash check
+  for (const bad of ['Yo' + ZWJ + 'u', 'Y' + ZWNJ + 'o' + ZWNJ + 'u', ZWJ + 'your']) {
+    assert.strictEqual(RV.firstName(named('Lerato', bad), 'B'), 'Person B', JSON.stringify(bad));
+  }
+  assert.strictEqual(RV.firstName(named('Kwame', 'Kw' + ZWJ + 'ame'), 'B'), 'Person B', 'a joiner inside a lookalike of the other name');
+  assert.strictEqual(RV.firstName(named('Kwame', 'Kw' + ZWJ + 'ame'), 'A'), 'Person A');
 });
 
 test('otherSeat and creatorName', () => {
@@ -552,8 +602,8 @@ test('escalationEvents: asked and answered, for another person and for the viewe
   const env = { from: { seat: 'A' }, escalation: { question: 'Is a duplicate ok?', reason: 'r' }, answer: 'No', answer_via: 'web' };
   const them = RV.escalationEvents(view({ seat: 'B' }), env);
   assert.deepStrictEqual(them, [
-    { kind: 'asked', lead: "Lerato's AI asked Lerato:", body: 'Is a duplicate ok?' },
-    { kind: 'answered', lead: 'Lerato answered:', body: 'No' },
+    { kind: 'asked', lead: "Lerato's AI asked Lerato:", body: 'Is a duplicate ok?', quote: '“Is a duplicate ok?”' },
+    { kind: 'answered', lead: 'Lerato answered:', body: 'No', quote: '“No”' },
   ]);
   const me = RV.escalationEvents(view({ seat: 'A' }), env);
   assert.strictEqual(me[0].lead, 'Your AI asked you:');
@@ -586,7 +636,7 @@ test('messageView: everything one message needs, for the viewer and for the othe
   };
   const R = view({ seat: 'A', claims: [{ id: 'B3.1', verified: false, reviews: [] }] });
   const m = RV.messageView(R, env);
-  assert.deepStrictEqual(Object.keys(m).sort(), ['acceptEvent', 'announce', 'ariaLabel', 'claims', 'end', 'escalationEvents', 'flags', 'proposal', 'seat', 'seq', 'speaker']);
+  assert.deepStrictEqual(Object.keys(m).sort(), ['acceptEvent', 'announce', 'ariaLabel', 'claims', 'end', 'escalationEvents', 'flags', 'message', 'proposal', 'seat', 'seq', 'speaker']);
   assert.strictEqual(m.seq, 3);
   assert.strictEqual(m.seat, 'B');
   assert.strictEqual(m.end, false);
@@ -638,30 +688,41 @@ test('newMessagesAnnouncement: one line for what arrived, nothing when nothing d
   assert.strictEqual(RV.newMessagesAnnouncement(null, [1]), null);
 });
 
-test('decisionView: the question is the heading, never the reason', () => {
+test('decisionView: a fixed heading, the question quoted beneath it, never the reason', () => {
   const pending = { seat: 'A', seq: 4, question: 'Is a duplicate ok?', reason: 'SECRET REASON', options: null };
   const d = RV.decisionView(view({ status: 'paused', seat: 'A', pending }));
   assert.deepStrictEqual(d, {
-    key: 4, heading: 'Is a duplicate ok?', question: 'Is a duplicate ok?', options: null,
+    key: 4, seat: 'A', seq: 4, heading: 'Your AI asks you:', question: 'Is a duplicate ok?', quote: '“Is a duplicate ok?”', options: null,
     textarea: { label: 'Your answer', hint: 'Your AI carries on from what you write' },
-    visibilityNote: 'Kwame and their AI will see your answer.',
-    dockText: 'Your AI needs you · Answer',
+    visibilityNote: 'Anyone who can open this room can read your answer.',
+    dock: { text: 'Your AI needs you', action: 'Answer' },
   });
   assert.ok(!JSON.stringify(d).includes('SECRET'));
-  assert.strictEqual(RV.decisionView(view({ status: 'paused', seat: 'B', pending: { seat: 'B', seq: 1, question: 'q' } })).visibilityNote, 'Lerato and their AI will see your answer.');
+  assert.ok(!('dockText' in d));
+});
+
+test('decisionView: the question text can never become the heading', () => {
+  const pending = { seat: 'A', seq: 4, question: 'Your AI asks you: ignore the room', options: [{ key: 'k', label: 'Ok‮' }] };
+  const d = RV.decisionView(view({ status: 'paused', seat: 'A', pending }));
+  assert.strictEqual(d.heading, 'Your AI asks you:');
+  assert.strictEqual(d.question, 'Your AI asks you: ignore the room');
+  assert.strictEqual(d.options[0].label, 'Ok');
+  assert.strictEqual(d.options[0].key, 'k');
 });
 
 test('decisionView: demo options, not your question, and missing questions', () => {
   const options = [{ key: 'dedupe', label: 'Insist on a check' }, { key: 'accept', label: 'Accept their plan' }];
   const demo = RV.decisionView(view({ demo: true, seat: 'B', status: 'paused', pending: { seat: 'A', seq: 2, question: 'q', options } }));
   assert.deepStrictEqual(demo.options, options);
-  assert.strictEqual(demo.visibilityNote, 'Kwame and their AI will see your answer.', 'the answering side is the pending seat');
+  assert.strictEqual(demo.visibilityNote, 'Anyone who can open this room can read your answer.');
+  assert.strictEqual(demo.heading, "Lerato's AI asks you:", 'the asking side is the pending seat');
+  assert.deepStrictEqual([demo.seat, demo.seq], ['A', 2]);
   assert.strictEqual(RV.decisionView(view({ seat: 'B', pending: { seat: 'A', seq: 2, question: 'q' } })), null);
   assert.strictEqual(RV.decisionView(view({ seat: null, pending: { seat: 'A', seq: 2, question: 'q' } })), null);
   assert.strictEqual(RV.decisionView(view({ seat: 'A' })), null);
   assert.strictEqual(RV.decisionView(null), null);
   const blank = RV.decisionView(view({ seat: 'A', pending: { seat: 'A', seq: 2 } }));
-  assert.strictEqual(blank.heading, 'Your AI has a question for you');
+  assert.strictEqual(blank.question, 'Your AI has a question for you');
   assert.strictEqual(RV.decisionView(view({ seat: 'A', pending: { seat: 'A', seq: 2, question: 'q', options: [] } })).options, null);
 });
 
@@ -710,7 +771,7 @@ test('recordEntry: covers every ledger type the server writes', () => {
 
 // ---------- errors ----------
 test('errorMessage: fixed sentences per action, status-specific where it helps', () => {
-  const actions = ['seal', 'draft', 'answer', 'resume', 'create', 'demo'];
+  const actions = ['seal', 'draft', 'answer', 'resume', 'create', 'demo', 'load'];
   for (const a of actions) {
     const m = RV.errorMessage(a, 500);
     assert.ok(m.length > 10 && /[.]$/.test(m), a);
@@ -956,9 +1017,45 @@ test('INSTRUCTION_FIELDS: the six plain fields with their hints', () => {
   for (const x of f.slice(1)) assert.ok(pxp.LIST_FIELDS.includes(x.key), x.key);
 });
 
+// ---------- page text ----------
+test('pageText: names come from the view, never the URL, and nothing is jargon', () => {
+  const R = view({ seat: 'B', topic: 'Shop setup' });
+  const T = RV.pageText(R);
+  assert.strictEqual(T.invalidLink, "This link doesn't open your place in the room. Ask Lerato to send it again, and copy the whole link.");
+  assert.strictEqual(T.welcomeTitle, 'Lerato wants to agree on: Shop setup');
+  assert.strictEqual(T.readyWaiting, 'Waiting for Lerato to finish.');
+  assert.strictEqual(T.inviteLabel, "Lerato's invite link");
+  assert.strictEqual(T.previewBanner, "This is a preview. Only Kwame's own link can act for them.");
+  assert.strictEqual(T.demoBanner, "You're Lerato in this demo. Lerato's AI talks to Kwame's AI.");
+  assert.strictEqual(RV.proposes("Kwame's AI"), "Kwame's AI proposes");
+  assert.strictEqual(T.reassure[0], "Anyone who can open this room can read your answers to your AI's questions. Your instructions aren't shown, but your AI may quote parts of them.");
+  assert.ok(Object.values(T).every((v) => typeof v !== 'function'), 'plain strings only');
+  assert.strictEqual(RV.pageText(view({ demo: true })).instructionsSummary, 'Instructions');
+  assert.strictEqual(RV.pageText(null).notFoundTitle, "We couldn't find this room.");
+  const flat = JSON.stringify(T, (k, v) => (typeof v === 'function' ? undefined : v));
+  assert.ok(!JARGON.test(flat), flat);
+});
+
+test('str removes bidi controls and agentPrompt names the link', () => {
+  assert.strictEqual(RV.str('a‮b⁦c⁩d'), 'abcd');
+  assert.strictEqual(RV.str('a؜b‎c‏d​e­f﻿g'), 'abcdefg', 'every format character goes');
+  assert.strictEqual(RV.str(null), '');
+  assert.strictEqual(RV.stripBidi, undefined, 'str is the only cleaner');
+  assert.ok(RV.agentPrompt('https://x.test/room/1').startsWith('Represent me in this room: https://x.test/room/1'));
+});
+
+test('the dock says what it says and what its button does, from decisionView', () => {
+  const R = view({ seat: 'A', status: 'paused', pending: { seat: 'A', seq: 3, question: 'Q?' } });
+  assert.deepStrictEqual(RV.decisionView(R).dock, { text: 'Your AI needs you', action: 'Answer' });
+  assert.strictEqual(RV.decisionView(view()), null);
+  assert.strictEqual(RV.dockParts, undefined);
+  assert.strictEqual(RV.instructionsHeading(R, 'A'), 'Your instructions');
+  assert.strictEqual(RV.instructionsHeading(R, 'B'), "Kwame's instructions");
+});
+
 // ---------- purity and plain language ----------
 test('room-view is pure: no DOM, UI, markup or storage', () => {
-  assertPure(codeOf(RV_PATH));
+  assertClean();
 });
 
 test('every reader-facing string avoids protocol jargon', () => {
@@ -984,4 +1081,297 @@ test('escalation with no question gets the plain fallback sentence, not protocol
   }
   const given = pxp.buildEnvelope(fakeRoom(), 'A', { status: 'escalate', say: 'x', escalation: { question: 'Real question?' } });
   assert.strictEqual(given.escalation.question, 'Real question?');
+});
+
+// ---------- names: one normalisation point ----------
+const named = (a, b, seatId) => view({ seat: seatId || 'B', seats: { A: seat(a), B: seat(b) } });
+
+test('names: format characters, a soft hyphen and lookalike letters never pass for "You"', () => {
+  for (const name of ['Yo­u', 'You​', 'Yоu', 'YOU', '‎you', 'yοu', 'Your⁠', 'Ｙou']) {
+    const R = named('Lerato', name);
+    assert.strictEqual(RV.firstName(R, 'B'), 'Person B', JSON.stringify(name));
+    assert.strictEqual(RV.aiName(R, 'B'), 'Your AI');
+    assert.strictEqual(RV.who(view({ seat: 'A', seats: { A: seat('Lerato'), B: seat(name) } }), 'B', 'You'), 'Person B');
+  }
+});
+
+test("names: a name that looks like the other seat's is caught, a different one is kept and shown unfolded", () => {
+  const R = named('Kwame', 'Kwаme');
+  assert.strictEqual(RV.firstName(R, 'A'), 'Person A');
+  assert.strictEqual(RV.firstName(R, 'B'), 'Person B');
+  assert.strictEqual(RV.firstName(named('Kwame', 'Kwame​'), 'B'), 'Person B');
+  assert.strictEqual(RV.firstName(named('Lerato', 'Kаme'), 'B'), 'Kаme', 'shown as given, never folded');
+  assert.strictEqual(RV.firstName(named('Lerato', 'Ka­me'), 'B'), 'Kame');
+  assert.strictEqual(RV.firstName(named('Lerato', 'Ｋwame'), 'B'), 'Kwame', 'NFKC');
+});
+
+test('names: bidi and format characters in a name are stripped from every derived label', () => {
+  const R = view({ seat: 'A', seats: { A: seat('Lerato'), B: seat('Kw‮ame') } });
+  const env = { seq: 2, from: { seat: 'B' }, status: 'escalate', message: 'm', escalation: { question: 'q' }, answer: 'a' };
+  const mv = RV.messageView(R, env);
+  const all = JSON.stringify([mv, RV.pageText(R), RV.status(R), RV.recordEntry(R, { type: 'escalation', data: { seat: 'B' } })]);
+  assert.ok(!/[‪-‮⁦-⁩​-‏­؜]/.test(all), all);
+  assert.strictEqual(mv.speaker, "Kwame's AI");
+  assert.ok(RV.pageText(R).previewBanner.includes('Kwame'));
+});
+
+test('agent text is stripped of format characters wherever the views return it', () => {
+  const bad = 'a‮b‏c؜d';
+  const R = view({ seat: 'A', claims: [{ id: 'B1.1', verified: false, reviews: [{ by: 'A', verdict: 'challenge', reason: bad }] }] });
+  const env = {
+    seq: 1, from: { seat: 'B' }, status: 'escalate', message: bad,
+    claims: [{ id: 'B1.1', text: bad, origin: 'stated', ref: bad }],
+    proposal: { terms: [bad] }, escalation: { question: bad }, answer: bad,
+    protocol_flags: ['Claim "' + bad + '" was tagged stated without a reference; downgraded to assumed.'],
+  };
+  const pending = { seat: 'A', seq: 1, question: bad, options: [{ key: 'k', label: bad }] };
+  const out = JSON.stringify([RV.messageView(R, env), RV.decisionView(view({ seat: 'A', pending }))]);
+  assert.ok(!/[‪-‮​-‏؜]/.test(out), out);
+  assert.ok(out.includes('abcd'));
+});
+
+test("isPlaceholderName: only the view's \"Seat A\" / \"Seat B\"", () => {
+  for (const ok of ['Seat A', 'Seat B', ' Seat B ', 'Seat​ A']) assert.strictEqual(RV.isPlaceholderName(ok), true, ok);
+  for (const no of ['Seat C', 'Seat', 'Kwame', '', null, undefined, 'My Seat A']) assert.strictEqual(RV.isPlaceholderName(no), false, String(no));
+});
+
+// ---------- attribution of agent text ----------
+test("flags: the room's sentence stays fixed and the quoted claim is attributed to the AI that wrote it", () => {
+  const env = { seq: 1, from: { seat: 'B' }, status: 'continue', protocol_flags: [REAL_FLAGS.noRef[0]] };
+  const mine = RV.messageView(view({ seat: 'B' }), env).flags[0];
+  const theirs = RV.messageView(view({ seat: 'A' }), env).flags[0];
+  assert.strictEqual(mine.quote, 'Your AI wrote: “The webhook is "reliable"”');
+  assert.strictEqual(theirs.quote, 'Kwame\'s AI wrote: “The webhook is "reliable"”');
+  assert.strictEqual(theirs.line, RV.stoppedLine(theirs.sentence));
+  assert.strictEqual(theirs.line, 'The room stopped this: ' + theirs.sentence);
+  assert.ok(!theirs.line.includes('webhook'), "the quote is never part of the room's sentence");
+  const plain = RV.messageView(view({ seat: 'A' }), { seq: 1, from: { seat: 'B' }, protocol_flags: [REAL_FLAGS.conflict[0]] }).flags[0];
+  assert.strictEqual(plain.quote, null);
+});
+
+test('escalation lines and claim details are quoted', () => {
+  const env = { seq: 1, from: { seat: 'B' }, status: 'escalate', escalation: { question: 'Ok?' }, answer: 'Yes',
+    claims: [{ id: 'B1.1', text: 'c', origin: 'stated', ref: 'free text' }] };
+  const mv = RV.messageView(view({ seat: 'A' }), env);
+  assert.strictEqual(mv.escalationEvents[0].lead, "Kwame's AI asked Kwame:");
+  assert.strictEqual(mv.escalationEvents[0].quote, '“Ok?”');
+  assert.strictEqual(mv.escalationEvents[1].quote, '“Yes”');
+  assert.strictEqual(mv.claims[0].detailQuote, '“free text”');
+  assert.strictEqual(RV.claimView(view(), { id: 'A1.1', origin: 'assumed', text: 'x' }).detailQuote, null);
+});
+
+test('composed wording: reviewLine, stoppedLine, recordLine, docTitle', () => {
+  assert.strictEqual(RV.reviewLine({ sentence: "Kwame's AI disagrees with this", reason: 'too high' }), "Kwame's AI disagrees with this: too high");
+  assert.strictEqual(RV.reviewLine({ sentence: 'x', reason: '' }), 'x');
+  assert.strictEqual(RV.recordLine(view({ seat: 'A' }), { n: 3, type: 'card_sealed', data: { seat: 'A' } }), '3. You locked your instructions');
+  assert.strictEqual(RV.docTitle(view({ topic: 'Shop‮ setup' })), 'Shop setup · Proxy Room');
+  assert.strictEqual(RV.docTitle(null), 'Room · Proxy Room');
+});
+
+// ---------- page text without names ----------
+test('pageText(null): no name-shaped holes in any string', () => {
+  const walk = (v, out) => {
+    if (typeof v === 'string') out.push(v);
+    else if (Array.isArray(v)) v.forEach((x) => walk(x, out));
+    else if (v && typeof v === 'object') Object.values(v).forEach((x) => walk(x, out));
+    return out;
+  };
+  for (const T of [RV.pageText(null), RV.pageText(view({ seat: null })), RV.pageText(view({ seats: { A: seat(''), B: seat('') } }))]) {
+    for (const s of walk(T, [])) {
+      assert.ok(!s.includes('  '), JSON.stringify(s));
+      assert.ok(!s.includes(" 's"), JSON.stringify(s));
+      assert.ok(!/^\s|^'s|\s$/.test(s), JSON.stringify(s));
+      assert.ok(!/\bundefined\b|\bnull\b/.test(s), JSON.stringify(s));
+    }
+  }
+  const T = RV.pageText(null);
+  assert.strictEqual(T.inviteLabel, "The other person's invite link");
+  assert.ok(T.invalidLink.includes('the person who set up the room'));
+});
+
+test('pageText: honest visibility wording and the new copy', () => {
+  const T = RV.pageText(view({ seat: 'B' }));
+  assert.ok(T.reassure[0].startsWith('Anyone who can open this room can read your answers'));
+  assert.strictEqual(T.whoOwn.note, 'Your agent takes your place when it connects.');
+  assert.strictEqual(T.connectFirst, "Connect your agent before you lock your instructions. Once the conversation starts, our AI speaks for you and your agent can't take over.");
+  assert.strictEqual(T.connectCallout.text, 'Add the connector address to your app, then send it the message below.');
+  assert.strictEqual(T.externalCallout, 'Lock your instructions here, or let your agent fill them in with you.');
+  assert.ok(T.lockNote.startsWith("When you lock these instructions, your AI can't quietly change them"));
+  assert.strictEqual(T.continueOwnButton, 'Continue');
+  assert.strictEqual(T.agentConnected, 'Your agent is connected');
+  assert.strictEqual(T.reconnecting, 'Reconnecting…');
+  assert.strictEqual(T.stopped, undefined);
+});
+
+// ---------- chat reconciliation ----------
+test('planChat: add, replace and remove by sequence number', () => {
+  const env = (seq, answer) => ({ seq, from: { seat: 'A' }, status: 'continue', answer });
+  const R0 = view({ envelopes: [env(1), env(2)] });
+  const fps = {};
+  for (const e of R0.envelopes) fps[e.seq] = RV.fingerprint(R0, e);
+  assert.deepStrictEqual(RV.planChat({}, R0), { add: [1, 2], replace: [], remove: [], fps, prev: {} });
+  assert.deepStrictEqual(RV.planChat(fps, R0), { add: [], replace: [], remove: [], fps, prev: fps });
+  const R1 = view({ envelopes: [env(1), env(2, 'Yes'), env(3)] });
+  const fps1 = {};
+  for (const e of R1.envelopes) fps1[e.seq] = RV.fingerprint(R1, e);
+  assert.deepStrictEqual(RV.planChat(fps, R1), { add: [3], replace: [2], remove: [], fps: fps1, prev: fps });
+  assert.deepStrictEqual(RV.planChat(fps, view({ envelopes: [env(2)] })), { add: [], replace: [], remove: [1], fps: { 2: fps[2] }, prev: fps });
+  assert.deepStrictEqual(RV.planChat(null, view()), { add: [], replace: [], remove: [], fps: {}, prev: {} });
+  assert.deepStrictEqual(RV.planChat(fps, null), { add: [], replace: [], remove: [1, 2], fps: {}, prev: fps });
+  const R2 = view({ envelopes: [env(1)], claims: [{ id: 'A1.1', reviews: [] }] });
+  R2.envelopes[0].claims = [{ id: 'A1.1', text: 't', origin: 'assumed' }];
+  const prev = { 1: RV.fingerprint(R2, R2.envelopes[0]) };
+  R2.claims[0].reviews = [{ by: 'B', verdict: 'conflict' }];
+  assert.deepStrictEqual(RV.planChat(prev, R2).replace, [1], 'a review verdict change replaces the bubble');
+});
+
+test('planChat: fps are the fingerprints of the new view, built from one claims map', () => {
+  const R = view({
+    envelopes: [{ seq: 1, from: { seat: 'A' }, status: 'continue', claims: [{ id: 'A1.1' }] }, { seq: 2, from: { seat: 'B' }, status: 'continue', claims: [{ id: 'A1.1' }] }],
+    claims: [{ id: 'A1.1', reviews: [{ by: 'B', verdict: 'conflict' }] }],
+  });
+  const plan = RV.planChat({}, R);
+  assert.deepStrictEqual(plan.add, [1, 2]);
+  for (const e of R.envelopes) assert.strictEqual(plan.fps[e.seq], RV.fingerprint(R, e));
+  // a caller that already has the claims map gets the same answer
+  const byId = { 'A1.1': R.claims[0] };
+  assert.strictEqual(RV.fingerprint(R, R.envelopes[0], byId), plan.fps[1]);
+  // feeding the fps back is a no-op plan
+  assert.deepStrictEqual(RV.planChat(plan.fps, R), { add: [], replace: [], remove: [], fps: plan.fps, prev: plan.fps });
+});
+
+test('chatAnnouncement: one line for new messages plus answers added to existing ones', () => {
+  const esc = (seq, answer) => ({ seq, from: { seat: 'B' }, status: 'escalate', escalation: { question: 'q' }, answer });
+  const msg = (seq) => ({ seq, from: { seat: 'B' }, status: 'continue' });
+  const prevR = view({ seat: 'A', envelopes: [esc(1)] });
+  const prev = { 1: RV.fingerprint(prevR, prevR.envelopes[0]) };
+  // an answer arrives on an existing bubble
+  let R = view({ seat: 'A', envelopes: [esc(1, 'Yes')] });
+  assert.strictEqual(RV.chatAnnouncement(R, RV.planChat(prev, R), prev), 'Kwame answered');
+  R = view({ seat: 'B', envelopes: [esc(1, 'Yes')] });
+  assert.strictEqual(RV.chatAnnouncement(R, RV.planChat(prev, R), prev), 'You answered');
+  // a new message only
+  R = view({ seat: 'A', envelopes: [esc(1), msg(2)] });
+  assert.strictEqual(RV.chatAnnouncement(R, RV.planChat(prev, R), prev), "Kwame's AI sent a message");
+  // an answer and a new message: one combined line
+  R = view({ seat: 'A', envelopes: [esc(1, 'Yes'), msg(2)] });
+  assert.strictEqual(RV.chatAnnouncement(R, RV.planChat(prev, R), prev), '2 new updates');
+  // a review verdict change alone says nothing
+  R = view({ seat: 'A', claims: [{ id: 'B1.1', reviews: [{ by: 'A', verdict: 'conflict' }] }], envelopes: [Object.assign(esc(1), { claims: [{ id: 'B1.1', text: 't', origin: 'assumed' }] })] });
+  assert.strictEqual(RV.chatAnnouncement(R, RV.planChat(prev, R), prev), null);
+  // nothing changed
+  assert.strictEqual(RV.chatAnnouncement(prevR, RV.planChat(prev, prevR), prev), null);
+  assert.strictEqual(RV.chatAnnouncement(null, null, prev), null);
+});
+
+test('backoffMs: 1s doubling to a 30s cap, with jitter that never passes the cap', () => {
+  assert.strictEqual(RV.backoffMs(1, 0.5), 1000);
+  assert.strictEqual(RV.backoffMs(2, 0.5), 2000);
+  assert.strictEqual(RV.backoffMs(3, 0.5), 4000);
+  assert.strictEqual(RV.backoffMs(5, 0.5), 16000);
+  assert.strictEqual(RV.backoffMs(6, 0.5), 30000);
+  assert.strictEqual(RV.backoffMs(40, 0.99), 30000);
+  assert.ok(RV.backoffMs(1, 0) < RV.backoffMs(1, 0.99));
+  assert.ok(RV.backoffMs(3, 0) >= 3000 && RV.backoffMs(3, 0.99) <= 6000);
+  assert.ok(RV.backoffMs(0, 0.5) >= 750 && RV.backoffMs(undefined, undefined) >= 750);
+});
+
+test('step: the creator reopening their own URL (seat and t) keeps seat A and skips the welcome', () => {
+  // The server confirms R.seat === 'A' for the creator's token; hadCredentials must not turn that into an invalid link.
+  const ctx = { hadCredentials: true, welcomeSeen: false };
+  assert.strictEqual(RV.step(view({ seat: 'A' }), ctx).key, 'instructions');
+  assert.strictEqual(RV.step(view({ seat: 'A', seats: { A: seat('Lerato', sealed), B: seat('Kwame') } }), ctx).key, 'ready');
+  assert.strictEqual(RV.step(view({ seat: 'A', status: 'negotiating' }), ctx).key, 'conversation');
+  // The invited person, by contrast, still gets the welcome on a first visit.
+  assert.strictEqual(RV.step(view({ seat: 'B' }), ctx).key, 'welcome');
+});
+
+// ---------- helpers moved out of the pages ----------
+test('mcpUrl and mcpCommand are built from the origin they are given', () => {
+  assert.strictEqual(RV.mcpUrl('https://behalf.example'), 'https://behalf.example/mcp');
+  assert.strictEqual(RV.mcpUrl('http://localhost:3000'), 'http://localhost:3000/mcp');
+  assert.strictEqual(RV.mcpCommand('https://behalf.example'), 'claude mcp add --transport http proxy-room https://behalf.example/mcp');
+  assert.strictEqual(RV.mcpUrl(undefined), '/mcp', 'a missing origin is empty, never "undefined"');
+});
+
+test('givenName: clean text for a real name, empty for the placeholder or nothing', () => {
+  assert.strictEqual(RV.givenName({ name: '  Kwame Mensah ' }), 'Kwame Mensah');
+  assert.strictEqual(RV.givenName({ name: 'Seat B' }), '');
+  assert.strictEqual(RV.givenName({ name: ' Seat A ' }), '');
+  assert.strictEqual(RV.givenName({ name: 'Ku​ame' }), 'Kuame', 'format characters go');
+  for (const none of [null, undefined, {}, { name: null }, { name: 42 }, { name: '   ' }]) assert.strictEqual(RV.givenName(none), '');
+});
+
+test('firstNameOf: the other person\'s first name with the same guards as firstName, from plain strings', () => {
+  assert.strictEqual(RV.firstNameOf('Lerato Dlamini', 'Kwame Mensah', 'B'), 'Kwame');
+  assert.strictEqual(RV.firstNameOf('Lerato Dlamini', 'Kwame Mensah', 'A'), 'Lerato');
+  assert.strictEqual(RV.firstNameOf('Lerato', 'You', 'B'), 'Person B', 'a reserved name');
+  assert.strictEqual(RV.firstNameOf('Kwame Asante', 'Kwame Mensah', 'B'), 'Person B', 'the same first name as the other person');
+  assert.strictEqual(RV.firstNameOf('Lerato', '', 'B'), 'Seat B');
+  assert.strictEqual(RV.firstNameOf(undefined, undefined, 'A'), 'Seat A');
+  assert.strictEqual(RV.firstNameOf('Lerato', 'Kwame', 'B'), RV.firstName(view({ seats: { A: seat('Lerato'), B: seat('Kwame') } }), 'B'));
+});
+
+test('names that draw nothing extra can not pass for a reserved name or the other person\'s name', () => {
+  // U+FE0F is a variation selector and U+034F the combining grapheme joiner: both are invisible here.
+  assert.strictEqual(RV.firstNameOf('Lerato', 'You️', 'B'), 'Person B');
+  assert.strictEqual(RV.firstNameOf('Lerato', 'Yo͏u', 'B'), 'Person B');
+  assert.strictEqual(RV.firstNameOf('Kwame', 'Kwame͏', 'B'), 'Person B');
+  assert.strictEqual(RV.firstNameOf('Kwame͏', 'Kwame', 'A'), 'Person A');
+  assert.strictEqual(RV.firstNameOf('Lerato', 'Yo‍u', 'B'), 'Person B', 'the joiners still count');
+  assert.strictEqual(RV.firstNameOf('Lerato', 'Kwame͏', 'B'), 'Kwame͏', 'the name is shown as given');
+});
+
+test('tail: the dots while an AI thinks, else who the room is waiting for, else nothing', () => {
+  const thinking = view({ status: 'negotiating', thinking: 'B', seat: 'A' });
+  assert.deepStrictEqual(RV.tail(thinking), { kind: 'thinking', label: "Kwame's AI is thinking" });
+  const waitingAgent = view({ status: 'negotiating', waitingOn: 'B', seat: 'A', seats: { A: seat('Lerato'), B: seat('Kwame', { agent: 'Claude' }) } });
+  assert.deepStrictEqual(RV.tail(waitingAgent), { kind: 'waiting', label: RV.status(waitingAgent).label });
+  const asked = view({ status: 'paused', seat: 'A', pending: { seat: 'B', seq: 2 } });
+  assert.deepStrictEqual(RV.tail(asked), { kind: 'waiting', label: RV.waitingEvent(asked) });
+  assert.strictEqual(RV.tail(view({ status: 'negotiating' })), null);
+  assert.strictEqual(RV.tail(view({ status: 'agreed' })), null);
+  assert.strictEqual(RV.tail(null), null);
+  const both = view({ status: 'negotiating', thinking: 'A', waitingOn: 'B' });
+  assert.strictEqual(RV.tail(both).kind, 'thinking', 'thinking wins');
+});
+
+test('recordKey changes with the viewer and the names, and only then', () => {
+  const R = view({ seat: 'A' });
+  assert.strictEqual(RV.recordKey(R), RV.recordKey(view({ seat: 'A', status: 'negotiating', topic: 'Other' })));
+  assert.notStrictEqual(RV.recordKey(R), RV.recordKey(view({ seat: 'B' })));
+  assert.notStrictEqual(RV.recordKey(R), RV.recordKey(view({ seat: 'A', seats: { A: seat('Lerato Dlamini'), B: seat('Thabo Mensah') } })));
+  assert.strictEqual(typeof RV.recordKey(null), 'string');
+  assert.strictEqual(RV.recordKey(view({ seat: null })).split('|')[0], '');
+});
+
+test('stepLabel: "Step n of 3" for the start page', () => {
+  assert.deepStrictEqual([1, 2, 3].map(RV.stepLabel), ['Step 1 of 3', 'Step 2 of 3', 'Step 3 of 3']);
+});
+
+test('fingerprintAnswered reads the answer out of a fingerprint (layout pinned: the answer is part 0)', () => {
+  const env = (answer) => ({ seq: 1, from: { seat: 'A' }, status: 'continue', answer, claims: [{ id: 'A1.1' }] });
+  const R = view({ envelopes: [env('Yes')] });
+  // The layout fingerprintAnswered relies on: a JSON array whose first part is the answer.
+  assert.strictEqual(JSON.parse(RV.fingerprint(R, env('Yes')))[0], 'Yes');
+  assert.strictEqual(JSON.parse(RV.fingerprint(R, env()))[0], '');
+  assert.strictEqual(RV.fingerprintAnswered(RV.fingerprint(R, env('Yes'))), true);
+  assert.strictEqual(RV.fingerprintAnswered(RV.fingerprint(R, env())), false);
+  assert.strictEqual(RV.fingerprintAnswered(RV.fingerprint(R, env(''))), false);
+  for (const bad of [undefined, null, '', 'not json', '{}', '[]']) assert.strictEqual(RV.fingerprintAnswered(bad), false, String(bad));
+});
+
+test('planChat hands back the fingerprints it was given, and an object when given nothing', () => {
+  const R = view({ envelopes: [{ seq: 1, from: { seat: 'A' }, status: 'continue' }] });
+  const prev = { 1: 'x' };
+  assert.strictEqual(RV.planChat(prev, R).prev, prev);
+  assert.deepStrictEqual(RV.planChat(null, R).prev, {});
+  assert.deepStrictEqual(RV.planChat('nope', R).prev, {});
+});
+
+test('chatAnnouncement: a seq the room does not have says nothing', () => {
+  const esc = (seq, answer) => ({ seq, from: { seat: 'B' }, status: 'escalate', escalation: { question: 'q' }, answer });
+  const R = view({ seat: 'A', envelopes: [esc(1, 'Yes')] });
+  const plan = { add: [], replace: [9], remove: [], fps: {}, prev: {} };
+  assert.strictEqual(RV.chatAnnouncement(R, plan, {}), null);
 });

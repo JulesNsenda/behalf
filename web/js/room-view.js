@@ -38,8 +38,12 @@
   // Names that would let a person pass as the viewer's own labels ("You", "Your AI").
   var RESERVED_NAMES = { you: true, your: true };
 
-  var STEPS = ['invalid-link', 'preview', 'welcome', 'instructions', 'ready',
-    'conversation', 'spectator-drafting', 'demo-intro', 'not-found'];
+  // The step keys. A link the server turned down and the invited person's preview are not steps of their
+  // own: they are banners (see step) over the step the person really sees.
+  var STEPS = ['welcome', 'instructions', 'ready', 'conversation', 'spectator-drafting', 'demo-intro', 'not-found'];
+
+  // The start page is one of this many steps.
+  var STEP_COUNT = 3;
 
   var has = Object.prototype.hasOwnProperty;
 
@@ -47,7 +51,43 @@
 
   function otherOf(seat) { return seat === 'A' ? 'B' : 'A'; }
 
-  function str(v) { return typeof v === 'string' ? v : ''; }
+  // Format characters (\p{Cf}: bidi controls, the zero-width space, the soft hyphen, the BOM) can reorder or
+  // hide what a person reads, so every piece of agent text loses them on the way in. The zero-width
+  // non-joiner and joiner stay: Persian and other scripts need them to spell, and emoji sequences use them.
+  // This is the one cleaner for text from a person or an agent; no other module strips format characters.
+  function str(v) { return typeof v === 'string' ? v.replace(/(?![\u200C\u200D])\p{Cf}/gu, '') : ''; }
+
+  // A name as shown: NFKC-normalised, format characters gone, trimmed.
+  function cleanName(v) { return str(typeof v === 'string' ? v.normalize('NFKC') : v).trim(); }
+
+  // Cyrillic and Greek letters that read the same as a Latin one. Used only to compare names, never to
+  // show them: "Yоu" (Cyrillic о) must not pass for "You".
+  var CONFUSABLES = {
+    'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x',
+    'і': 'i', 'ѕ': 's', 'ј': 'j', 'ԁ': 'd', 'ӏ': 'l', 'һ': 'h', 'ԛ': 'q',
+    'ԝ': 'w', 'ı': 'i',
+    'α': 'a', 'ε': 'e', 'ο': 'o', 'ρ': 'p', 'υ': 'u', 'ν': 'v', 'ι': 'i',
+    'κ': 'k', 'χ': 'x'
+  };
+
+  // Characters that draw nothing (the joiners, variation selectors, the combining grapheme joiner, ...) are
+  // dropped here, for comparing only: "Yo\u200Du" and "You\uFE0F" must not slip past the "you" guard.
+  function fold(name) {
+    return name.replace(/\p{Default_Ignorable_Code_Point}/gu, '').toLowerCase().replace(/[^\u0000-\u007f]/g, function (c) { return has.call(CONFUSABLES, c) ? CONFUSABLES[c] : c; });
+  }
+
+  // The view's placeholder for a seat nobody has named ("Seat A").
+  function isPlaceholderName(name) { return /^Seat [AB]$/.test(cleanName(name)); }
+
+  // The name a seat has actually been given, as clean text. The view's "Seat B" placeholder gives ''.
+  function givenName(seatObj) {
+    var n = cleanName(seatObj && seatObj.name);
+    return isPlaceholderName(n) ? '' : n;
+  }
+
+  function quoted(v) { return '“' + str(v) + '”'; }
+
+  function cap(v) { return v.charAt(0).toUpperCase() + v.slice(1); }
 
   // kind: instruction (a card list field), answer (an amendment), else other. clause is true for
   // anything clause-shaped, whether or not the card has such a field.
@@ -74,20 +114,26 @@
 
   function rawFirst(R, seat) {
     var s = R && R.seats && R.seats[seat];
-    var name = str(s && s.name).trim();
+    var name = cleanName(s && s.name);
     return name ? name.split(/\s+/)[0] : '';
   }
 
   // First name of a seat, from the view's seat names (never a card name from the URL).
   // A reserved name ("you", "your") or a name equal to the other seat's first name becomes
-  // "Person A" / "Person B", so a name can't mimic the viewer's labels or the other person's.
+  // "Person A" / "Person B", so a name can't mimic the viewer's labels or the other person's. rawFirst
+  // normalises the name (NFKC, no format characters); the comparison folds lookalike letters to Latin.
   function firstName(R, seat) {
     var raw = rawFirst(R, seat);
     if (!raw) return 'Seat ' + seat;
-    var low = raw.toLowerCase();
-    var other = rawFirst(R, otherOf(seat)).toLowerCase();
+    var low = fold(raw);
+    var other = fold(rawFirst(R, otherOf(seat)));
     if (has.call(RESERVED_NAMES, low) || (other && other === low)) return 'Person ' + seat;
     return raw;
+  }
+
+  // First name of a seat from two plain names, with the same guards as firstName. Needs no view.
+  function firstNameOf(nameA, nameB, seat) {
+    return firstName({ seats: { A: { name: nameA }, B: { name: nameB } } }, seat);
   }
 
   function isViewer(R, seat) { return Boolean(R && R.seat && R.seat === seat); }
@@ -126,26 +172,28 @@
   // ---------- step selection ----------
 
   // ctx: {hadCredentials, previewSeat, welcomeSeen, demoStarted}. R is null for "not found".
+  // key is the step the person really sees. banner is a note over it: 'invalid-link' (the link had a token
+  // the server didn't confirm) or 'preview' (the invited person's token-free look), else null.
   function step(R, ctx) {
     ctx = ctx || {};
     function out(key, extra) {
-      return Object.assign({ key: key, readOnly: false, connectCallout: false, then: null }, extra);
+      return Object.assign({ key: key, banner: null, readOnly: false, connectCallout: false }, extra);
     }
     if (!R) return out('not-found', { readOnly: true });
 
     var drafting = R.status === 'drafting';
     var mine = R.seat && R.seats ? R.seats[R.seat] : null;
 
-    // The link had a seat or token but the server didn't confirm it. Demo rooms share one token
-    // so they never land here. The read-only view that follows is named in `then`.
+    // Demo rooms share one token so they never land here. The read-only view that follows is the step
+    // the room is really in.
     if (ctx.hadCredentials && !R.seat && !R.demo) {
-      return out('invalid-link', { readOnly: true, then: drafting ? 'spectator-drafting' : 'conversation' });
+      return out(drafting ? 'spectator-drafting' : 'conversation', { banner: 'invalid-link', readOnly: true });
     }
 
     // Token-free preview of what the invited person (seat B) will see. Only while they haven't locked.
     if (!R.seat && !R.demo && ctx.previewSeat === 'B' && drafting &&
         R.seats && R.seats.B && !R.seats.B.sealed) {
-      return out('preview', { readOnly: true });
+      return out('welcome', { banner: 'preview', readOnly: true });
     }
 
     if (drafting) {
@@ -163,6 +211,9 @@
     var callout = Boolean(R.seat && !R.demo && mine && mine.mode === 'external' && !mine.agent && !finished);
     return out('conversation', { readOnly: !R.seat, connectCallout: callout });
   }
+
+  // "Step 2 of 3" for the start page.
+  function stepLabel(n) { return 'Step ' + n + ' of ' + STEP_COUNT; }
 
   // ---------- status ----------
 
@@ -219,13 +270,16 @@
   }
 
   // Error or interrupted room: the callout and whether the viewer can resume. Null otherwise.
-  // Names whose AI failed from R.turn, relative to the viewer. Spectators never get a name.
+  // A room cut off by a server restart says so and blames nobody. A real failure names whose AI failed
+  // from R.turn, relative to the viewer. Spectators never get a name.
   function problem(R) {
     if (!R) return null;
     var bad = R.status === 'error' || (R.status === 'paused' && R.interrupted && !R.pending);
     if (!bad) return null;
     var text = 'An AI hit a problem.';
-    if (R.seat && isSeat(R.turn)) {
+    if (R.interrupted && !R.error) {
+      text = 'The room was interrupted when the server restarted.';
+    } else if (R.seat && isSeat(R.turn)) {
       text = aiName(R, R.turn) + ' hit a problem.';
     }
     return { text: text, canResume: Boolean(R.seat) };
@@ -235,6 +289,15 @@
   function thinkingLabel(R) {
     if (!R || R.status !== 'negotiating' || !isSeat(R.thinking)) return null;
     return aiName(R, R.thinking) + ' is thinking';
+  }
+
+  // What sits under the last message: the dots while an AI thinks, else the line saying who the room is
+  // waiting for. {kind: 'thinking' | 'waiting', label}, or null when there is nothing to show.
+  function tail(R) {
+    var thinking = thinkingLabel(R);
+    if (thinking) return { kind: 'thinking', label: thinking };
+    var waiting = R && R.status === 'negotiating' && isSeat(R.waitingOn) ? status(R).label : waitingEvent(R);
+    return waiting ? { kind: 'waiting', label: waiting } : null;
   }
 
   // ---------- guesses and outcome ----------
@@ -263,16 +326,30 @@
     return 'Not confirmed. ' + aiName(R, seat) + ' guessed this.';
   }
 
+  // Why a room ended without a deal. maxTurns counts only when it is a positive whole number.
+  function noDealReason(R) {
+    var n = R && R.maxTurns;
+    return typeof n === 'number' && isFinite(n) && n > 0 && Math.floor(n) === n
+      ? "The AIs didn't agree within " + n + (n === 1 ? ' turn.' : ' turns.')
+      : "The AIs didn't agree in the turns they had.";
+  }
+
+  // tone and text say how it ended. linkLabel names the link to the agreement page. replayable is true
+  // for a demo's own viewer, who can start it again.
   function outcome(R) {
     if (!R) return null;
+    var res = null;
     if (R.status === 'agreed') {
       var n = guessCount(R);
-      return n
+      res = n
         ? { tone: 'warn', text: 'Deal reached, with ' + n + ' unconfirmed point' + (n === 1 ? '' : 's') }
         : { tone: 'ok', text: 'Deal reached. Nothing unconfirmed.' };
+      res.linkLabel = 'See the agreement';
+    } else if (R.status === 'stalled') {
+      res = { tone: 'warn', text: 'No deal. ' + noDealReason(R), linkLabel: 'See what happened' };
     }
-    if (R.status === 'stalled') return { tone: 'warn', text: 'No deal' };
-    return null;
+    if (res) res.replayable = Boolean(R.demo && R.seat);
+    return res;
   }
 
   // ---------- claims, reviews, proposals ----------
@@ -304,7 +381,8 @@
   //  - sourced, a clause-shaped ref: "No source named"
   function refView(R, seat, origin, ref) {
     var none = { note: null, detail: null };
-    if (typeof ref !== 'string' || !ref) return none;
+    ref = str(ref);
+    if (!ref) return none;
     var whose = who(R, seat, 'your');
     var parsed = parseRef(ref);
     if (origin === 'stated') {
@@ -344,6 +422,7 @@
       unconfirmed: origin === 'assumed',
       note: ref.note,
       detail: ref.detail,
+      detailQuote: ref.detail ? quoted(ref.detail) : null,
       reviewNotes: reviewNotes,
       flagged: reviewNotes.some(function (n) { return n.verdict !== 'accept'; })
     };
@@ -359,7 +438,7 @@
       return Boolean(c) && !c.verified;
     });
     return {
-      terms: Array.isArray(p.terms) ? p.terms : [],
+      terms: Array.isArray(p.terms) ? p.terms.map(str) : [],
       unconfirmed: unconfirmed,
       note: unconfirmed ? 'Depends on something not confirmed' : null
     };
@@ -391,7 +470,7 @@
     if (typeof text !== 'string') return { sentence: FLAG_FALLBACK, detail: null };
     for (var i = 0; i < FLAG_RULES.length; i++) {
       var m = FLAG_RULES[i].re.exec(text);
-      if (m) return { sentence: FLAG_RULES[i].sentence, detail: FLAG_RULES[i].quoted && m[1] ? m[1] : null };
+      if (m) return { sentence: FLAG_RULES[i].sentence, detail: FLAG_RULES[i].quoted && str(m[1]) ? str(m[1]) : null };
     }
     return { sentence: FLAG_FALLBACK, detail: null };
   }
@@ -400,7 +479,7 @@
 
   // What a seat's AI asked its person.
   function asked(R, seat, question) {
-    return { kind: 'asked', lead: aiName(R, seat) + ' asked ' + who(R, seat, 'you') + ':', body: str(question) };
+    return { kind: 'asked', lead: aiName(R, seat) + ' asked ' + who(R, seat, 'you') + ':', body: str(question), quote: quoted(question) };
   }
 
   // What the person answered; via is 'mcp' when it went through their own agent.
@@ -408,7 +487,8 @@
     return {
       kind: 'answered',
       lead: who(R, seat, 'You') + ' answered' + (via === 'mcp' ? who(R, seat, 'via') : '') + ':',
-      body: String(answer)
+      body: str(answer),
+      quote: quoted(answer)
     };
   }
 
@@ -450,6 +530,16 @@
     return ok ? 'Record checks out' : 'Record was changed';
   }
 
+  // One row of the full record: "3. Kwame's AI sent a message".
+  function recordLine(R, entry) {
+    return (entry && entry.n) + '. ' + recordEntry(R, entry);
+  }
+
+  // Changes when the wording of the record rows does: who is viewing, and the two names.
+  function recordKey(R) {
+    return [R && R.seat, firstName(R, 'A'), firstName(R, 'B')].join('|');
+  }
+
   // ---------- messages ----------
 
   function envSeat(env) { return env.from && isSeat(env.from.seat) ? env.from.seat : 'A'; }
@@ -458,6 +548,25 @@
   function announceOf(R, env) {
     var type = env.status === 'escalate' ? 'escalation' : 'envelope';
     return recordEntry(R, { type: type, data: { seat: envSeat(env), status: env.status } });
+  }
+
+  // "The room stopped this: ..." for one flag's fixed sentence.
+  function stoppedLine(sentence) { return 'The room stopped this: ' + sentence; }
+
+  // A flag's quoted claim text, attributed to the AI that wrote it. Never part of the room's own sentence.
+  function flagView(R, seat, flag) {
+    var f = flagSentence(flag);
+    return {
+      sentence: f.sentence,
+      detail: f.detail,
+      line: stoppedLine(f.sentence),
+      quote: f.detail ? aiName(R, seat) + ' wrote: ' + quoted(f.detail) : null
+    };
+  }
+
+  // The visible line for one review: "Kwame's AI disagrees with this: the reason".
+  function reviewLine(note) {
+    return note.sentence + (note.reason ? ': ' + note.reason : '');
   }
 
   // Everything one chat message needs, so room.js holds no wording.
@@ -473,11 +582,12 @@
       speaker: speaker,
       ariaLabel: speaker + ', message ' + env.seq,
       announce: announceOf(R, env),
+      message: str(env.message),
       claims: (Array.isArray(env.claims) ? env.claims : []).map(function (c) { return claimView(R, c); }),
       proposal: proposalView(R, env),
       acceptEvent: agreed ? speaker + ' accepted the proposal' : null,
       escalationEvents: escalationEvents(R, env),
-      flags: (Array.isArray(env.protocol_flags) ? env.protocol_flags : []).map(function (f) { return flagSentence(f); })
+      flags: (Array.isArray(env.protocol_flags) ? env.protocol_flags : []).map(function (f) { return flagView(R, seat, f); })
     };
   }
 
@@ -491,25 +601,62 @@
     return found.length + ' new messages';
   }
 
+  // The room's messages by seq (the first one wins), built once per update.
+  function envelopesBySeq(R) {
+    var bySeq = new Map();
+    (R && Array.isArray(R.envelopes) ? R.envelopes : []).forEach(function (e) {
+      if (!bySeq.has(e.seq)) bySeq.set(e.seq, e);
+    });
+    return bySeq;
+  }
+
+  // The seqs in plan.replace whose answer arrived with this update: no answer in the old fingerprint,
+  // one in the new.
+  function answeredSeqs(bySeq, plan, prevFps) {
+    return plan.replace.filter(function (seq) {
+      var env = bySeq.get(seq);
+      return Boolean(env && env.answer && !fingerprintAnswered(prevFps[seq]));
+    });
+  }
+
+  // The one polite line for a chat update: new messages plus answers added to existing ones. Null when
+  // nothing worth saying changed.
+  function chatAnnouncement(R, plan, prevFps) {
+    if (!plan || !R) return null;
+    var added = plan.add;
+    var bySeq = envelopesBySeq(R);
+    var answered = answeredSeqs(bySeq, plan, prevFps || {});
+    if (!answered.length) return newMessagesAnnouncement(R, added);
+    if (answered.length === 1 && !added.length) {
+      var env = bySeq.get(answered[0]);
+      return recordEntry(R, { type: 'principal_answer', data: { seat: envSeat(env), via: env.answer_via } });
+    }
+    return (added.length + answered.length) + ' new updates';
+  }
+
   // ---------- decision ----------
 
-  // The question the viewer can answer, or null. The heading is the question itself; the AI's
-  // reason for asking is never shown.
+  // The question the viewer can answer, or null. The heading is fixed wording naming whose AI asks; the
+  // question is the AI's own text, shown quoted beneath it. The AI's reason for asking is never shown.
+  // seat and seq say which question this is, so an answer can't land on a newer one.
   function decisionView(R) {
     if (!canAnswer(R)) return null;
     var p = R.pending;
     var question = str(p.question).trim() || 'Your AI has a question for you';
     var options = Array.isArray(p.options) && p.options.length
-      ? p.options.map(function (o) { return { key: String(o.key), label: String(o.label) }; })
+      ? p.options.map(function (o) { return { key: String(o.key), label: str(o.label) }; })
       : null;
     return {
       key: decisionKey(R),
-      heading: question,
+      seat: p.seat,
+      seq: p.seq,
+      heading: aiName(R, p.seat) + ' asks you:',
       question: question,
+      quote: quoted(question),
       options: options,
       textarea: { label: 'Your answer', hint: 'Your AI carries on from what you write' },
-      visibilityNote: firstName(R, otherOf(p.seat)) + ' and their AI will see your answer.',
-      dockText: 'Your AI needs you · Answer'
+      visibilityNote: 'Anyone who can open this room can read your answer.',
+      dock: { text: 'Your AI needs you', action: 'Answer' }
     };
   }
 
@@ -556,6 +703,9 @@
     },
     demo: {
       def: "We couldn't start the demo. Please try again."
+    },
+    load: {
+      def: "We couldn't open this room. Please try again."
     }
   };
 
@@ -569,17 +719,60 @@
 
   // ---------- reconciliation keys ----------
 
-  // Changes when a message's answer or its claims' review verdicts change.
-  function fingerprint(R, env) {
-    env = env || {};
-    var parts = [env.answer || '', env.answer_via || ''];
+  // The room's claims by id (the last one wins), built once per update and handed to fingerprint.
+  function claimsById(R) {
     var byId = {};
     (R && Array.isArray(R.claims) ? R.claims : []).forEach(function (c) { byId[c.id] = c; });
+    return byId;
+  }
+
+  // Changes when a message's answer or its claims' review verdicts change. byId is claimsById(R), for
+  // callers that fingerprint many messages of one room.
+  function fingerprint(R, env, byId) {
+    env = env || {};
+    var parts = [env.answer || '', env.answer_via || ''];
+    byId = byId || claimsById(R);
     (Array.isArray(env.claims) ? env.claims : []).forEach(function (c) {
       var full = has.call(byId, c.id) ? byId[c.id] : c;
       parts.push(c.id + ':' + (full.reviews || []).map(function (r) { return r.by + '=' + r.verdict; }).join(','));
     });
     return JSON.stringify(parts);
+  }
+
+  // Whether a fingerprint (from fingerprint) says the message had an answer. The answer is its first part.
+  function fingerprintAnswered(fp) {
+    try { return Boolean(JSON.parse(fp)[0]); } catch (e) { return false; }
+  }
+
+  // What the chat has to do to match R. prevFps is {seq: fingerprint} for what is on screen.
+  //   add      seqs not on screen yet, in order
+  //   replace  seqs on screen whose fingerprint changed
+  //   remove   seqs on screen that R no longer has
+  //   fps      {seq: fingerprint} for every message R has now: what is on screen once the plan is applied
+  //   prev     prevFps as handed in (an object), for chatAnnouncement
+  function planChat(prevFps, R) {
+    prevFps = prevFps && typeof prevFps === 'object' ? prevFps : {};
+    var plan = { add: [], replace: [], remove: [], fps: {}, prev: prevFps };
+    var seen = {};
+    var byId = claimsById(R);
+    (R && Array.isArray(R.envelopes) ? R.envelopes : []).forEach(function (env) {
+      seen[env.seq] = true;
+      plan.fps[env.seq] = fingerprint(R, env, byId);
+      if (!has.call(prevFps, env.seq)) plan.add.push(env.seq);
+      else if (prevFps[env.seq] !== plan.fps[env.seq]) plan.replace.push(env.seq);
+    });
+    Object.keys(prevFps).forEach(function (k) {
+      if (!has.call(seen, k)) plan.remove.push(Number(k));
+    });
+    return plan;
+  }
+
+  // How long to wait before reconnecting after the nth failure in a row (1-based): 1s, doubling, capped
+  // at 30s, with jitter. rand is a number in [0, 1).
+  function backoffMs(failures, rand) {
+    var base = Math.min(30000, 1000 * Math.pow(2, Math.max(0, (failures || 1) - 1)));
+    var r = typeof rand === 'number' ? rand : 0;
+    return Math.round(Math.min(30000, base * (0.75 + r * 0.5)));
   }
 
   // The decision card re-renders only when this changes.
@@ -628,7 +821,113 @@
     return errors;
   }
 
+  // ---------- page text ----------
+
+  // The connector address of this server, and the command that adds it to Claude Code.
+  function mcpUrl(origin) { return str(origin) + '/mcp'; }
+
+  function mcpCommand(origin) { return 'claude mcp add --transport http proxy-room ' + mcpUrl(origin); }
+
+  // The message an agent is asked to act on, given the viewer's own room link.
+  function agentPrompt(link) {
+    return 'Represent me in this room: ' + str(link) + '\n' +
+      'Ask me what I want before you lock anything, and check with me before you agree to anything beyond that.';
+  }
+
+  // The heading for one seat's locked instructions: "Your instructions" or "Kwame's instructions".
+  function instructionsHeading(R, seat) { return who(R, seat, 'Your') + ' instructions'; }
+
+  // The label over a proposal: "Kwame's AI proposes".
+  function proposes(speaker) { return speaker + ' proposes'; }
+
+  // The browser tab title for a room.
+  function docTitle(R) {
+    return (str(R && R.topic).trim() || 'Room') + ' · Proxy Room';
+  }
+
+  // Every fixed sentence the room page shows, with names filled in: plain strings only. R may be null,
+  // and a name-bearing sentence then says "the person who set up the room" instead of a name.
+  function pageText(R) {
+    var creator = R ? creatorName(R) : 'the person who set up the room';
+    var creatorLead = R ? creator : cap(creator);
+    var invitee = R ? firstName(R, 'B') : 'the invited person';
+    var other = R && isSeat(R.seat) ? firstName(R, otherOf(R.seat)) : 'the other person';
+    var otherLead = R && isSeat(R.seat) ? other : cap(other);
+    return {
+      notFoundTitle: "We couldn't find this room.",
+      startRoom: 'Start a room',
+      tryAgain: 'Try again',
+      reconnecting: 'Reconnecting…',
+      invalidLink: "This link doesn't open your place in the room. Ask " + creator + ' to send it again, and copy the whole link.',
+      spectatorDrafting: 'Both people are getting ready.',
+      previewBanner: 'This is a preview. Only ' + invitee + "'s own link can act for them.",
+      invitation: R ? 'Invitation from ' + creator : 'Invitation to a room',
+      welcomeTitle: creatorLead + (str(R && R.topic) ? ' wants to agree on: ' + str(R && R.topic) : ' wants to agree with you.'),
+      welcomeIntro: (R ? creator + "'s AI" : 'Their AI') + ' will talk with an AI that speaks for you. You tell yours what you want, and it checks with you before agreeing to anything beyond that.',
+      reassure: [
+        "Anyone who can open this room can read your answers to your AI's questions. Your instructions aren't shown, but your AI may quote parts of them.",
+        'Nothing is final until both AIs agree, and you see a summary.',
+        "This link is your key to the room. Don't forward it."
+      ],
+      whoLegend: 'Who speaks for you?',
+      whoBuiltin: { title: 'Our AI', hint: 'Easiest. Nothing to install.' },
+      whoOwn: { title: 'My own AI agent', hint: 'For example Claude Desktop or Claude Code.', note: 'Your agent takes your place when it connects.' },
+      continueButton: 'Continue to your instructions',
+      continueOwnButton: 'Continue',
+      connect: {
+        heading: 'Connect your AI agent', addressLabel: 'Connector address', copyAddress: 'Copy address',
+        messageLabel: 'Message for your agent', copyMessage: 'Copy message', howTo: 'How to connect it'
+      },
+      instructionsTitle: 'Tell your AI what you want',
+      instructionsIntro: "Write it the way you'd brief a colleague. Your instructions aren't shown in the room, but your AI may quote parts of them.",
+      nameLabel: 'Your name', roleLabel: 'Your role', optional: '(optional)',
+      nameError: 'Enter your name.',
+      lockNote: "When you lock these instructions, your AI can't quietly change them. If it needs something more, it asks you.",
+      lockButton: 'Lock instructions and start',
+      externalCallout: 'Lock your instructions here, or let your agent fill them in with you.',
+      connectFirst: "Connect your agent before you lock your instructions. Once the conversation starts, our AI speaks for you and your agent can't take over.",
+      agentConnected: 'Your agent is connected',
+      help: {
+        summary: 'Help me write this', label: 'Describe what you need, in your own words',
+        hint: "We'll turn it into the fields below. You can change anything.", go: 'Write a draft',
+        confirm: "This will replace what you've written in the fields below.", replace: 'Replace it', keep: 'Keep mine',
+        added: 'Draft added. Check each field before you lock.'
+      },
+      readyTitle: "You're all set",
+      readyWaiting: 'Waiting for ' + other + ' to finish.',
+      readyComeBack: 'Come back to this link. Your AI may stop to ask you something, and the room waits for you.',
+      inviteLabel: otherLead + "'s invite link",
+      inviteHint: 'Anyone with a link can act for that person. Send each link only to them.',
+      copyLink: 'Copy link',
+      demoBanner: R ? "You're " + creator + ' in this demo. ' + creator + "'s AI talks to " + invitee + "'s AI." : 'This is a demo. One person plays both sides.',
+      demoInstructions: 'Read the instructions',
+      demoStart: 'Start the demo',
+      chatLabel: 'Conversation',
+      connectCallout: { title: "Your agent hasn't connected yet", text: 'Add the connector address to your app, then send it the message below.' },
+      answerButton: 'Answer my AI',
+      answerHasToken: 'That looks like part of your private link. Take it out of your answer and try again.',
+      replay: 'Replay the demo',
+      resume: 'Resume',
+      locked: 'Locked',
+      instructionsSummary: R && R.demo ? 'Instructions' : 'Your instructions',
+      recordSummary: 'View the full record',
+      rawRecord: 'See the raw record',
+      errorDetails: 'Error details:'
+    };
+  }
+
   var RoomView = {
+    agentPrompt: agentPrompt,
+    mcpUrl: mcpUrl,
+    mcpCommand: mcpCommand,
+    stepLabel: stepLabel,
+    instructionsHeading: instructionsHeading,
+    pageText: pageText,
+    proposes: proposes,
+    docTitle: docTitle,
+    isPlaceholderName: isPlaceholderName,
+    givenName: givenName,
+    firstNameOf: firstNameOf,
     STEPS: STEPS,
     INSTRUCTION_FIELDS: INSTRUCTION_FIELDS,
     LIST_KEYS: LIST_KEYS,
@@ -640,10 +939,12 @@
     waitingEvent: waitingEvent,
     problem: problem,
     thinkingLabel: thinkingLabel,
+    tail: tail,
     guessCount: guessCount,
     guessPill: guessPill,
     guessNote: guessNote,
     outcome: outcome,
+    noDealReason: noDealReason,
     firstName: firstName,
     aiName: aiName,
     isSeat: isSeat,
@@ -658,17 +959,25 @@
     proposalView: proposalView,
     reviewSentence: reviewSentence,
     reviewNote: reviewNote,
+    reviewLine: reviewLine,
     flagSentence: flagSentence,
+    stoppedLine: stoppedLine,
     asked: asked,
     answered: answered,
     escalationEvents: escalationEvents,
     messageView: messageView,
     newMessagesAnnouncement: newMessagesAnnouncement,
+    chatAnnouncement: chatAnnouncement,
     decisionView: decisionView,
     recordEntry: recordEntry,
+    recordLine: recordLine,
     recordStatus: recordStatus,
+    recordKey: recordKey,
     errorMessage: errorMessage,
     fingerprint: fingerprint,
+    fingerprintAnswered: fingerprintAnswered,
+    planChat: planChat,
+    backoffMs: backoffMs,
     decisionKey: decisionKey,
     cardFromFields: cardFromFields,
     fieldsFromCard: fieldsFromCard,

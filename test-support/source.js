@@ -1,6 +1,8 @@
 'use strict';
 const assert = require('node:assert');
 const fs = require('node:fs');
+const path = require('node:path');
+const { WEB } = require('./paths');
 
 // A source file without its header comment and without whole-line // comments, so the checks
 // below look at code and strings only.
@@ -18,4 +20,13 @@ function assertPure(code, { allowRequire = false } = {}) {
   assert.ok(!/new RegExp|RegExp\(/.test(code), 'regex literals only');
 }
 
-module.exports = { codeOf, assertPure };
+// A page-logic module under web/js/, loaded the way the tests need it: with no window, so it sets
+// module.exports. Returns {mod, file, assertClean}; assertClean() is the purity check on its source
+// (opts.allowRequire for the one module that reads another).
+function loadPure(name, opts) {
+  assert.strictEqual(typeof globalThis.window, 'undefined', 'no window, so the module sets module.exports');
+  const file = path.join(WEB, 'js', name + '.js');
+  return { mod: require(file), file, assertClean: () => assertPure(codeOf(file), opts) };
+}
+
+module.exports = { codeOf, assertPure, loadPure };

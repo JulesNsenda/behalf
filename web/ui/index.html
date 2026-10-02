@@ -103,6 +103,7 @@
       <button class="btn btn--secondary" type="button" aria-busy="true">Checking</button>
     </div>
     <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="btn-states"></code></pre></div></details>
+    <p class="text-caption"><code>UI.setBusy(el, on)</code> sets or removes <code>aria-busy</code> on an element, or on each element of an array, and disables buttons and fields while busy. <code>UI.disableAll(root)</code> disables every control under a form or a view.</p>
 
     <p class="eyebrow-label">On an inverse band, and full width</p>
     <div class="guide-example stack" data-snippet="btn-inverse">
@@ -147,6 +148,7 @@
       </div>
     </div>
     <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="form-error"></code></pre></div></details>
+    <p class="text-caption"><code>UI.fieldError(input, errorEl, message)</code> shows or clears this state. It needs an error element that already exists and has an <code>id</code> (here <code>guide-email-error</code>), because it points the input's <code>aria-describedby</code> at that id. An empty message clears the error. <code>UI.describedBy.add(el, id)</code> and <code>UI.describedBy.remove(el, id)</code> add or remove one id in <code>aria-describedby</code> and leave the others alone.</p>
 
     <div class="cluster"><p class="eyebrow-label">Select, with a disabled option</p><span class="pill pill--warn">New, not on the canvas</span></div>
     <div class="guide-example stack" data-snippet="form-select">
@@ -187,7 +189,7 @@
     <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="form-radio"></code></pre></div></details>
 
     <p class="eyebrow-label">Copy field and copy button</p>
-    <p class="text-caption">The value is set from script through the <code>.value</code> property, never from the markup. The button names the field with <code>data-copy="field-id"</code>.</p>
+    <p class="text-caption">The value is set from script through the <code>.value</code> property, never from the markup. The button names the field with <code>data-copy="field-id"</code>. <code>UI.copyField({id, label, note, value})</code> returns <code>{html, fill}</code>: put <code>html</code> in a template, and call <code>fill(root)</code> after rendering to set the value as a property. The value is never part of the markup.</p>
     <div class="guide-example" data-snippet="form-copy">
       <div class="field">
         <label class="field__label" for="guide-seat-link">Your private link</label>
@@ -372,6 +374,17 @@
       </div>
     </div>
     <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="callout-danger"></code></pre></div></details>
+
+    <div class="cluster"><p class="eyebrow-label">Announced at once</p><span class="pill pill--warn">New, not on the canvas</span></div>
+    <p class="text-caption"><code>UI.alertBox(message, kind)</code> returns this markup for <code>info</code>, <code>warn</code> or <code>danger</code>; any other kind throws a <code>TypeError</code>. Use it only for the failure of something the person just did, because <code>role="alert"</code> is read out immediately. Anything else is a plain callout.</p>
+    <p class="text-caption"><code>UI.callout(kind, body, {icon})</code> returns the plain callouts above, for <code>info</code>, <code>ok</code>, <code>warn</code> or <code>danger</code> (another kind throws a <code>TypeError</code>). The body is <code>UI.html</code> markup, usually a <code>&lt;p&gt;</code>. Each kind has its own icon unless <code>icon</code> names another.</p>
+    <div class="guide-example" data-snippet="callout-alert">
+      <div class="callout callout--warn" role="alert">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>
+        <div class="callout__body"><p>We couldn't send your answer. Please try again.</p></div>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="callout-alert"></code></pre></div></details>
   </section>
 
   <!-- ===================================================== cards, etc -->
@@ -785,7 +798,7 @@ Stop and ask me before you agree to pay any fee.</pre>
   <!-- ========================================================= toasts -->
   <section class="stack stack--md" id="toasts" aria-labelledby="h-toasts">
     <div class="cluster"><h2 id="h-toasts">Toasts</h2><span class="pill pill--warn">New, not on the canvas</span></div>
-    <p class="text-caption">Toasts never hold controls. They ignore clicks, so put anything the person must act on in a callout or the dock.</p>
+    <p class="text-caption">Toasts never hold controls. They ignore clicks, so put anything the person must act on in a callout or the dock. At most three show at once, and they sit just under the site header. For an update that should be heard but not shown, call <code>UI.announce(message)</code>: it speaks through a hidden live region and shows nothing.</p>
     <p class="eyebrow-label">How each kind looks</p>
     <div class="guide-example cluster" data-snippet="toast-kinds">
       <div class="toast toast--info">Your AI is working on it</div>
@@ -837,6 +850,7 @@ Stop and ask me before you agree to pay any fee.</pre>
     </div>
     <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="icons"></code></pre></div></details>
     <p class="text-caption">Sizes: <code>.icon</code> (20px), <code>.icon--sm</code> (14px) and <code>.icon--lg</code> (28px).</p>
+    <p class="text-caption">From script, <code>UI.icon(name)</code> returns one of these as markup, for <code>lock</code>, <code>lock-sm</code>, <code>check</code>, <code>alert</code>, <code>info</code>, <code>link</code>, <code>copy</code> and <code>warn</code>. An unknown name gives empty markup, so a name never reaches the page.</p>
   </section>
 
 </div>
