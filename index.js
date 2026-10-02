@@ -11,6 +11,7 @@ const demo = require('./lib/demo');
 const mcp = require('./lib/mcp');
 const { loadConfig, loadSecrets, ROOT } = require('./lib/config');
 const { createLog } = require('./lib/log');
+const { createStore } = require('./lib/store');
 
 // Set before routing, so every response gets these, including /mcp (whose handler writes its own writeHead).
 // Every response carries the full policy: harmless on JSON, and it keeps one place to change.
@@ -25,34 +26,16 @@ const PUBLIC = path.join(ROOT, 'web');
 const log = createLog();
 
 // ---------- persistence ----------
-let rooms = new Map();
-let usage = { day: '', total: 0, byIp: {} };
-try {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (fs.existsSync(STORE)) {
-    const raw = JSON.parse(fs.readFileSync(STORE, 'utf8'));
-    rooms = new Map(Object.entries(raw.rooms || {}));
-    usage = raw.usage || usage;
-    for (const r of rooms.values()) {
-      r.running = false; r.thinking = null;
-      for (const s of ['A', 'B']) if (!r.seats[s].mode) r.seats[s].mode = 'builtin';
-      // A built-in turn in flight is lost on restart; an external seat is simply still waiting.
-      if (r.status === 'negotiating' && !r.waitingOn) { r.status = 'paused'; r.interrupted = true; }
-    }
-  }
-} catch (e) { log.error('store.load_failed', {}, e); }
-
-let saveTimer = null;
-function save() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      const tmp = STORE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ rooms: Object.fromEntries(rooms), usage }, (k, v) => (k === 'running' ? undefined : v)));
-      fs.renameSync(tmp, STORE);
-    } catch (e) { log.error('store.save_failed', {}, e); }
-  }, 300);
+const store = createStore({ file: STORE, log });
+try { store.load(); } catch (e) { log.error('store.load_failed', {}, e); process.exit(1); }
+const rooms = store.state.rooms;
+const usage = store.state.usage;
+for (const r of rooms.values()) {
+  r.running = false; r.thinking = null;
+  // A built-in turn in flight is lost on restart; an external seat is simply still waiting.
+  if (r.status === 'negotiating' && !r.waitingOn) { r.status = 'paused'; r.interrupted = true; }
 }
+const save = store.save;
 
 // ---------- helpers ----------
 const id = (n = 8) => crypto.randomBytes(n).toString('base64url').replace(/[-_]/g, '').slice(0, n + 2);
@@ -127,7 +110,7 @@ function view(room, seatId, token) {
 const streams = new Map(); // roomId -> Set<{res, seat, token}>
 function emit(room) {
   room.version = (room.version || 0) + 1;
-  save();
+  save(room.id);
   const set = streams.get(room.id);
   if (!set) return;
   for (const c of set) {
@@ -146,12 +129,12 @@ function createRoom({ topic, demoMode }) {
   if (room.demo) room.seats.B.token = room.seats.A.token; // one person drives both seats in the demo
   pxp.appendLedger(room, 'room_opened', { topic: room.topic, protocol: 'PXP/0' });
   rooms.set(room.id, room);
-  save();
+  save(room.id);
   return room;
 }
 
 function takeQuota(ip) {
-  if (usage.day !== today()) usage = { day: today(), total: 0, byIp: {} };
+  if (usage.day !== today()) store.resetUsage(today());
   if (usage.total >= DAILY_ROOM_LIMIT) return 'Daily room limit reached. Try again tomorrow, or run the demo.';
   if ((usage.byIp[ip] || 0) >= PER_IP_DAILY) return 'You have opened the maximum live rooms for today. The demo is unlimited.';
   usage.total++; usage.byIp[ip] = (usage.byIp[ip] || 0) + 1;
@@ -172,7 +155,7 @@ function createLiveRoom(ip, { topic, nameA, nameB, modeA, modeB, passcode }) {
   room.seats.B.name = pxp.str(nameB, 80);
   room.seats.A.mode = modes.A;
   room.seats.B.mode = modes.B;
-  save();
+  save(room.id);
   return room;
 }
 
@@ -377,7 +360,7 @@ async function api(req, res, url) {
   if (req.method === 'POST' && parts[1] === 'demo' && parts.length === 2) {
     const room = createRoom({ topic: demo.topic, demoMode: true });
     for (const s of ['A', 'B']) room.seats[s].card = pxp.normaliseCard(demo.cards[s]);
-    save();
+    save(room.id);
     return send(res, 201, { id: room.id, token: room.seats.A.token });
   }
 

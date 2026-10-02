@@ -7,12 +7,15 @@ const { start, mkTmp, rmTmp } = require('./server');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// The env that points a spawned server at a data dir, on a free port and the loopback address.
+const serverEnv = (dir) => ({ PORT: '0', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir });
+
 // Spawn index.js on a fresh data dir. `prepare(dir)` runs first (e.g. to drop a rooms.json in). stop() also removes the dir.
 async function bootServer(prefix, env, prepare) {
   const dir = mkTmp(prefix);
   try {
     if (prepare) prepare(dir);
-    const server = await start(path.join(ROOT, 'index.js'), Object.assign({ PORT: '0', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir }, env));
+    const server = await start(path.join(ROOT, 'index.js'), Object.assign(serverEnv(dir), env));
     assert.strictEqual(server.exited, undefined, 'server exited early with code ' + server.exited + '. Output:\n' + server.out);
     return {
       base: `http://127.0.0.1:${server.port}`, port: server.port, dir, out: server.out,
@@ -50,4 +53,4 @@ function assertNoSecrets(text, secrets, where) {
   for (const s of secrets) if (s) assert.ok(!text.includes(s), `${where}: leaked ${s}`);
 }
 
-module.exports = { bootServer, client, waitFor, assertNoSecrets, sleep };
+module.exports = { serverEnv, bootServer, client, waitFor, assertNoSecrets, sleep };
