@@ -263,6 +263,17 @@ test('the URL sink lint catches each bad form and allows UI.url and same-origin 
   ]) assert.deepStrictEqual(urlSinkHits(ok), [], 'should allow: ' + JSON.stringify(ok));
 });
 
+test('the runtime-markup CSP lint catches inline styles and handlers in templates only', () => {
+  assert.ok(TEMPLATE_INLINE_STYLE('UI.html`<p style="color:red">x</p>`'));
+  assert.ok(TEMPLATE_INLINE_HANDLER('UI.html`<button onclick="go()">x</button>`'));
+  assert.ok(TEMPLATE_INLINE_HANDLER('html`<img src="/a" onerror=${x}>`'));
+  // Ordinary JS outside templates, and safe templates, pass.
+  assert.ok(!TEMPLATE_INLINE_STYLE('var style = 1; el.style.color = "red";'));
+  assert.ok(!TEMPLATE_INLINE_HANDLER('btn.onclick = go; el.addEventListener("click", go);'));
+  assert.ok(!TEMPLATE_INLINE_STYLE('UI.html`<p class="lead">${text}</p>`'));
+  assert.ok(!TEMPLATE_INLINE_HANDLER('UI.html`<button type="button" data-copy="x">Copy</button>`'));
+});
+
 test('the template lint catches each bad form and ignores safe templates', () => {
   for (const bad of [
     // 1. URL attributes
@@ -288,7 +299,16 @@ test('the template lint catches each bad form and ignores safe templates', () =>
 // ---- lint rules ----
 // [name, files to scan, does the source break the rule]. Keeps a future strict style-src CSP
 // possible: page CSS goes in a linked file.
+// Markup that scripts inject at runtime (UI.html templates) never reaches the HTML checks above, yet the
+// strict CSP blocks inline styles and handlers there too. Scan only template-literal bodies, so ordinary
+// JS like `var style = ...` doesn't trip the rule.
+const templateBodies = (s) => (s.match(/`(?:[^`\\]|\\[\s\S])*`/g) || []).join('\n');
+const TEMPLATE_INLINE_STYLE = (s) => /\sstyle\s*=/i.test(templateBodies(s));
+const TEMPLATE_INLINE_HANDLER = (s) => /<[a-z][^>]*\son[a-z]+\s*=/i.test(templateBodies(s));
+
 const RULES = [
+  ['scripts inject no inline style attributes (the CSP blocks them)', scripts, TEMPLATE_INLINE_STYLE],
+  ['scripts inject no inline event handlers (the CSP blocks them)', scripts, TEMPLATE_INLINE_HANDLER],
   ['pages linking /ui/ui.css have no inline scripts', uiPages, (s) => /<script\b(?![^>]*\bsrc\s*=)[^>]*>/i.test(s)],
   ['pages linking /ui/ui.css have no inline event handler attributes', uiPages, (s) => /<[a-z][^>]*\son[a-z]+\s*=/i.test(s)],
   ['pages linking /ui/ui.css do not hard-code dropkit', uiPages, (s) => /dropkit/i.test(s)],

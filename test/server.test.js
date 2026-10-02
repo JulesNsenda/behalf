@@ -26,7 +26,7 @@ after(async () => {
 });
 
 // get(name) reads a response header, so fetch's Headers and node's plain object share one check.
-const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 function checkHeaders(get) {
   assert.strictEqual(get('referrer-policy'), 'no-referrer');
@@ -58,9 +58,19 @@ for (const [route, type] of routes) {
 }
 
 test('every page and the JSON API carry the exact CSP', async () => {
-  for (const route of ['/', '/start', '/room/x', '/brief/x', '/connect', '/spec', '/ui', '/api/config']) {
+  for (const route of ['/', '/start', '/room/x', '/brief/x', '/connect', '/spec', '/ui', '/api/config', '/spec/SPEC.md']) {
     const res = await fetch(base + route);
     assert.strictEqual(res.status, 200, route);
+    checkHeaders((h) => res.headers.get(h));
+    await res.arrayBuffer();
+  }
+});
+
+// Headers are set before routing, so error responses and MCP's own writeHead carry the policy too.
+test('error responses and MCP non-POST responses carry the exact CSP', async () => {
+  for (const [route, method, status] of [['/nope.js', 'GET', 404], ['/mcp', 'GET', 405]]) {
+    const res = await fetch(base + route, { method });
+    assert.strictEqual(res.status, status, route);
     checkHeaders((h) => res.headers.get(h));
     await res.arrayBuffer();
   }

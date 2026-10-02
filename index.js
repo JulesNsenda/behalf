@@ -15,7 +15,7 @@ const PORT = parsePort(process.env.PORT);
 const HOST = process.env.BIND_HOST; // not HOST: csh-style shells export that as the machine name
 // Set before routing, so every response gets these, including /mcp (whose handler writes its own writeHead).
 // Every response carries the full policy: harmless on JSON, and it keeps one place to change.
-const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const SEC_HEADERS = { 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff', 'content-security-policy': CSP };
 const DATA_DIR = process.env.DROP_DATA_DIR || path.join(__dirname, '.data');
 const STORE = path.join(DATA_DIR, 'rooms.json');
