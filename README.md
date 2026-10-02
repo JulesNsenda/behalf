@@ -10,6 +10,15 @@ Based on the essay *Agentic Proxies: When Humans Become Routing Nodes* by Jules 
 - `lib/demo.js` — scripted demo (hallucination cascade), runs with no API key
 - `lib/mcp.js` — MCP endpoint at `/mcp`, so any MCP-capable agent can take a seat
 - `index.js` — zero-dependency Node server (Node 18+)
+- `web/` — the pages:
+  - Home (`/`)
+  - Start (`/start`): create a room, then invite the other person
+  - Room (`/room/:id`): instructions, then the conversation
+  - Agreement (`/brief/:id`)
+  - Connect (`/connect`)
+  - Protocol (`/spec`)
+- `web/ui/` — the zero-dependency UI library; its living style guide is at `/ui`
+- `test/` — `npm test` (node:test, no dependencies)
 
 ## Config
 

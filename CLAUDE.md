@@ -39,11 +39,60 @@ Deployment: `drop.yaml` targets the Drop platform (`type: nodejs`, health check 
 
 **`lib/demo.js`** holds the scripted "hallucination cascade" scenario. Its scripted raw outputs pass through the same `buildEnvelope` enforcement as live turns. The escalation answer chooses a branch (`dedupe` / `accept`), and that branch's script then replaces `room.script`.
 
-**`web/`** contains static pages written in plain HTML and JS, with no framework. `room.html` uses SSE (`/api/rooms/:id/events`) and posts seat actions to `/api/rooms/:id/seats/:seat/(draft|seal|answer|resume)` with the token in the body.
+**`web/`** holds static pages in plain HTML and JS, with no framework or build step. Every page runs on the UI library (`web/ui/`), and its script lives in `web/js/`, with no inline scripts.
+
+**Pages:**
+
+| Page | URL |
+|---|---|
+| Home | `/` |
+| Start → Invite | `/start` |
+| Room | `/room/:id` |
+| Agreement | `/brief/:id` |
+| Connect | `/connect` |
+| Protocol | `/spec` |
+| Style guide | `/ui` |
+
+**Shared modules.** These are pure, return data only, and are unit-tested in Node:
+- `room-view.js` holds every room step choice, status label and sentence.
+- `agreement-view.js` does the same for the agreement page.
+- `links.js` owns seat credentials and every room or brief link.
+- `markdown.js` is the safe spec renderer.
+
+**The room page** is split into five scripts, loaded in this order:
+1. `room-core.js`: state, credentials, post/refresh and the live stream
+2. `room-kit.js`: shared markup and the `act()` action flow
+3. `room-setup.js`: welcome, instructions, ready and demo intro
+4. `room-chat.js`: the conversation
+5. `room.js`: the controller
+
+How the room page talks to the server:
+- It listens to SSE at `/api/rooms/:id/events`.
+- It posts seat actions to `/api/rooms/:id/seats/:seat/(draft|seal|answer|resume)` with the token in the body.
+- It re-renders a message only when its fingerprint changes. A message can change after it first appears, for example when a later review or answer lands.
+
+**Content security policy.** Every response sends a strict CSP (`default-src 'self'`, with no inline script or style). Keep every page free of inline code; `test/pages.test.js` enforces this.
 
 ## UI library
 
-`web/ui/` is the zero-dependency UI library: `ui.css` (tokens + components, in `@layer`s), `ui.js` (`window.UI`: `esc`, `html`, `url`, `render`, `copy`, `toast`, `setTheme`, `getTheme`), `theme.js` (applies the stored theme before first paint), a self-hosted variable font, and `logo.svg`. **`/ui` is the living style guide and the reference for every component.** The existing pages still use `style.css`. Moving them over is a separate plan, and a page loads one stylesheet or the other, never both (a test enforces this).
+`web/ui/` is the zero-dependency UI library. It contains:
+- **`ui.css`:** tokens and components, in `@layer`s.
+- **`ui.js`** (`window.UI`):
+  - safe HTML: `html`, `render`, `url`, `esc`
+  - requests: `request`, `loadConfig`
+  - controls and forms: `setBusy`, `disableAll`, `byId`, `copyField`, `fieldError`, `describedBy`
+  - messages and icons: `callout`, `alertBox`, `icon`, `toast` (visible feedback), `announce` (screen-reader only)
+  - clipboard: `copy`
+  - theme: `setTheme`, `getTheme`
+- **`theme.js`:** applies the stored theme before first paint.
+- A self-hosted variable font, and `logo.svg`.
+
+**`/ui` is the living style guide and the reference for every component.**
+
+Every page links `/ui/ui.css`. The old `style.css` is gone.
+
+- **Page chrome:** headers and footers are copied verbatim on each page, and a test checks they match.
+- **Wording:** page scripts hold no reader-facing wording. It comes from the view modules.
 
 - **Tokens only:** components read colour through tokens. Literal colours live only in the light `:root` block and the two identical, screen-only dark blocks. Every pair in `test/contrast-pairs.json` must pass WCAG in both themes. Add a pair there when you introduce one.
 - **Safe HTML:** build markup with `UI.html` and pass URLs through `UI.url`. There is deliberately no string-to-trusted escape hatch, because the other seat's agent controls text on a page that holds this seat's token. `UI.render(el, safe)` is the only `innerHTML` sink: it accepts only `UI.html` output, and pages never assign `innerHTML` themselves.
@@ -60,3 +109,6 @@ The protocol rules are written out in several places. A rule change has to touch
 - the built-in proxy prompt (`turnSystem` in `lib/proxy.js`)
 - the MCP `INSTRUCTIONS` and the tool schemas in `lib/mcp.js`
 - the demo script in `lib/demo.js`, if the rule changes how the scripted turns behave
+- the plain-language wording in `web/js/room-view.js`, if `buildEnvelope`'s `protocol_flags` text or the card fields change. Flag sentences are matched against the server's fixed text, and a test counts the flag rules.
+
+The shared writing guidance (`lib/writing.js`) is presentation guidance, not a protocol rule. It is interpolated into `turnSystem`, the MCP `INSTRUCTIONS` and `AUTH_SYSTEM`. Change it in that one place.
