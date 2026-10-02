@@ -9,6 +9,8 @@
  *    itself; there is deliberately no way to turn a plain string into trusted markup.
  *  - UI.render(el, safe) is THE innerHTML sink: pages never assign innerHTML themselves.
  *    Use textContent for plain text.
+ *  - Never interpolate into a tag name or an unquoted attribute position: every tag is a
+ *    literal. Choose between literal templates, never build a tag name.
  *  - Never interpolate untrusted data into `id` or `name` attributes; `data-copy` resolves
  *    the first element with that id.
  */
