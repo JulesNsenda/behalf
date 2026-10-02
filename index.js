@@ -9,23 +9,20 @@ const pxp = require('./lib/pxp');
 const proxy = require('./lib/proxy');
 const demo = require('./lib/demo');
 const mcp = require('./lib/mcp');
-const { parsePort } = require('./lib/port');
+const { loadConfig, loadSecrets, ROOT } = require('./lib/config');
+const { createLog } = require('./lib/log');
 
-const PORT = parsePort(process.env.PORT);
-const HOST = process.env.BIND_HOST; // not HOST: csh-style shells export that as the machine name
 // Set before routing, so every response gets these, including /mcp (whose handler writes its own writeHead).
 // Every response carries the full policy: harmless on JSON, and it keeps one place to change.
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const SEC_HEADERS = { 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff', 'content-security-policy': CSP };
-const DATA_DIR = process.env.DROP_DATA_DIR || path.join(__dirname, '.data');
+const config = loadConfig();
+const secrets = loadSecrets();
+const { port: PORT, bindHost: HOST, dataDir: DATA_DIR, dailyRoomLimit: DAILY_ROOM_LIMIT, perIpDaily: PER_IP_DAILY, maxTurns: MAX_TURNS, demoDelayMs: DEMO_DELAY, publicUrl: PUBLIC_URL } = config;
+const PASSCODE = secrets.passcode;
 const STORE = path.join(DATA_DIR, 'rooms.json');
-const PUBLIC = path.join(__dirname, 'web');
-const DAILY_ROOM_LIMIT = Number(process.env.DAILY_ROOM_LIMIT) || 20;
-const PER_IP_DAILY = Number(process.env.PER_IP_DAILY) || 3;
-const PASSCODE = process.env.ROOM_PASSCODE || '';
-const MAX_TURNS = Number(process.env.MAX_TURNS) || 10;
-const DEMO_DELAY = Number(process.env.DEMO_DELAY_MS) || 2600;
-const PUBLIC_URL = (process.env.PUBLIC_URL || 'https://proxy-room.dropkit.sh').replace(/\/$/, '');
+const PUBLIC = path.join(ROOT, 'web');
+const log = createLog();
 
 // ---------- persistence ----------
 let rooms = new Map();
@@ -43,7 +40,7 @@ try {
       if (r.status === 'negotiating' && !r.waitingOn) { r.status = 'paused'; r.interrupted = true; }
     }
   }
-} catch (e) { console.error('[store] load failed:', e.message); }
+} catch (e) { log.error('store.load_failed', {}, e); }
 
 let saveTimer = null;
 function save() {
@@ -53,7 +50,7 @@ function save() {
       const tmp = STORE + '.tmp';
       fs.writeFileSync(tmp, JSON.stringify({ rooms: Object.fromEntries(rooms), usage }, (k, v) => (k === 'running' ? undefined : v)));
       fs.renameSync(tmp, STORE);
-    } catch (e) { console.error('[store] save failed:', e.message); }
+    } catch (e) { log.error('store.save_failed', {}, e); }
   }, 300);
 }
 
@@ -233,7 +230,7 @@ async function finalise(room, acceptEnv) {
   try {
     if (room.demo) authority = terms.map((t, i) => ({ term: t, ...(demo.authority[room.branch] || [])[i] }));
     else if (proxy.live()) authority = await proxy.mapAuthority(room, terms);
-  } catch (e) { console.error('[brief] authority mapping failed:', e.message); }
+  } catch (e) { log.error('brief.authority_failed', { room: room.id }, e); }
 
   const agreement = { terms, proposal_hash: accepted.proposal_hash, proposed_by: accepted.from.seat, proposed_seq: accepted.seq, accepted_by: acceptEnv.from.seat, accepted_seq: acceptEnv.seq };
   pxp.appendLedger(room, 'agreement', { proposal_hash: agreement.proposal_hash, proposed_by: agreement.proposed_by, accepted_by: agreement.accepted_by });
@@ -327,7 +324,7 @@ async function run(room) {
       await advance(room, seatId, raw);
     }
   } catch (e) {
-    console.error(`[room ${room.id}]`, e.message);
+    log.error('room.run_failed', { room: room.id }, e);
     room.status = 'error';
     room.error = e.message;
   } finally {
@@ -503,7 +500,7 @@ const server = http.createServer(async (req, res) => {
     if (!(f === PUBLIC || f.startsWith(PUBLIC + path.sep))) return send(res, 403, 'Forbidden');
     return serveFile(res, f);
   } catch (e) {
-    if (!(e instanceof ApiError)) console.error('[http]', e.stack || e.message);
+    if (!(e instanceof ApiError)) log.error('http.unexpected', {}, e);
     if (!res.headersSent) send(res, e instanceof ApiError ? e.code : 500, { error: e instanceof ApiError ? e.message : 'Server error' });
   }
 });

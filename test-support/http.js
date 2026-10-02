@@ -15,7 +15,7 @@ async function bootServer(prefix, env, prepare) {
     const server = await start(path.join(ROOT, 'index.js'), Object.assign({ PORT: '0', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir }, env));
     assert.strictEqual(server.exited, undefined, 'server exited early with code ' + server.exited + '. Output:\n' + server.out);
     return {
-      base: `http://127.0.0.1:${server.port}`, port: server.port, dir,
+      base: `http://127.0.0.1:${server.port}`, port: server.port, dir, out: server.out,
       stop: async () => { try { await server.stop(); } finally { rmTmp(dir); } },
     };
   } catch (e) { rmTmp(dir); throw e; }
