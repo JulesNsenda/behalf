@@ -1,0 +1,4 @@
+# Store and check out text files with LF on every OS, so the /health build fingerprint
+# (a hash of the source tree) matches between a Windows checkout and a Linux deploy.
+* text=auto eol=lf
+*.woff2 binary
