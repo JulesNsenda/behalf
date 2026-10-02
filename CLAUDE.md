@@ -8,10 +8,11 @@ Proxy Room is the reference implementation of **PXP v0 (Proxy Exchange Protocol)
 
 ## Commands
 
-Zero dependencies, Node 18+ (it uses global `fetch`). There is no build, lint or test suite.
+Zero dependencies, Node 18+ (it uses global `fetch`). There is no build or lint step.
 
 ```sh
-node index.js                         # or: npm start  (PORT defaults to 3000)
+npm test                              # node:test suite in test/ (UI tokens + contrast, ui.js, server, pages)
+node index.js                         # or: npm start  (PORT defaults to 3000; PORT=0 picks a free port, BIND_HOST is optional)
 DEMO_DELAY_MS=200 node index.js       # speed up the scripted demo (default 2600ms per turn)
 curl localhost:3000/health            # {ok, live, rooms, build}; build = hash of the source tree
 curl -XPOST localhost:3000/api/demo   # create a scripted demo room, then open /room/<id>?seat=A&t=<token>
@@ -39,6 +40,17 @@ Deployment: `drop.yaml` targets the Drop platform (`type: nodejs`, health check 
 **`lib/demo.js`** holds the scripted "hallucination cascade" scenario. Its scripted raw outputs pass through the same `buildEnvelope` enforcement as live turns. The escalation answer chooses a branch (`dedupe` / `accept`), and that branch's script then replaces `room.script`.
 
 **`web/`** contains static pages written in plain HTML and JS, with no framework. `room.html` uses SSE (`/api/rooms/:id/events`) and posts seat actions to `/api/rooms/:id/seats/:seat/(draft|seal|answer|resume)` with the token in the body.
+
+## UI library
+
+`web/ui/` is the zero-dependency UI library: `ui.css` (tokens + components, in `@layer`s), `ui.js` (`window.UI`: `esc`, `html`, `url`, `render`, `copy`, `toast`, `setTheme`, `getTheme`), `theme.js` (applies the stored theme before first paint), a self-hosted variable font, and `logo.svg`. **`/ui` is the living style guide and the reference for every component.** The existing pages still use `style.css`. Moving them over is a separate plan, and a page loads one stylesheet or the other, never both (a test enforces this).
+
+- **Tokens only:** components read colour through tokens. Literal colours live only in the light `:root` block and the two identical, screen-only dark blocks. Every pair in `test/contrast-pairs.json` must pass WCAG in both themes. Add a pair there when you introduce one.
+- **Safe HTML:** build markup with `UI.html` and pass URLs through `UI.url`. There is deliberately no string-to-trusted escape hatch, because the other seat's agent controls text on a page that holds this seat's token. `UI.render(el, safe)` is the only `innerHTML` sink: it accepts only `UI.html` output, and pages never assign `innerHTML` themselves.
+- **Plain language:** user-facing copy has no protocol jargon. Say "Your AI", "Not confirmed", "Locked" and "Deal reached". Hashes and the ledger go behind a "Details" disclosure.
+- **Seat colour is fixed by seat** (`.party-a` blue, `.party-b` rust), never by viewer. Copy says "Your AI" where the page knows the viewer's seat.
+- **Footers:** full on reading pages (home, connect), slim on stopping points (invite, agreement), and none on task pages.
+- **URLs:** never hard-code the deploy hostname in `web/`. It changes with the Behalf rename.
 
 ## Keep in sync
 
