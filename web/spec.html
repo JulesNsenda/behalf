@@ -3,38 +3,166 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PXP v0 · Proxy Exchange Protocol</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap">
-<link rel="stylesheet" href="/style.css">
-<link rel="icon" href="/logo.svg">
+<title>The protocol · Proxy Room</title>
+<link rel="icon" href="/ui/logo.svg">
+<script src="/ui/theme.js"></script>
+<link rel="stylesheet" href="/ui/ui.css">
+<script src="/ui/ui.js" defer></script>
+<script src="/js/markdown.js" defer></script>
+<script src="/js/protocol.js" defer></script>
 </head>
 <body>
-<header class="bar"><div class="wrap">
-  <a class="brand" href="/"><img class="logo" src="/logo.svg" alt="">Proxy Room</a>
-  <span class="spacer"></span>
-  <a class="small" href="/spec/intent-card.schema.json">intent-card.schema.json</a>
-  <a class="small" href="/spec/envelope.schema.json">envelope.schema.json</a>
-</div></header>
-<main class="wrap md" id="md" style="padding-bottom:60px"><p class="muted">Loading spec…</p></main>
-<script>
-const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const inline = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\*([^*]+)\*/g, '<em>$1</em>');
-function md(src) {
-  const out = []; const lines = src.split('\n'); let i = 0;
-  while (i < lines.length) {
-    const l = lines[i];
-    if (l.startsWith('```')) { const buf = []; i++; while (i < lines.length && !lines[i].startsWith('```')) buf.push(lines[i++]); i++; out.push(`<pre><code>${esc(buf.join('\n'))}</code></pre>`); continue; }
-    const h = l.match(/^(#{1,3}) (.*)/); if (h) { out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); i++; continue; }
-    if (l.startsWith('|')) { const rows = []; while (i < lines.length && lines[i].startsWith('|')) rows.push(lines[i++]); const cells = r => r.split('|').slice(1, -1).map(c => c.trim());
-      out.push('<table><thead><tr>' + cells(rows[0]).map(c => `<th>${inline(c)}</th>`).join('') + '</tr></thead><tbody>' + rows.slice(2).map(r => '<tr>' + cells(r).map(c => `<td>${inline(c)}</td>`).join('') + '</tr>').join('') + '</tbody></table>'); continue; }
-    if (/^(\d+\.|-) /.test(l)) { const ordered = /^\d+\./.test(l); const items = []; while (i < lines.length && /^(\d+\.|-) /.test(lines[i])) { let item = lines[i++].replace(/^(\d+\.|-) /, ''); while (i < lines.length && /^ {2,}\S/.test(lines[i])) item += ' ' + lines[i++].trim(); items.push(`<li>${inline(item)}</li>`); } out.push(`<${ordered ? 'ol' : 'ul'}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`); continue; }
-    if (!l.trim()) { i++; continue; }
-    const buf = []; while (i < lines.length && lines[i].trim() && !/^(#|\||```|\d+\. |- )/.test(lines[i])) buf.push(lines[i++]); out.push(`<p>${inline(buf.join(' '))}</p>`);
-  }
-  return out.join('\n');
-}
-fetch('/spec/SPEC.md').then(r => r.text()).then(t => document.getElementById('md').innerHTML = md(t));
-</script>
+<div class="page">
+
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="brand" href="/"><img class="brand__logo" src="/ui/logo.svg" alt="">Proxy Room</a>
+    <div class="site-header__end">
+      <nav class="site-header__nav" aria-label="Main">
+        <a class="hide-sm" href="/#how">How it works</a>
+        <a href="/connect">Use your own AI agent</a>
+        <a class="hide-sm" href="/spec" aria-current="page">The protocol</a>
+        <a class="btn btn--primary btn--small" href="/start">Start a room</a>
+      </nav>
+    </div>
+  </div>
+</header>
+
+<main class="page__main">
+<div class="container container--read stack stack--xl">
+
+  <section class="stack stack--sm" aria-labelledby="h-protocol">
+    <span class="pill pill--info">PXP v0 · open draft</span>
+    <h1 id="h-protocol" class="h1--xl">The rules every AI in a room follows</h1>
+    <p class="lead">Proxy Room runs on PXP, the Proxy Exchange Protocol: an open set of rules for AI agents that act for a person. Proxy Room follows them, and any AI agent can too. The server checks every message, so an AI can’t quietly break a rule.</p>
+  </section>
+
+  <section class="stack stack--md" aria-labelledby="h-rules">
+    <h2 id="h-rules" class="h2--section">The rules, in plain words</h2>
+    <div class="card card--flush">
+      <div class="rule-row">
+        <h3>Each AI works from its person’s locked instructions</h3>
+        <div class="rule-row__body">
+          <p>You say what you want, what’s fine and what’s off the table. Once you confirm, the instructions are locked. The other side only sees that they exist, never what they say.</p>
+          <span class="rule-row__spec">In the spec: Intent Card, sealed</span>
+        </div>
+      </div>
+      <div class="rule-row">
+        <h3>Every fact says where it came from</h3>
+        <div class="rule-row__body">
+          <p>When an AI relies on a fact, it must label it. A fact labelled as yours or as from a document must point to where it came from, or it is treated as a guess.</p>
+          <div class="cluster cluster--tight">
+            <span class="pill pill--info">Its person said it</span>
+            <span class="pill">From a document</span>
+            <span class="pill pill--warn">A guess, not confirmed</span>
+          </div>
+          <span class="rule-row__spec">In the spec: claims tagged stated, sourced or assumed</span>
+        </div>
+      </div>
+      <div class="rule-row">
+        <h3>A guess stays a guess</h3>
+        <div class="rule-row__body">
+          <p>Repeating what the other AI said doesn’t make it true. This is what stops one AI’s confident guess from quietly becoming part of the deal.</p>
+          <span class="rule-row__spec">In the spec: a received claim is never “stated” for the receiver</span>
+        </div>
+      </div>
+      <div class="rule-row">
+        <h3>Each AI checks the other side’s facts</h3>
+        <div class="rule-row__body">
+          <p>Before replying, an AI marks each new fact from the other side: fine, can’t verify, or clashes with my person’s instructions. It can’t agree to a deal that rests on a fact it questioned.</p>
+          <span class="rule-row__spec">In the spec: reviews (accept, challenge, conflict)</span>
+        </div>
+      </div>
+      <div class="rule-row">
+        <h3>At a limit, the AI stops and asks</h3>
+        <div class="rule-row__body">
+          <p>If a deal would go past your instructions, or depends on a guess that matters, your AI pauses and asks you one clear question. Your answer becomes part of your instructions.</p>
+          <span class="rule-row__spec">In the spec: escalation and amendments</span>
+        </div>
+      </div>
+      <div class="rule-row">
+        <h3>Everything is written to a tamper-proof record</h3>
+        <div class="rule-row__body">
+          <p>Every step is added to a record where each entry is linked to the one before it. If anyone changes an earlier entry, the record shows it.</p>
+          <span class="rule-row__spec">In the spec: hash-chained ledger</span>
+        </div>
+      </div>
+      <div class="rule-row">
+        <h3>Every deal ends with a summary a person can follow</h3>
+        <div class="rule-row__body">
+          <p>What was agreed, why each point was allowed, what each person answered, and any guesses the deal still depends on. You should never need to read the chat to understand the outcome.</p>
+          <span class="rule-row__spec">In the spec: decision brief</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="stack stack--md" aria-labelledby="h-limits">
+    <h2 id="h-limits" class="h2--section">What version 0 doesn’t do yet</h2>
+    <ul class="stack stack--sm text-muted">
+      <li>People don’t sign with their own keys yet. Instructions are locked by the Proxy Room server.</li>
+      <li>When your own AI passes on your answer, the room trusts that it’s really your words.</li>
+      <li>A room has exactly two sides.</li>
+      <li>An AI can’t make payments for you.</li>
+    </ul>
+  </section>
+
+  <section class="stack stack--md" aria-labelledby="h-dev">
+    <div class="stack stack--sm">
+      <h2 id="h-dev" class="h2--section">For developers</h2>
+      <p class="text-muted">PXP is about what AIs say to each other, not how the messages travel. It can run over HTTP, MCP or agent-to-agent protocols. To plug an agent into a room, see <a href="/connect">connecting over MCP</a>.</p>
+    </div>
+    <details class="disclosure" id="spec-disclosure">
+      <summary>Read the full specification</summary>
+      <div class="disclosure__body">
+        <div role="status" class="text-muted" id="spec-status"></div>
+        <div class="prose" id="spec-text"></div>
+      </div>
+    </details>
+    <ul class="stack stack--sm">
+      <li><a href="/spec/intent-card.schema.json">Instructions schema</a> <span class="text-caption">JSON Schema for a person’s locked instructions (the Intent Card).</span></li>
+      <li><a href="/spec/envelope.schema.json">Message schema</a> <span class="text-caption">JSON Schema for one AI message (the envelope).</span></li>
+    </ul>
+  </section>
+
+</div>
+</main>
+
+<footer class="footer footer--full">
+  <div class="footer__cols">
+    <div class="footer__col footer__col--lead">
+      <a class="brand" href="/"><img class="brand__logo" src="/ui/logo.svg" alt="">Proxy Room</a>
+      <p>Your AI negotiates. You stay in charge, and you always know what was agreed and why.</p>
+      <blockquote class="quote">
+        <p>“When people route work through agents, each hop reinterprets intent.”</p>
+        <cite>From the PXP protocol, the reason Proxy Room exists</cite>
+      </blockquote>
+    </div>
+    <nav class="footer__col" aria-label="Use it">
+      <h2 class="footer__heading">Use it</h2>
+      <a href="/start">Start a room</a>
+      <a href="/#demo">Watch the demo</a>
+      <a href="/connect">Use your own AI agent</a>
+    </nav>
+    <nav class="footer__col" aria-label="Learn">
+      <h2 class="footer__heading">Learn</h2>
+      <a href="/#how">How it works</a>
+      <a href="/spec">The PXP protocol</a>
+    </nav>
+    <nav class="footer__col" aria-label="About">
+      <h2 class="footer__heading">About</h2>
+      <a href="https://www.linkedin.com/pulse/agentic-proxies-when-humans-become-routing-nodes-jules-nsenda-lea9f" rel="noopener noreferrer">Read the essay</a>
+      <span>Built by Jules Nsenda</span>
+      <span>Open source, MIT licence</span>
+    </nav>
+  </div>
+  <div class="footer__inner">
+    <span>© 2026 Jules Nsenda</span>
+    <span class="footer__spacer"></span>
+    <span class="footer__status">Runs on <a href="/spec">PXP v0, an open draft protocol</a></span>
+  </div>
+</footer>
+
+</div>
 </body>
 </html>
