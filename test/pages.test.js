@@ -40,6 +40,15 @@ const allPages = htmlFiles(WEB);
 const guide = path.join(UI_DIR, 'index.html');
 const uiPages = allPages.filter((f) => UI_CSS.test(read(f)));
 
+test('every page links /ui/ui.css and none links /style.css', () => {
+  assert.deepStrictEqual(allPages.filter((f) => !UI_CSS.test(read(f))).map(rel), []);
+  assert.deepStrictEqual(allPages.filter((f) => OLD_CSS.test(read(f))).map(rel), []);
+});
+
+test('the old stylesheet, logo and brief page are gone', () => {
+  for (const f of ['style.css', 'logo.svg', 'brief.html']) assert.ok(!fs.existsSync(path.join(WEB, f)), f + ' still exists');
+});
+
 test('no page links both /style.css and /ui/ui.css', () => {
   assert.ok(allPages.length > 0, 'found no html files under web/');
   assert.deepStrictEqual(allPages.filter((f) => OLD_CSS.test(read(f)) && UI_CSS.test(read(f))).map(rel), []);
