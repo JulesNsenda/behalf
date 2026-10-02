@@ -491,7 +491,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/mcp') return await mcp.handle(req, res, ops, { readBody, clientIp });
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     if (url.pathname.startsWith('/room/')) return serveFile(res, path.join(PUBLIC, 'room.html'));
-    if (url.pathname.startsWith('/brief/')) return serveFile(res, path.join(PUBLIC, 'brief.html'));
+    if (url.pathname.startsWith('/brief/')) return serveFile(res, path.join(PUBLIC, 'agreement.html'));
     if (url.pathname.startsWith('/spec/')) return serveFile(res, path.join(__dirname, 'spec', path.basename(url.pathname)));
     if (url.pathname === '/spec') return serveFile(res, path.join(PUBLIC, 'spec.html'));
     if (url.pathname === '/start') return serveFile(res, path.join(PUBLIC, 'start.html'));
