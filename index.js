@@ -494,6 +494,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/brief/')) return serveFile(res, path.join(PUBLIC, 'brief.html'));
     if (url.pathname.startsWith('/spec/')) return serveFile(res, path.join(__dirname, 'spec', path.basename(url.pathname)));
     if (url.pathname === '/spec') return serveFile(res, path.join(PUBLIC, 'spec.html'));
+    if (url.pathname === '/start') return serveFile(res, path.join(PUBLIC, 'start.html'));
     if (url.pathname === '/connect') return serveFile(res, path.join(PUBLIC, 'connect.html'));
     if (url.pathname === '/ui' || url.pathname === '/ui/') return serveFile(res, path.join(PUBLIC, 'ui', 'index.html'));
     const f = path.join(PUBLIC, url.pathname === '/' ? 'index.html' : path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, ''));

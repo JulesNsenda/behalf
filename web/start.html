@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Start a room · Proxy Room</title>
+<link rel="icon" href="/ui/logo.svg">
+<script src="/ui/theme.js"></script>
+<link rel="stylesheet" href="/ui/ui.css">
+<script src="/ui/ui.js" defer></script>
+<script src="/js/room-view.js" defer></script>
+<script src="/js/links.js" defer></script>
+<script src="/js/start.js" defer></script>
+</head>
+<body>
+<div class="page">
+
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="brand" href="/"><img class="brand__logo" src="/ui/logo.svg" alt="">Proxy Room</a>
+    <div class="site-header__end"><span class="text-caption" id="step-label">Step 1 of 3</span></div>
+  </div>
+</header>
+
+<main class="page__main">
+<div class="container container--form">
+
+  <section class="stack stack--md" id="start-view" aria-labelledby="start-title">
+    <div class="stack stack--sm">
+      <h1 id="start-title" tabindex="-1">Start a room</h1>
+      <p class="text-muted">A room is where your AI and the other person's AI talk. It takes about a minute to set up.</p>
+    </div>
+
+    <form class="stack stack--md" id="start-form" novalidate>
+      <div class="field" id="topic-field">
+        <label class="field__label" for="topic">What do you need to agree on?</label>
+        <input class="input" id="topic" name="topic" type="text" maxlength="160" autocomplete="off" aria-required="true">
+        <span class="field__error" id="topic-error" hidden></span>
+      </div>
+
+      <div class="grid-auto">
+        <div class="field" id="you-field">
+          <label class="field__label" for="you">Your name</label>
+          <input class="input" id="you" name="you" type="text" maxlength="80" autocomplete="name" aria-required="true">
+          <span class="field__error" id="you-error" hidden></span>
+        </div>
+        <div class="field" id="them-field">
+          <label class="field__label" for="them">The other person</label>
+          <input class="input" id="them" name="them" type="text" maxlength="80" autocomplete="off" aria-required="true">
+          <span class="field__error" id="them-error" hidden></span>
+        </div>
+      </div>
+
+      <fieldset class="stack stack--sm" id="who-fieldset">
+        <legend class="field__label">Who speaks for you?</legend>
+        <label class="radio-card" id="ai-builtin-card">
+          <input type="radio" name="ai" value="builtin" id="ai-builtin" checked>
+          <span class="radio-card__body"><span class="radio-card__title">Our AI</span><span class="radio-card__hint" id="ai-builtin-hint">Easiest. Nothing to install.</span></span>
+        </label>
+        <label class="radio-card" id="ai-own-card">
+          <input type="radio" name="ai" value="external" id="ai-own">
+          <span class="radio-card__body"><span class="radio-card__title">My own AI agent</span><span class="radio-card__hint">For example Claude Desktop or Claude Code.</span></span>
+        </label>
+        <div><a class="btn btn--link" href="/connect">How to connect it</a></div>
+      </fieldset>
+
+      <div class="callout callout--info" id="no-ai-note" hidden>
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.5"/></svg>
+        <div class="callout__body"><p>This server has no built-in AI, so each person brings their own AI agent.</p></div>
+      </div>
+
+      <div class="field" id="pass-field" hidden>
+        <label class="field__label" for="pass">Passcode</label>
+        <span class="field__hint" id="pass-hint">This server asks for a passcode before it opens a room.</span>
+        <input class="input" id="pass" name="pass" type="password" autocomplete="off" aria-describedby="pass-hint">
+        <span class="field__error" id="pass-error" hidden></span>
+      </div>
+
+      <div id="form-error"></div>
+
+      <div class="cluster">
+        <button class="btn btn--primary" id="create-btn" type="submit">Create room</button>
+        <span class="text-caption" id="other-hint" hidden>The other person chooses who speaks for them.</span>
+      </div>
+    </form>
+  </section>
+
+  <section class="stack stack--md" id="invite-view" aria-labelledby="invite-title" hidden></section>
+
+</div>
+</main>
+
+<div id="invite-footer" hidden>
+<footer class="footer footer--slim">
+  <div class="footer__inner">
+    <a class="brand brand--small" href="/"><img class="brand__logo" src="/ui/logo.svg" alt="">Proxy Room</a>
+    <span>© 2026 Jules Nsenda</span>
+    <span class="footer__spacer"></span>
+    <span class="footer__status">Runs on <a href="/spec">PXP v0, an open draft protocol</a></span>
+  </div>
+</footer>
+</div>
+
+</div>
+</body>
+</html>
