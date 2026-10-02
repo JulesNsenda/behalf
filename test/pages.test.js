@@ -354,8 +354,12 @@ function stripEndSlot(html) {
   }
   return html.slice(0, m.index); // unclosed: drop the rest rather than compare it
 }
+// The main nav lives inside the end slot on reading pages, so it is compared on its own: every page that
+// has one must have the same one (task pages have a step label or status there instead).
+const MAIN_NAV = /<nav\b[^>]*?\sclass\s*=\s*(?:"[^"]*(?<![\w-])site-header__nav(?![\w-])[^"]*"|'[^']*(?<![\w-])site-header__nav(?![\w-])[^']*')[^>]*>[\s\S]*?<\/nav>/g;
 function fragments(html) {
   return {
+    nav: [...html.matchAll(HEADER)].flatMap((m) => [...m[0].matchAll(MAIN_NAV)].map((n) => norm(n[0]))),
     header: [...html.matchAll(HEADER)].map((m) => norm(stripEndSlot(m[0]))),
     full: [...html.matchAll(FOOTER_FULL)].map((m) => norm(m[0])),
     slim: [...html.matchAll(FOOTER_SLIM)].map((m) => norm(m[0])),
@@ -364,7 +368,7 @@ function fragments(html) {
 // The kinds (header, full, slim) whose copies differ across the given [name, html] pages.
 function fragmentDrift(pages) {
   const bad = [];
-  for (const kind of ['header', 'full', 'slim']) {
+  for (const kind of ['nav', 'header', 'full', 'slim']) {
     const all = pages.flatMap(([, html]) => fragments(html)[kind]);
     if (new Set(all).size > 1) bad.push(kind);
   }
@@ -373,14 +377,15 @@ function fragmentDrift(pages) {
 const fragmentPages = uiPages.filter((f) => f !== guide).map((f) => [rel(f), read(f)]);
 
 // Footer column of the page-migration plan. true = exactly one, false = none, 'maybe' = any number.
+// nav: whether the page has the main nav (reading pages do; task pages show a step label or status instead).
 // start.html: no footer on Start, a slim one on the Invite step (never a full one).
 const FOOTERS = {
-  'index.html': { full: true, slim: false },
-  'start.html': { full: false, slim: 'maybe' },
-  'room.html': { full: false, slim: false },
-  'agreement.html': { full: false, slim: true },
-  'connect.html': { full: true, slim: false },
-  'spec.html': { full: true, slim: false },
+  'index.html': { full: true, slim: false, nav: true },
+  'start.html': { full: false, slim: 'maybe', nav: false },
+  'room.html': { full: false, slim: false, nav: false },
+  'agreement.html': { full: false, slim: true, nav: false },
+  'connect.html': { full: true, slim: false, nav: true },
+  'spec.html': { full: true, slim: false, nav: true },
 };
 const countOk = (want, n) => (want === 'maybe' ? true : want ? n === 1 : n === 0);
 // What is wrong with one page that should be on the UI library.
@@ -389,6 +394,8 @@ function pageProblems(html, want) {
   if (!UI_CSS.test(html)) problems.push('does not link /ui/ui.css');
   const f = fragments(html);
   if (f.header.length !== 1) problems.push('needs exactly one site-header (found ' + f.header.length + ')');
+  // A nav of a different shape is caught by the drift check; this only asks whether there is one. Omitted nav = no check.
+  if (want.nav !== undefined && (f.nav.length > 0) !== want.nav) problems.push('main nav: expected ' + (want.nav ? 'one' : 'none') + ', found ' + f.nav.length);
   for (const kind of ['full', 'slim']) {
     if (!countOk(want[kind], f[kind].length)) problems.push('footer--' + kind + ': expected ' + want[kind] + ', found ' + f[kind].length);
   }
@@ -441,6 +448,20 @@ test('the fragment check fails when headers or footers differ, and ignores aria-
   assert.deepStrictEqual([q.header.length, q.full.length, q.slim.length], [1, 1, 0]);
 });
 
+test('a main nav inside the end slot is still compared across the pages that have one', () => {
+  const head = (end) => '<header class="site-header"><div class="site-header__inner"><a class="brand" href="/">P</a>'
+    + '<div class="site-header__end">' + end + '</div></div></header>';
+  const nav = (links) => '<nav class="site-header__nav" aria-label="Main">' + links + '</nav>';
+  const reading = head(nav('<a href="/connect">Connect</a><a href="/spec">Protocol</a>'));
+  const task = head('<span>Step 1 of 3</span>');
+  // A reading page and a task page agree (the task page has no nav); two reading pages with the same nav agree.
+  assert.deepStrictEqual(fragmentDrift([['r', reading], ['t', task], ['r2', reading.replace('/connect">', '/connect" aria-current="page">')]]), []);
+  // A nav that drifts on one reading page is caught, even though it sits in the end slot.
+  assert.deepStrictEqual(fragmentDrift([['r', reading], ['r2', reading.replace('Protocol', 'Spec')]]), ['nav']);
+  assert.strictEqual(fragments(reading).nav.length, 1);
+  assert.strictEqual(fragments(task).nav.length, 0);
+});
+
 test('the page manifest check fails on a missing stylesheet, header or footer, and on the wrong footer', () => {
   const css = '<link rel="stylesheet" href="/ui/ui.css">';
   const header = '<header class="site-header"><nav></nav></header>';
@@ -466,4 +487,83 @@ test('the page manifest check fails on a missing stylesheet, header or footer, a
   assert.deepStrictEqual(pageProblems(css + header + full, maybeSlim), ['footer--full: expected false, found 1']);
   assert.deepStrictEqual(pageProblems(css + header + header + full, needFull), ['needs exactly one site-header (found 2)']);
   assert.deepStrictEqual(pageProblems('<p>empty</p>', needFull), ['does not link /ui/ui.css', 'needs exactly one site-header (found 0)', 'footer--full: expected true, found 0']);
+});
+
+test('the page manifest check requires the main nav where the page has one and forbids it elsewhere', () => {
+  const css = '<link rel="stylesheet" href="/ui/ui.css">';
+  const head = (end) => '<header class="site-header"><div class="site-header__inner"><div class="site-header__end">' + end + '</div></div></header>';
+  const nav = '<nav class="site-header__nav" aria-label="Main"><a href="/">x</a></nav>';
+  const none = { full: false, slim: false };
+  assert.deepStrictEqual(pageProblems(css + head(nav), { ...none, nav: true }), []);
+  assert.deepStrictEqual(pageProblems(css + head('<span>Step 1 of 3</span>'), { ...none, nav: false }), []);
+  assert.deepStrictEqual(pageProblems(css + head('<span>Step 1 of 3</span>'), { ...none, nav: true }), ['main nav: expected one, found 0']);
+  assert.deepStrictEqual(pageProblems(css + head(nav), { ...none, nav: false }), ['main nav: expected none, found 1']);
+  assert.deepStrictEqual(pageProblems(css + head(nav), none), [], 'no nav entry, no check');
+  for (const [name, want] of Object.entries(FOOTERS)) assert.strictEqual(typeof want.nav, 'boolean', name + ' states its nav');
+});
+
+// ---- fix pass: decisions that live in page scripts ----
+test('the room scripts keep the token in the address bar: none calls replaceState', () => {
+  const roomScripts = fs.readdirSync(path.join(WEB, 'js')).filter((n) => /^room[\w-]*\.js$/.test(n) && n !== 'room-view.js');
+  assert.deepStrictEqual(roomScripts.sort(), ['room-chat.js', 'room-core.js', 'room-kit.js', 'room-setup.js', 'room.js']);
+  for (const n of roomScripts) assert.ok(!/replaceState/.test(read(path.join(WEB, 'js', n))), n);
+});
+
+test('room.html loads the room scripts in dependency order', () => {
+  const srcs = scriptSrcs(read(path.join(WEB, 'room.html'))).filter((s) => s.startsWith('/js/') || s === '/ui/ui.js');
+  assert.deepStrictEqual(srcs, ['/ui/ui.js', '/js/room-view.js', '/js/links.js', '/js/room-core.js', '/js/room-kit.js', '/js/room-setup.js', '/js/room-chat.js', '/js/room.js']);
+});
+
+test('the room page has one way to render and one set of hooks: no A.apply, no late-assigned A.on* hooks', () => {
+  for (const n of ['room.js', 'room-core.js', 'room-kit.js', 'room-setup.js', 'room-chat.js']) {
+    const src = read(path.join(WEB, 'js', n));
+    assert.ok(!/A\.apply/.test(src), n + ' calls A.apply');
+    assert.ok(!/A\.on(Room|Gone|LoadError)/.test(src.replace(/^\s*\*.*$/gm, '')), n + ' uses a late A.on* hook');
+  }
+});
+
+test('the invite preview opens in a new tab without an opener', () => {
+  assert.match(read(path.join(WEB, 'js', 'start.js')), /href="\$\{UI\.url\(previewPath\)\}" target="_blank" rel="noopener noreferrer"/);
+});
+
+test('RoomView.str is the only place that strips format characters', () => {
+  const hits = jsFiles(path.join(WEB, 'js')).filter((f) => /\p\{Cf\}/.test(read(f))).map(rel);
+  assert.deepStrictEqual(hits, [path.join('js', 'room-view.js')]);
+});
+
+// ---- wave 2 regressions that live in page scripts (static checks; the DOM is covered by the runtime walkthrough) ----
+// What the paths and links look like is tested on Links itself (links.test.js). This only checks that the
+// pages use those builders and don't make room or agreement paths by hand.
+test('page scripts build room and agreement paths through Links, never by hand', () => {
+  const hits = jsFiles(path.join(WEB, 'js'))
+    .filter((f) => path.basename(f) !== 'links.js')
+    // Reading the id out of a path is not building a link.
+    .filter((f) => /['"`]\/(?:room|brief)\//.test(read(f).replace(/roomIdFromPath\([^)]*\)/g, '')))
+    .map(rel);
+  assert.deepStrictEqual(hits, []);
+});
+
+test('the pages that make a room or agreement link use the Links builders', () => {
+  const uses = (name, re) => assert.match(read(path.join(WEB, 'js', name)), re, name);
+  uses('start.js', /Links\.previewPath\(room\.id, 'B'\)/);
+  uses('home.js', /Links\.demoUrl\(res\.data\)/);
+  uses('agreement.js', /Links\.roomPath\(roomId, seat\)/);
+  uses('room-chat.js', /Links\.briefPath\(A\.roomId, room\.seat\)/);
+  uses('room-chat.js', /Links\.demoUrl\(res\.data\)/);
+  uses('room-core.js', /cred\.promptLink\(location\.origin\)/);
+});
+
+test('start.js: when the links did not come back the form is locked and the error shown', () => {
+  const src = read(path.join(WEB, 'js', 'start.js'));
+  const branch = src.slice(src.indexOf('if (shown) return;'), src.indexOf('// A refused passcode'));
+  assert.match(branch, /lockForm\(\);/);
+  assert.match(branch, /showError\(LINKS_MESSAGE\)/);
+  assert.match(src, /if \(submitting \|\| created\) return;/, 'a created room never submits again');
+  assert.match(src, /function lockForm\(\) \{ UI\.disableAll\(form\); \}/);
+});
+
+test('agreement.js: the address bar keeps ?seat and drops the token', () => {
+  const src = read(path.join(WEB, 'js', 'agreement.js'));
+  assert.match(src, /replaceState\(null, '', location\.pathname \+ Links\.seatQuery\(seat\) \+ location\.hash\)/);
+  assert.ok(!/replaceState[^;]*\bt=/.test(src), 'no token goes back into the address');
 });
