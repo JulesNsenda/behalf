@@ -16,7 +16,7 @@ const MCP_HEADERS = { accept: 'application/json, text/event-stream' };
 
 test('a room that hits the turn limit is a no-deal for the agreement page', async () => {
   const stallDir = mkTmp('room-flow-stall-');
-  const srv = await start(path.join(ROOT, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: stallDir, MAX_TURNS: '1' });
+  const srv = await start(path.join(ROOT, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', SIGNIN: 'off', DROP_DATA_DIR: stallDir, MAX_TURNS: '1' });
   try {
     assert.strictEqual(srv.exited, undefined, 'server exited early: ' + srv.out);
     const url = `http://127.0.0.1:${srv.port}`;

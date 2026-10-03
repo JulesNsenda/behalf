@@ -18,7 +18,7 @@ let base = '';
 before(async () => {
   dir = mkTmp('room-flow-');
   server = await start(path.join(ROOT, 'index.js'), {
-    PORT: '0', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir, DEMO_DELAY_MS: '60',
+    PORT: '0', BIND_HOST: '127.0.0.1', SIGNIN: 'off', DROP_DATA_DIR: dir, DEMO_DELAY_MS: '60',
   });
   assert.strictEqual(server.exited, undefined, 'server exited early with code ' + server.exited + '. Output:\n' + server.out);
   base = `http://127.0.0.1:${server.port}`;

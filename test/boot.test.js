@@ -17,7 +17,7 @@ const T = { timeout: 30000 };
 function setup(t) {
   const dir = mkTmp('boot-');
   t.after(() => rmTmp(dir));
-  const config = loadConfig({ DROP_DATA_DIR: path.join(dir, 'data'), PUBLIC_URL: 'http://test.invalid' });
+  const config = loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: path.join(dir, 'data'), PUBLIC_URL: 'http://test.invalid' });
   return { dir, file: path.join(dir, 'data', 'rooms.json'), config };
 }
 
@@ -27,13 +27,15 @@ function guardEnv(t, names) {
   t.after(() => { for (const k of names) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } });
 }
 
-test('bootApp reads the secrets once, deletes all three from process.env, and builds the file store without loading pg', T, async (t) => {
-  guardEnv(t, ['ROOM_PASSCODE', 'ANTHROPIC_API_KEY', 'DATABASE_URL']);
+test('bootApp reads the secrets once, deletes every secret from process.env, and builds the file store without loading pg', T, async (t) => {
+  const NAMES = ['ROOM_PASSCODE', 'ANTHROPIC_API_KEY', 'DATABASE_URL', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'];
+  guardEnv(t, NAMES);
   process.env.ROOM_PASSCODE = 'pw-1'; process.env.ANTHROPIC_API_KEY = 'sk-ant-BOOT-1'; delete process.env.DATABASE_URL;
+  process.env.GITHUB_CLIENT_ID = 'gh-id-1'; process.env.GITHUB_CLIENT_SECRET = 'gh-secret-1';
   const { config } = setup(t);
   const app = await bootApp({ config, log: quietLog(), proxy: fakeProxy(), clock: { sleep: async () => {} } });
   t.after(() => app.close());
-  for (const k of ['ROOM_PASSCODE', 'ANTHROPIC_API_KEY', 'DATABASE_URL']) assert.equal(k in process.env, false, k);
+  for (const k of NAMES) assert.equal(k in process.env, false, k);
   assert.equal(app.ops.passcodeRequired(), true, 'the passcode was read before it was deleted');
   assert.equal(app.store.kind, 'file');
   assert.ok(app.store.health().ok);
@@ -302,8 +304,8 @@ test('bootApp gives the injected clock to the file store too: its debounce timer
   await app.close();
 });
 
-test('consumeSecrets deletes each of the three names on its own', () => {
-  for (const name of ['ROOM_PASSCODE', 'ANTHROPIC_API_KEY', 'DATABASE_URL']) {
+test('consumeSecrets deletes each of the five names on its own', () => {
+  for (const name of ['ROOM_PASSCODE', 'ANTHROPIC_API_KEY', 'DATABASE_URL', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']) {
     const env = { [name]: 'v', KEEP: '1' };
     consumeSecrets(env);
     assert.deepEqual(env, { KEEP: '1' }, name);

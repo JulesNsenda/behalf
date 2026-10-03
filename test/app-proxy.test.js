@@ -29,7 +29,7 @@ function setup(t, extra) {
   t.after(() => rmTmp(dir));
   const out = [];
   const app = createApp(Object.assign({
-    config: loadConfig({ DROP_DATA_DIR: path.join(dir, 'data') }),
+    config: loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: path.join(dir, 'data') }),
     log: createLog({ stream: { write: (s) => out.push(s) } }),
     file: path.join(dir, 'data', 'rooms.json'),
   }, extra));
@@ -103,7 +103,7 @@ test('PXP_MODEL reaches the proxy and the request body through createApp', T, as
   const bodies = [];
   const fetch = async (url, init) => { bodies.push(JSON.parse(init.body)); return text({ terms: [] }); };
   const { app } = setup(t, {
-    config: loadConfig({ PXP_MODEL: 'model-from-env', DROP_DATA_DIR: path.join(mkTmp('app-proxy-model-'), 'data') }),
+    config: loadConfig({ PXP_MODEL: 'model-from-env', SIGNIN: 'off', DROP_DATA_DIR: path.join(mkTmp('app-proxy-model-'), 'data') }),
     secrets: loadSecrets({ ANTHROPIC_API_KEY: KEY }),
     fetch,
   });

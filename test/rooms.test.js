@@ -48,7 +48,7 @@ function setup(t, { turns = [], maxTurns = 10, proxy, content, overrides, limits
   const out = [];
   const log = createLog({ stream: { write: (s) => out.push(s) } });
   // The fixture rooms are old on purpose: eviction is off here unless a test sets its own limits.
-  const config = { ...loadConfig({ DROP_DATA_DIR: path.join(dir, 'data'), MAX_TURNS: String(maxTurns), PUBLIC_URL: 'http://test.invalid' }), roomTtlDays: 1e6, demoTtlHours: 1e9, maxRooms: 1e6, ...limits };
+  const config = { ...loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: path.join(dir, 'data'), MAX_TURNS: String(maxTurns), PUBLIC_URL: 'http://test.invalid' }), roomTtlDays: 1e6, demoTtlHours: 1e9, maxRooms: 1e6, ...limits };
   const p = proxy || fakeProxy(turns);
   const app = createApp(Object.assign({ config, secrets: loadSecrets({}), log, proxy: p, clock: { sleep: async () => {} }, file }, overrides));
   t.after(() => app.close());
@@ -241,7 +241,7 @@ test('createLiveRoom keeps its codes: 503 without a live proxy, 403 on the passc
   const dir = mkTmp('rooms-pass-');
   t.after(() => rmTmp(dir));
   const gated = createApp({
-    config: loadConfig({ DROP_DATA_DIR: dir, PER_IP_DAILY: '1' }), secrets: loadSecrets({ ROOM_PASSCODE: 'open' }),
+    config: loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: dir, PER_IP_DAILY: '1' }), secrets: loadSecrets({ ROOM_PASSCODE: 'open' }),
     log: createLog({ stream: { write() {} } }), proxy: fakeProxy([]), clock: { sleep: async () => {} },
   });
   t.after(() => gated.close());
@@ -294,7 +294,7 @@ test('createApp throws StoreError for a future-schema file and never exits', T, 
   process.exit = () => { exited = true; };
   try {
     assert.throws(
-      () => createApp({ config: loadConfig({ DROP_DATA_DIR: dir }), secrets: loadSecrets({}), log: createLog({ stream: { write() {} } }), proxy: fakeProxy([]) }),
+      () => createApp({ config: loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: dir }), secrets: loadSecrets({}), log: createLog({ stream: { write() {} } }), proxy: fakeProxy([]) }),
       (e) => e instanceof StoreError && e.code === 'EFUTURESCHEMA',
     );
   } finally { process.exit = exit; }
@@ -433,7 +433,7 @@ test('close() stops a running demo from taking further turns', T, async (t) => {
   const dir = mkTmp('rooms-stop-');
   t.after(() => rmTmp(dir));
   const app = createApp({
-    config: loadConfig({ DROP_DATA_DIR: dir }), secrets: loadSecrets({}), log: createLog({ stream: { write() {} } }),
+    config: loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: dir }), secrets: loadSecrets({}), log: createLog({ stream: { write() {} } }),
     proxy: fakeProxy([]), clock: { sleep: (ms) => new Promise((r) => setTimeout(r, 25)) },
   });
   const room = app.domain.createDemoRoom();
@@ -466,7 +466,7 @@ test('createApp deletes ROOM_PASSCODE from process.env only when it loaded the s
   t.after(() => { if (hadKey) process.env.ANTHROPIC_API_KEY = savedKey; else delete process.env.ANTHROPIC_API_KEY; });
   const dir = mkTmp('rooms-env-');
   t.after(() => rmTmp(dir));
-  const base = () => ({ config: loadConfig({ DROP_DATA_DIR: dir }), log: createLog({ stream: { write() {} } }), proxy: fakeProxy([]) });
+  const base = () => ({ config: loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: dir }), log: createLog({ stream: { write() {} } }), proxy: fakeProxy([]) });
 
   process.env.ROOM_PASSCODE = 'from-env';
   const loaded = createApp(base());
@@ -503,7 +503,7 @@ test('createApp does not load an injected store, and close() closes it', T, asyn
 test('createApp builds its store at overrides.file, or at dataDir/rooms.json by default', T, async (t) => {
   const dir = mkTmp('rooms-file-');
   t.after(() => rmTmp(dir));
-  const mk = (extra) => createApp(Object.assign({ config: loadConfig({ DROP_DATA_DIR: path.join(dir, 'd') }), secrets: loadSecrets({}), log: createLog({ stream: { write() {} } }), proxy: fakeProxy([]) }, extra));
+  const mk = (extra) => createApp(Object.assign({ config: loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: path.join(dir, 'd') }), secrets: loadSecrets({}), log: createLog({ stream: { write() {} } }), proxy: fakeProxy([]) }, extra));
   const custom = path.join(dir, 'elsewhere', 'custom.json');
   const a = mk({ file: custom });
   a.domain.createDemoRoom();
@@ -608,7 +608,7 @@ test('a non-StoreError at startup is logged as app.init_failed and exits non-zer
   const src = makeSrc({ 'lib/demo.js': "throw new TypeError('demo module is broken');\n" });
   const dir = mkTmp('init-failed-');
   t.after(() => { rmTmp(src); rmTmp(dir); });
-  const r = await start(path.join(src, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir });
+  const r = await start(path.join(src, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', SIGNIN: 'off', DROP_DATA_DIR: dir });
   assert.ok(r.exited !== undefined && r.exited !== 0, 'expected a non-zero exit\n' + r.out);
   assert.equal(r.out.split('\n').filter((l) => l.includes('app.init_failed')).length, 1, r.out);
   assert.equal(r.out.includes('store.load_failed'), false);
@@ -826,7 +826,7 @@ function gatedSetup(t, { perIp = '100' } = {}) {
   const clock = { t: Date.parse('2026-03-01T10:00:00Z'), sleep: async () => {} };
   clock.now = () => clock.t;
   const app = createApp({
-    config: loadConfig({ DROP_DATA_DIR: dir, PER_IP_DAILY: perIp, DAILY_ROOM_LIMIT: '1000' }), secrets: loadSecrets({ ROOM_PASSCODE: 'x' }),
+    config: loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: dir, PER_IP_DAILY: perIp, DAILY_ROOM_LIMIT: '1000' }), secrets: loadSecrets({ ROOM_PASSCODE: 'x' }),
     log: createLog({ stream: { write() {} } }), proxy: fakeProxy([]), clock,
   });
   t.after(() => app.close());

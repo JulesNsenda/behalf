@@ -21,39 +21,14 @@ const { mkTmp, rmTmp, spawnIndex } = require('../test-support/server');
 const { waitFor, sleep } = require('../test-support/http');
 const { ROOT } = require('../test-support/paths');
 
-const URL_ = process.env.PG_TEST_URL;
+const { PG_URL: URL_, pgQuery: q, withBlocker, assertScratch, dropTable } = require('../test-support/pg');
 const hasPg = (() => { try { require.resolve('pg'); return true; } catch (e) { return false; } })();
 const T = { timeout: 60000 };
 const DB = { ...T, skip: !URL_ };
 
 if (!URL_) test('the Postgres store tests (skipped: PG_TEST_URL is not set)', { skip: true }, () => {});
 
-// One query on a fresh connection, so a test can look at and change the database whatever state the stores are in.
-async function q(sql, params) {
-  const { Client } = require('pg');
-  const c = new Client({ connectionString: URL_ });
-  await c.connect();
-  try { return await c.query(sql, params); } finally { await c.end(); }
-}
-// A second session for a test to hold locks with. Whatever the test does, it is rolled back and closed.
-async function withBlocker(fn) {
-  const { Client } = require('pg');
-  const blocker = new Client({ connectionString: URL_ });
-  await blocker.connect();
-  try { return await fn(blocker); } finally { await blocker.query('ROLLBACK').catch(() => {}); await blocker.end(); }
-}
-const dropTable = async () => { await assertScratch(); await q('DROP TABLE IF EXISTS behalf_records'); };
-
 // A harness: stores it opens (all closed by cleanup), the capture logger, and the data helpers.
-// These tests drop behalf_records and terminate backends: refuse to touch a database that is not a scratch one.
-let scratchChecked = false;
-async function assertScratch() {
-  if (scratchChecked) return;
-  const name = (await q('SELECT current_database() AS n')).rows[0].n;
-  assert.ok(/_test$/.test(name), 'PG_TEST_URL must point at a database whose name ends in _test, got ' + name);
-  scratchChecked = true;
-}
-
 async function harness(opts = {}) {
   await assertScratch();
   await dropTable();
@@ -452,6 +427,7 @@ withImport('import: a table that already has rows is not imported into: store.im
   const skipped = h.log.lines.filter((l) => l.event === 'store.import_skipped');
   assert.equal(skipped.length, 1);
   assert.equal(skipped[0].level, 'warn');
+  assert.equal(h.log.has('store.import_rename_finished'), false, 'a file that was left alone is not reported as renamed');
   assert.equal(h.log.has('store.imported'), false);
   assert.equal(await roomCount(), 1);
 });
@@ -814,6 +790,9 @@ withImport('import: the imported file\'s hash is recorded, and a file left behin
   const s2 = await h.open({ importFile: file });
   assert.equal(fs.existsSync(file), false, 'the same file is renamed');
   assert.equal(h.log.has('store.import_skipped'), false);
+  const finished = h.log.lines.filter((l) => l.event === 'store.import_rename_finished');
+  assert.equal(finished.length, 1, 'the leftover rename is logged once');
+  assert.equal(finished[0].level, 'info');
   await s2.close();
   // a different file is not ours to rename
   fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, rooms: { other001: legacyRoom('other001', 'z') } }));
@@ -824,6 +803,7 @@ withImport('import: the imported file\'s hash is recorded, and a file left behin
   const skipped = h.log.lines.filter((l) => l.event === 'store.import_skipped');
   assert.equal(skipped.length, 1);
   assert.equal(skipped[0].level, 'warn');
+  assert.equal(h.log.lines.filter((l) => l.event === 'store.import_rename_finished').length, 1, 'still only the one real rename');
   assert.deepEqual([...s3.state.rooms.keys()].sort(), ['room0001', 'room0002'], 'and not imported');
 });
 
@@ -1098,7 +1078,7 @@ withHarness('bootApp with DATABASE_URL builds the Postgres store, imports rooms.
   const dir = mkTmp('pg-boot-');
   t.after(() => rmTmp(dir));
   fs.writeFileSync(path.join(dir, 'rooms.json'), JSON.stringify({ schemaVersion: 1, rooms: { room0001: legacyRoom('room0001', 'a') } }));
-  const config = loadConfig({ DROP_DATA_DIR: dir, PUBLIC_URL: 'http://test.invalid' });
+  const config = loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: dir, PUBLIC_URL: 'http://test.invalid' });
   const app = await bootApp({ config, log: h.log, proxy: fakeProxy(), clock: { sleep: async () => {} } });
   assert.equal('DATABASE_URL' in process.env, false);
   assert.equal(app.store.kind, 'postgres');
@@ -1117,7 +1097,7 @@ withHarness('bootApp with DATABASE_URL builds the Postgres store, imports rooms.
 test('bootApp passes the database url through the redacted secrets: a url in secrets selects Postgres', DB, async (t) => {
   const h = await harness();
   t.after(h.cleanup);
-  const config = loadConfig({ DROP_DATA_DIR: mkTmp('pg-boot2-'), PUBLIC_URL: 'http://test.invalid' });
+  const config = loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: mkTmp('pg-boot2-'), PUBLIC_URL: 'http://test.invalid' });
   t.after(() => rmTmp(config.dataDir));
   const app = await bootApp({ config, secrets: loadSecrets({ DATABASE_URL: URL_ }), log: h.log, proxy: fakeProxy(), storeOptions: { debounceMs: 20 } });
   assert.equal(app.store.kind, 'postgres');
@@ -1129,7 +1109,7 @@ test('bootApp rejects with ELOCKED while another store holds the lock, and the h
   t.after(h.cleanup);
   const fatals = [];
   const holder = await h.open({ onFatal: (e) => fatals.push(e) });
-  const config = loadConfig({ DROP_DATA_DIR: mkTmp('pg-boot3-'), PUBLIC_URL: 'http://test.invalid' });
+  const config = loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: mkTmp('pg-boot3-'), PUBLIC_URL: 'http://test.invalid' });
   t.after(() => rmTmp(config.dataDir));
   await assert.rejects(bootApp({ config, secrets: loadSecrets({ DATABASE_URL: URL_ }), log: h.log, proxy: fakeProxy(), storeOptions: { lockWaitMs: 200, lockRetryMs: 50 } }), (e) => e.code === 'ELOCKED');
   holder.state.rooms.set('room0001', minimalRoom('room0001'));
@@ -1203,7 +1183,7 @@ withHarness('the first write after a load carries only what hydrate() changed: n
 withHarness('bootApp closes the store it built when createApp throws, so the lock is free again', async (h, t) => {
   const dir = mkTmp('pg-boot4-');
   t.after(() => rmTmp(dir));
-  const config = { ...loadConfig({ DROP_DATA_DIR: dir, PUBLIC_URL: 'http://test.invalid' }), trustProxy: 'bogus' };
+  const config = { ...loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: dir, PUBLIC_URL: 'http://test.invalid' }), trustProxy: 'bogus' };
   await assert.rejects(bootApp({ config, secrets: loadSecrets({ DATABASE_URL: URL_ }), log: h.log, proxy: fakeProxy() }), /Unknown trust proxy/);
   await waitFor(() => lockPids(), (p) => p.length === 0, { intervalMs: 20, what: 'the lock to be given back' });
   await h.open(); // loads at once

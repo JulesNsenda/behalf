@@ -24,6 +24,9 @@ test('defaults with an empty environment', () => {
     publicUrl: 'https://behalf.dropkit.sh',
     model: 'claude-sonnet-5-5',
     drainDeadlineMs: 8000,
+    signin: 'off',
+    perUserDaily: 3,
+    githubBlockedIds: [],
   });
   assert.equal(ROOT, path.join(__dirname, '..'));
 });
@@ -45,7 +48,7 @@ test('PORT keeps parsePort semantics, 0 stays valid', () => {
 
 test('string variables fall back when empty, keep their value otherwise', () => {
   assert.equal(loadConfig({ DROP_DATA_DIR: '' }).dataDir, path.join(ROOT, '.data'));
-  const c = loadConfig({ DROP_DATA_DIR: path.join(ROOT, 'x'), BIND_HOST: '127.0.0.1' });
+  const c = loadConfig({ DROP_DATA_DIR: path.join(ROOT, 'x'), SIGNIN: 'off', BIND_HOST: '127.0.0.1' });
   assert.equal(c.dataDir, path.join(ROOT, 'x'));
   assert.equal(c.bindHost, '127.0.0.1');
 });

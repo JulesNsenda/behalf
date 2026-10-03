@@ -62,7 +62,7 @@ function start(entry, env, args = []) {
 }
 
 // index.js on a free loopback port with `dir` as its data dir.
-const spawnIndex = (dir, env = {}, args = [], killAfterMs) => spawnServer(path.join(ROOT, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir, ...env }, args, killAfterMs);
+const spawnIndex = (dir, env = {}, args = [], killAfterMs) => spawnServer(path.join(ROOT, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', SIGNIN: 'off', DROP_DATA_DIR: dir, ...env }, args, killAfterMs);
 
 const mkTmp = (prefix) => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 // Windows holds file handles briefly after a child exits, hence the retries.

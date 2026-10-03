@@ -19,7 +19,7 @@ let dir = null;
 
 before(async () => {
   dir = mkTmp('routes-');
-  server = await start(path.join(ROOT, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir });
+  server = await start(path.join(ROOT, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', SIGNIN: 'off', DROP_DATA_DIR: dir });
   assert.strictEqual(server.exited, undefined, 'server exited: ' + server.out);
 });
 

@@ -149,7 +149,7 @@ let base = '';
 
 before(async () => {
   dir = mkTmp('demo-copy-');
-  server = await start(path.join(ROOT, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', DEMO_DELAY_MS: '20', DROP_DATA_DIR: dir });
+  server = await start(path.join(ROOT, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', DEMO_DELAY_MS: '20', SIGNIN: 'off', DROP_DATA_DIR: dir });
   assert.strictEqual(server.exited, undefined, 'server exited early with code ' + server.exited + '. Output:\n' + server.out);
   base = `http://127.0.0.1:${server.port}`;
 });

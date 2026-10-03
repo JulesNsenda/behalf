@@ -92,3 +92,65 @@ test('DRAIN_DEADLINE_MS is strict, 100 to 9000 (under the platform\'s 10 s), and
   assert.equal(strictInt({ X: '3' }, 'X', 5, 10, 3), 3);
   assert.throws(() => strictInt({ X: '2' }, 'X', 5, 10, 3), ConfigError);
 });
+
+// ---- sign-in ----
+const { loadSecrets, consumeSecrets, checkSignin } = require('../lib/config');
+
+test('SIGNIN defaults to off with no data dir or database url, and must be explicit when DROP_DATA_DIR or DATABASE_URL is set', () => {
+  for (const blank of [undefined, '', '  ']) assert.equal(loadConfig({ SIGNIN: blank }).signin, 'off', JSON.stringify(blank));
+  for (const blank of [undefined, '', '  ']) {
+    assert.throws(() => loadConfig({ DATABASE_URL: 'postgres://u:p@h/d', SIGNIN: blank }), (e) => e instanceof ConfigError && e.code === 'BAD_SIGNIN', 'DATABASE_URL alone: ' + JSON.stringify(blank));
+    assert.throws(() => loadConfig({ DROP_DATA_DIR: '/data', SIGNIN: blank }), (e) => e instanceof ConfigError && e.code === 'BAD_SIGNIN', JSON.stringify(blank));
+  }
+  assert.equal(loadConfig({ DROP_DATA_DIR: '/data', SIGNIN: 'off' }).signin, 'off');
+  assert.equal(loadConfig({ DROP_DATA_DIR: '/data', SIGNIN: 'github' }).signin, 'github');
+  assert.equal(loadConfig({ SIGNIN: ' github ' }).signin, 'github');
+  for (const bad of ['GitHub', 'GITHUB', 'on', 'true', '1', 'google', 'github,off', MARKER]) {
+    assert.throws(() => loadConfig({ SIGNIN: bad }), (e) => e instanceof ConfigError && e.code === 'BAD_SIGNIN' && !e.message.includes(MARKER), bad);
+  }
+});
+
+test('SIGNIN=github needs both GitHub secrets (BAD_SIGNIN_SECRETS) and an https PUBLIC_URL, or http for localhost (BAD_PUBLIC_URL)', () => {
+  const github = loadConfig({ SIGNIN: 'github', PUBLIC_URL: 'https://x.test' });
+  const full = loadSecrets({ GITHUB_CLIENT_ID: 'id', GITHUB_CLIENT_SECRET: 'sec' });
+  assert.doesNotThrow(() => checkSignin(github, full));
+  for (const partial of [{}, { GITHUB_CLIENT_ID: 'id' }, { GITHUB_CLIENT_SECRET: 'sec' }, { GITHUB_CLIENT_ID: '', GITHUB_CLIENT_SECRET: 'sec' }]) {
+    assert.throws(() => checkSignin(github, loadSecrets(partial)), (e) => e instanceof ConfigError && e.code === 'BAD_SIGNIN_SECRETS', JSON.stringify(partial));
+  }
+  for (const url of ['not a url', 'ftp://x.test', 'javascript:alert(1)', 'http://x.test', 'http://behalf.dropkit.sh', 'http://localhost.evil.test', 'http://127.0.0.2:3000']) {
+    assert.throws(() => checkSignin(loadConfig({ SIGNIN: 'github', PUBLIC_URL: url }), full), (e) => e instanceof ConfigError && e.code === 'BAD_PUBLIC_URL', url);
+  }
+  for (const url of ['http://localhost:3000', 'http://127.0.0.1:8080', 'http://[::1]:3000', 'https://x.test']) assert.doesNotThrow(() => checkSignin(loadConfig({ SIGNIN: 'github', PUBLIC_URL: url }), full), url);
+  // The secrets are checked first, so the code says which one is wrong.
+  assert.throws(() => checkSignin(loadConfig({ SIGNIN: 'github', PUBLIC_URL: 'http://x.test' }), loadSecrets({})), (e) => e.code === 'BAD_SIGNIN_SECRETS');
+  assert.doesNotThrow(() => checkSignin(loadConfig({ SIGNIN: 'off' }), loadSecrets({})), 'off needs nothing');
+});
+
+test('PER_USER_DAILY is a strict integer, default 3', () => {
+  for (const blank of [undefined, '', '  ']) assert.equal(loadConfig({ PER_USER_DAILY: blank }).perUserDaily, 3);
+  assert.equal(loadConfig({ PER_USER_DAILY: ' 7 ' }).perUserDaily, 7);
+  assert.equal(loadConfig({ PER_USER_DAILY: '1000' }).perUserDaily, 1000);
+  for (const bad of ['0', '-1', '1.5', '1e3', 'abc', '1001', MARKER]) {
+    assert.throws(() => loadConfig({ PER_USER_DAILY: bad }), (e) => e instanceof ConfigError && e.code === 'BAD_PER_USER_DAILY' && !e.message.includes(MARKER), bad);
+  }
+});
+
+test('GITHUB_BLOCKED_IDS is a comma-separated list of numeric ids, strict', () => {
+  for (const blank of [undefined, '', '  ']) assert.deepEqual([...loadConfig({ GITHUB_BLOCKED_IDS: blank }).githubBlockedIds], []);
+  assert.deepEqual([...loadConfig({ GITHUB_BLOCKED_IDS: '42' }).githubBlockedIds], ['42']);
+  assert.deepEqual([...loadConfig({ GITHUB_BLOCKED_IDS: ' 42 , 7,0042 ' }).githubBlockedIds], ['42', '7', '42']);
+  assert.ok(Object.isFrozen(loadConfig({ GITHUB_BLOCKED_IDS: '1' }).githubBlockedIds));
+  for (const bad of ['abc', '1,', ',1', '1,,2', '-1', '1.5', '0', '1e3', '0x10', '1 2', '1234567890123456', 'octocat', MARKER]) {
+    assert.throws(() => loadConfig({ GITHUB_BLOCKED_IDS: bad }), (e) => e instanceof ConfigError && e.code === 'BAD_GITHUB_BLOCKED_IDS' && !e.message.includes(MARKER), bad);
+  }
+});
+
+test('the GitHub secrets are redacted, kept out of the config, and removed from the environment', () => {
+  const env = { GITHUB_CLIENT_ID: 'cid-VALUE', GITHUB_CLIENT_SECRET: 'csec-VALUE', KEEP: '1' };
+  const config = loadConfig(env);
+  for (const text of [JSON.stringify(config), util.inspect(config, { depth: 5, showHidden: true })]) assert.ok(!text.includes('VALUE'), text);
+  const s = consumeSecrets(env);
+  assert.deepEqual([s.githubClientId, s.githubClientSecret], ['cid-VALUE', 'csec-VALUE']);
+  assert.deepEqual(env, { KEEP: '1' });
+  for (const text of [JSON.stringify(s), util.inspect(s, { showHidden: true }), util.format('%o', s)]) assert.ok(!text.includes('VALUE'), text);
+});

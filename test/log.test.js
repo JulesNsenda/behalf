@@ -10,7 +10,7 @@ function capture() {
 }
 
 test('the allowlist is pinned', () => {
-  assert.deepEqual(ALLOWED, ['room', 'seat', 'status', 'httpStatus', 'errorClass', 'code', 'durationMs', 'stack', 'reason']);
+  assert.deepEqual(ALLOWED, ['room', 'seat', 'status', 'httpStatus', 'errorClass', 'code', 'durationMs', 'stack', 'reason', 'kind']);
 });
 
 test('one line per call: level, event and allowlisted fields, JSON-escaped', () => {
@@ -183,4 +183,21 @@ test('errorFields survives odd inputs, hostile names and throwing getters', () =
   assert.equal(errorFields(e).errorClass, 'Error');
   const g = { get name() { throw new Error('x'); } };
   assert.deepEqual(errorFields(g), { errorClass: 'Error' });
+});
+
+test('kind accepts only a store record kind, and a login, a user id or a token cannot ride in it', () => {
+  const { lines, log } = capture();
+  for (const k of ['room', 'user', 'session', 'agentkey', 'usage', 'meta']) log.info('x', { kind: k });
+  assert.deepEqual(lines, ['room', 'user', 'session', 'agentkey', 'usage', 'meta'].map((k) => `level=info event="x" kind="${k}"\n`));
+  lines.length = 0;
+  for (const bad of ['octocat', '12345', 'Session', 'bh_abc', '', 7, null, {}]) log.info('x', { kind: bad });
+  assert.ok(lines.every((l) => l === 'level=info event="x"\n'), lines.join(''));
+});
+
+test('auth events carry the error class and code of an AuthError and nothing from GitHub', () => {
+  const { AuthError } = require('../lib/errors');
+  const { lines, log } = capture();
+  log.error('auth.login_failed', {}, new AuthError('AUTH_EXCHANGE'));
+  assert.match(lines[0], /^level=error event="auth\.login_failed" errorClass="AuthError" code="AUTH_EXCHANGE" stack=".*"\n$/);
+  assert.ok(!lines[0].includes('Sign-in failed'), 'the message is never logged');
 });

@@ -15,7 +15,7 @@ const INDEX = path.join(ROOT, 'index.js');
 describe('PORT', { concurrency: true }, () => {
   test('PORT with surrounding whitespace is trimmed and 0 binds a free port', async () => {
     const dir = mkTmp('port-test-');
-    const s = await start(INDEX, { PORT: ' 0 ', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir });
+    const s = await start(INDEX, { PORT: ' 0 ', BIND_HOST: '127.0.0.1', SIGNIN: 'off', DROP_DATA_DIR: dir });
     try {
       assert.strictEqual(s.exited, undefined, 'server exited: ' + s.out);
       assert.ok(s.port > 0 && s.port !== 3000, 'port was ' + s.port);
@@ -45,7 +45,7 @@ describe('PORT', { concurrency: true }, () => {
     if (held instanceof Error) return t.skip('cannot bind 3000 here (' + held.code + ')');
     const dir = mkTmp('port-test-');
     try {
-      const s = await start(INDEX, { PORT: 'abc', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir });
+      const s = await start(INDEX, { PORT: 'abc', BIND_HOST: '127.0.0.1', SIGNIN: 'off', DROP_DATA_DIR: dir });
       await s.stop();
       assert.strictEqual(s.port, undefined, `bound port ${s.port} instead of 3000`);
       assert.ok(/EADDRINUSE/.test(s.out) && /3000/.test(s.out), 'expected EADDRINUSE on 3000, got:\n' + s.out);
@@ -59,7 +59,7 @@ describe('PORT', { concurrency: true }, () => {
 // ---- BUILD fingerprint ignores docs/ ----
 async function buildOf(dir) {
   const data = mkTmp('build-data-');
-  const s = await start(path.join(dir, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: data });
+  const s = await start(path.join(dir, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', SIGNIN: 'off', DROP_DATA_DIR: data });
   try {
     assert.strictEqual(s.exited, undefined, 'server exited: ' + s.out);
     return (await (await fetch(`http://127.0.0.1:${s.port}/health`)).json()).build;

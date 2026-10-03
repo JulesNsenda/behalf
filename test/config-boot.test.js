@@ -11,7 +11,7 @@ test('an invalid MAX_ROOMS stops startup with app.init_failed and never echoes t
   const dir = mkTmp('config-boot-');
   t.after(() => rmTmp(dir));
   const MARKER = 'zq9MARKER' + Date.now();
-  const r = await start(path.join(ROOT, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir, MAX_ROOMS: MARKER });
+  const r = await start(path.join(ROOT, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', SIGNIN: 'off', DROP_DATA_DIR: dir, MAX_ROOMS: MARKER });
   await r.stop();
   assert.ok(r.exited !== undefined && r.exited !== 0, 'expected a non-zero exit\n' + r.out);
   const lines = r.out.split('\n').filter((l) => l.includes('event="app.init_failed"'));

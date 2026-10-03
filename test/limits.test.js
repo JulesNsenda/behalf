@@ -45,7 +45,7 @@ function boot(t, { maxTurns = 2, config = {}, overrides = {}, content, dir: give
   if (content !== undefined) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, content); }
   const out = [];
   const log = createLog({ stream: { write: (s) => out.push(s) } });
-  const cfg = { ...loadConfig({ DROP_DATA_DIR: path.join(dir, 'data'), MAX_TURNS: String(maxTurns), PUBLIC_URL: 'http://test.invalid' }), ...LIMITS, ...config };
+  const cfg = { ...loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: path.join(dir, 'data'), MAX_TURNS: String(maxTurns), PUBLIC_URL: 'http://test.invalid' }), ...LIMITS, ...config };
   const app = createApp({ secrets: loadSecrets({}), log, clock: { sleep: async () => {} }, file, ...overrides, config: cfg });
   t.after(() => { app.close(); if (app.server.closeAllConnections) app.server.closeAllConnections(); });
   return { app, domain: app.domain, out, file, dir };

@@ -27,7 +27,7 @@ async function boot(t, { overrides } = {}) {
   const file = path.join(dir, 'data', 'rooms.json');
   const out = [];
   const log = createLog({ stream: { write: (s) => out.push(s) } });
-  const config = loadConfig({ DROP_DATA_DIR: path.join(dir, 'data'), PUBLIC_URL: 'http://test.invalid' });
+  const config = loadConfig({ SIGNIN: 'off', DROP_DATA_DIR: path.join(dir, 'data'), PUBLIC_URL: 'http://test.invalid' });
   const app = createApp({ config, secrets: loadSecrets({}), log, proxy: fakeProxy(), clock: { sleep: async () => {} }, file, ...overrides });
   await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
   const port = app.server.address().port;
@@ -433,7 +433,7 @@ test('the build and the static files come from the root the server was given, no
 
 async function buildOf(dir) {
   const data = mkTmp('build-data-');
-  const s = await start(path.join(dir, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: data });
+  const s = await start(path.join(dir, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', SIGNIN: 'off', DROP_DATA_DIR: data });
   try {
     assert.strictEqual(s.exited, undefined, 'server exited: ' + s.out);
     return (await (await fetch(`http://127.0.0.1:${s.port}/health`)).json()).build;
@@ -460,7 +460,7 @@ test('a web/ change alters the build and a docs/ change does not', T, async () =
 // Spawn index.js, make a room, then end it by `how`; resolves the exit and the room id.
 async function spawnAndStop(prefix, how, { args = [], env = {} } = {}) {
   const dir = mkTmp(prefix);
-  const child = spawn(process.execPath, [...args, path.join(ROOT, 'index.js')], { env: baseEnv({ PORT: '0', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir, ...env }), stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [...args, path.join(ROOT, 'index.js')], { env: baseEnv({ PORT: '0', BIND_HOST: '127.0.0.1', SIGNIN: 'off', DROP_DATA_DIR: dir, ...env }), stdio: ['ignore', 'pipe', 'pipe'] });
   try {
     const exited = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
     const port = await new Promise((resolve, reject) => {
