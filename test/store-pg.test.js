@@ -1319,3 +1319,31 @@ withImport('import (D4): a rooms.json that cannot be read is EIMPORT and stays w
 });
 
 test('the last test drops the table', DB, async () => { await dropTable(); });
+
+test('two instances on one database (a redeploy): the new one answers 503 "starting" while the old one holds the lock, then serves the old one\'s rooms', DB, async (t) => {
+  const h = await harness();
+  t.after(h.cleanup);
+  const dirA = mkTmp('pg-redeploy-a-');
+  const dirB = mkTmp('pg-redeploy-b-');
+  const trigger = path.join(mkTmp('pg-redeploy-trigger-'), 'go');
+  t.after(() => { rmTmp(dirA); rmTmp(dirB); rmTmp(path.dirname(trigger)); });
+  const a = spawnIndex(dirA, { DATABASE_URL: URL_, SIGTERM_TRIGGER: trigger }, ['-r', path.join(ROOT, 'test-support', 'sigterm-preload.js')]);
+  t.after(() => a.stop());
+  const portA = await a.listening;
+  assert.ok(portA, a.out());
+  const { id } = await (await fetch(`http://127.0.0.1:${portA}/api/demo`, { method: 'POST' })).json();
+  const portB = String(48100 + Math.floor(Math.random() * 800));
+  const b = spawnIndex(dirB, { DATABASE_URL: URL_, PORT: portB });
+  t.after(() => b.stop());
+  const base = `http://127.0.0.1:${portB}`;
+  const early = await waitFor(async () => { try { return await fetch(base + '/health'); } catch (e) { return null; } }, (r) => r !== null, { timeoutMs: 2000, what: 'the placeholder' });
+  assert.equal(early.status, 503);
+  assert.deepEqual(await early.json(), { ok: false, starting: true });
+  assert.equal(b.stdout(), '', 'B is not listening yet: no listen line');
+  fs.writeFileSync(trigger, ''); // A is stopped: it drains and releases the lock
+  assert.equal((await a.exited).code, 0, a.out());
+  assert.equal(await b.listening, Number(portB), b.out());
+  const health = await (await fetch(base + '/health')).json();
+  assert.deepEqual([health.ok, health.store], [true, 'postgres']);
+  assert.equal((await fetch(`${base}/api/rooms/${id}`)).status, 200, 'the room made on A is readable on B');
+});

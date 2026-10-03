@@ -102,6 +102,8 @@ A key is shown once. It stops working after 90 days unused, or when you delete i
 
 ## Deploying on Drop
 
+During a redeploy the new instance answers 503 "starting" until the old one stops and releases the database. Drop starts the new instance while the old one still serves, and stops the old one only once the new one answers HTTP. `index.js` therefore binds the port at once with a placeholder (503, `{"code":"starting"}`, and `{"ok":false,"starting":true}` on `/health`), then swaps in the real server when the store has loaded.
+
 `drop.yaml` asks Drop for a Postgres database (it sets `DATABASE_URL`), sets `SIGNIN: github` and `PUBLIC_URL`, and declares the two GitHub secrets as required. Drop checks declared secrets before it starts the app: if one is missing, it holds the app in `needs-config` instead of letting it crash on start. `DATABASE_URL` is deliberately not declared: Drop sets it itself, and its redeploy check counts only secrets set by hand, so declaring it blocks every redeploy. Check `/health` after a deploy instead (step 5).
 
 1. Create a GitHub OAuth app. Its callback URL must be exactly `https://behalf.dropkit.sh/auth/github/callback` (`PUBLIC_URL` + `/auth/github/callback`).
