@@ -121,14 +121,15 @@
     UI.setBusy(o.busy, true);
     fill(UI.byId(o.error), null);
     if (o.focus) A.pendingFocus = o.focus;
-    function fail(status) {
+    // code is the machine code a refusal carries, if any: it picks a more exact sentence than the status does.
+    function fail(status, code) {
       A.pendingFocus = null;
       UI.setBusy(o.busy, false);
-      showError(o.error, RV.errorMessage(status === A.BLOCKED ? '' : o.kind, status));
+      showError(o.error, RV.errorMessage(status === A.BLOCKED ? '' : o.kind, status, code));
       if (o.fail) o.fail();
     }
     return o.send().then(function (res) {
-      if (!(o.ok ? o.ok(res) : res.ok)) { fail(res.status); return; }
+      if (!(o.ok ? o.ok(res) : res.ok)) { fail(res.status, (res.data || {}).code); return; }
       return Promise.resolve(o.done ? o.done(res) : A.refresh()).then(function (applied) {
         if (applied === false) fail(0);
       });

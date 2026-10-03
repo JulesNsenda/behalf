@@ -3,3 +3,7 @@
 .guide-dock-demo { height: 170px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
 .guide-dock-demo > p { min-height: 240px; padding: var(--space-4); }
 .guide-width-bar { text-align: center; }
+/* A header at phone width, whatever the window: the same rules the 640px media query gives the real one */
+.guide-narrow { max-width: 390px; }
+.guide-narrow .site-header__inner { padding-inline: var(--space-4); }
+.guide-narrow .site-header__nav { margin-inline-start: 0; width: 100%; }

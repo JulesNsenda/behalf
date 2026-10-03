@@ -303,6 +303,12 @@
   /* right slot for a step label or status pill; the pill stays on one line and the header wraps around it */
   .site-header__end .status { white-space: nowrap; }
   .site-header__end { margin-inline-start: auto; display: flex; align-items: center; gap: var(--space-3); font-size: var(--size-15); color: var(--ink-subtle); }
+  /* a header with the nav and the account slot: they wrap together, and the slot keeps to the right when it drops to its own row */
+  .site-header__end:has(.site-header__nav) { flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
+  /* account slot, after the nav: empty and hidden with sign-in off; a sign-in link, or who is signed in and a Sign out button */
+  .site-header__account { display: flex; align-items: center; gap: var(--space-2); margin-inline-start: auto; color: var(--ink-muted); }
+  .site-header__account-link { display: inline-flex; align-items: center; min-height: var(--target-min); color: var(--accent); font-weight: 600; text-underline-offset: .18em; }
+  .site-header__account-link:hover { color: var(--ink); }
 
   .footer { background: var(--surface); border-top: 1px solid var(--line); color: var(--ink-muted); font-size: var(--size-14); }
   .footer a:not(.brand) {

@@ -713,11 +713,35 @@
     }
   };
 
-  // Fixed plain sentences. Never takes or returns server text.
-  function errorMessage(action, httpStatus) {
+  // A refusal that carries a machine code gets its own sentence, which wins over the status's: the same status
+  // means different things (a 503 is "no built-in AI" for a room and "not saved" for a refusal with a code).
+  // Per action, the codes the server sends for it (a test reads the server source and holds the two together).
+  // The sign-out and agent key actions are worded in account-view.js.
+  var RESTARTING = 'Behalf is restarting. Try again in a moment.';
+  var ERROR_CODES = {
+    create: {
+      signin_required: "The room wasn't opened because you're not signed in.",
+      origin: 'Please reload the page and try again.',
+      content_type: 'Something went wrong sending that. Reload the page and try again.',
+      saving_unavailable: "Saving is unavailable right now, so we can't open a room. Try again in a minute.",
+      user_limit: "You've opened all the rooms you can today. Try again tomorrow, or watch the demo.",
+      ip_limit: "You've opened all the rooms this network can today. Try again tomorrow, or watch the demo.",
+      daily_limit: "Behalf has opened all the rooms it can today. Try again tomorrow, or watch the demo."
+    },
+    draft: {
+      shutting_down: RESTARTING + ' You can fill in the fields yourself.'
+    }
+  };
+
+  // Fixed plain sentences, by the action, the HTTP status and the refusal's machine code if it carried one (a
+  // field of the server's answer: untrusted, so it only ever picks among the sentences here). Never takes or
+  // returns server text.
+  function errorMessage(action, httpStatus, code) {
     if (httpStatus === 0) return NETWORK;
-    var g = typeof action === 'string' && has.call(ERRORS, action) ? ERRORS[action] : null;
-    if (!g) return GENERIC;
+    var known = typeof action === 'string' && has.call(ERRORS, action);
+    if (!known) return GENERIC;
+    if (typeof code === 'string' && has.call(ERROR_CODES, action) && has.call(ERROR_CODES[action], code)) return ERROR_CODES[action][code];
+    var g = ERRORS[action];
     return has.call(g, httpStatus) ? g[httpStatus] : g.def;
   }
 
@@ -827,10 +851,14 @@
 
   // ---------- page text ----------
 
-  // The connector address of this server, and the command that adds it to Claude Code.
+  // The connector address of this server, and the command that adds it to Claude Code. With an agent key
+  // (a non-empty string) the command also sends it as a header.
   function mcpUrl(origin) { return str(origin) + '/mcp'; }
 
-  function mcpCommand(origin) { return 'claude mcp add --transport http behalf ' + mcpUrl(origin); }
+  function mcpCommand(origin, key) {
+    var command = 'claude mcp add --transport http behalf ' + mcpUrl(origin);
+    return typeof key === 'string' && key ? command + ' --header "Authorization: Bearer ' + key + '"' : command;
+  }
 
   // The message an agent is asked to act on, given the viewer's own room link.
   function agentPrompt(link) {

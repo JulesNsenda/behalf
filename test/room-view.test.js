@@ -804,9 +804,8 @@ test('errorMessage: fixed sentences per action, status-specific where it helps',
   assert.strictEqual(RV.errorMessage('demo', 429), RV.errorMessage('demo', 500));
 });
 
-// Which index.js code regions belong to which action. Codes outside these (invalid JSON 400,
-// body too large 413, unknown room 404, unknown seat 400) are shared by every route and are
-// explicitly allowed to use the action's default sentence.
+// Which server code regions belong to which action. Codes outside these (invalid JSON 400, body too large 413, unknown room 404,
+// unknown seat 400) are shared by every route and are explicitly allowed to use the action's default sentence.
 // The region markers below rely on function order in lib/rooms.js: rollDay..sealCard, draftCard..answerEscalation and resume..startIfReady.
 function codesIn(src, startMarker, endMarker) {
   const from = src.indexOf(startMarker);
@@ -816,7 +815,7 @@ function codesIn(src, startMarker, endMarker) {
   return new Set([...src.slice(from, to).matchAll(/(?:send\(res, |ApiError\()([45]\d{2})/g)].map(m => Number(m[1])));
 }
 
-test('errorMessage: every code index.js returns for an action has its own sentence', () => {
+test('errorMessage: every status code the server returns for an action has its own sentence', () => {
   const src = serverSource();
   // the check every seat action passes before its own code
   const seatGate = codesIn(src, "if (!seat) return send(res, 403", "const action = parts[5]");
@@ -839,10 +838,36 @@ test('errorMessage: every code index.js returns for an action has its own senten
     for (const code of codes) assert.notStrictEqual(RV.errorMessage(action, code), generic, `${action} ${code}`);
     // and no sentence for a code the route can't return
     for (let code = 400; code < 600; code++) {
-      if (RV.errorMessage(action, code) !== generic) assert.ok(codes.has(code), `${action} has a sentence for ${code}, which index.js never returns for it`);
+      if (RV.errorMessage(action, code) !== generic) assert.ok(codes.has(code), `${action} has a sentence for ${code}, which the server never returns for it`);
     }
   }
 });
+
+// The refusals that carry a machine code are written out by hand in test-support/refusals.js (EXPECTED), and the census there stops a code
+// the server can send from going unlisted. Each listed (action, status, code) needs a sentence of its own, in room-view.js (rooms) or
+// account-view.js (sign-out and the agent key), and every sentence by code has to be on the list.
+const AV = require('../web/js/account-view.js');
+const { EXPECTED, unclassifiedCodes, codesInServer } = require('../test-support/refusals');
+const ACCOUNT_ACTIONS = ['logout', 'keyCreate', 'keyRevoke'];
+const sentence = (action, status, code) => (ACCOUNT_ACTIONS.includes(action) ? AV : RV).errorMessage(action, status, code);
+
+test('errorMessage: every coded refusal in EXPECTED has its own sentence, and every sentence by code is for one in EXPECTED', () => {
+  const allCodes = [...new Set(Object.values(EXPECTED).flatMap((pairs) => pairs.map(([, c]) => c))), 'made_up_code'];
+  for (const action of [...Object.keys(EXPECTED), 'seal', 'answer', 'resume', 'demo', 'load']) {
+    const listed = EXPECTED[action] || [];
+    const generic = sentence(action, 599);
+    for (const [status, code] of listed) {
+      const own = sentence(action, status, code);
+      assert.notStrictEqual(own, generic, `${action} ${status} ${code}: only the generic sentence`);
+      assert.notStrictEqual(own, sentence(action, status), `${action} ${status} ${code}: no sentence of its own over the status one`);
+      assert.ok(/[.]$/.test(own) && own.length > 20 && !JARGON.test(own), own);
+    }
+    for (const code of allCodes) {
+      if (sentence(action, 599, code) !== generic) assert.ok(listed.some(([, c]) => c === code), `${action} has a sentence for ${code}, which EXPECTED does not list for it`);
+    }
+  }
+});
+
 
 test('errorMessage: network failure and unknown actions use fixed fallbacks', () => {
   assert.strictEqual(RV.errorMessage('seal', 0), "We couldn't reach the server. Check your connection and try again.");
@@ -862,8 +887,59 @@ test('errorMessage: prototype names are not actions, and "def" is not a status',
 test('errorMessage: never contains or reflects server text', () => {
   const msg = RV.errorMessage('seal', 400, 'Daily room limit reached <b>x</b>');
   assert.ok(!/Daily|<b>/.test(msg));
-  assert.strictEqual(RV.errorMessage.length, 2);
+  assert.strictEqual(RV.errorMessage('create', 429, 'Daily room limit reached <b>x</b>'), RV.errorMessage('create', 429), 'an unknown code is the status sentence');
+  assert.strictEqual(RV.errorMessage.length, 3, '(action, status, code)');
 });
+
+// ---------- errors by code ----------
+const ALL_ACTIONS = ['seal', 'draft', 'answer', 'resume', 'create', 'demo', 'load'];
+
+test('errorMessage: a code picks its own sentence before the status, for create', () => {
+  const codes = ['signin_required', 'origin', 'content_type', 'saving_unavailable', 'user_limit', 'ip_limit', 'daily_limit'];
+  const sentences = codes.map((c) => RV.errorMessage('create', 599, c));
+  assert.strictEqual(new Set(sentences).size, sentences.length, 'each code has its own sentence');
+  assert.strictEqual(RV.errorMessage('create', 401, 'signin_required'), "The room wasn't opened because you're not signed in.");
+  assert.strictEqual(RV.errorMessage('create', 403, 'origin'), 'Please reload the page and try again.');
+  assert.strictEqual(RV.errorMessage('create', 429, 'daily_limit'), 'Behalf has opened all the rooms it can today. Try again tomorrow, or watch the demo.');
+  // the code wins whatever the status said, and the status still works with no code
+  assert.strictEqual(RV.errorMessage('create', 503, 'saving_unavailable'), RV.errorMessage('create', 500, 'saving_unavailable'));
+  assert.strictEqual(RV.errorMessage('create', 503), 'This server has no built-in AI, so each person brings their own AI agent.');
+  assert.strictEqual(RV.errorMessage('create', 403), "That passcode didn't work. Check it and try again.");
+  assert.strictEqual(RV.errorMessage('create', 429), "You can't open a new room right now. Try again tomorrow, or watch the demo.");
+});
+
+test('errorMessage: a room that could not be saved, or a server that is stopping, never says there is no built-in AI', () => {
+  const noAi = RV.errorMessage('create', 503);
+  for (const code of ['saving_unavailable']) {
+    const s = RV.errorMessage('create', 503, code);
+    assert.notStrictEqual(s, noAi, code);
+    assert.ok(!/built-in AI/i.test(s), s);
+  }
+  assert.match(RV.errorMessage('create', 503, 'saving_unavailable'), /Saving is unavailable right now/);
+  assert.strictEqual(RV.errorMessage('create', 503, 'shutting_down'), noAi, 'a room is never refused for that: no sentence');
+  // a draft refused while the server stops is not "this server can't write drafts" either
+  assert.notStrictEqual(RV.errorMessage('draft', 503, 'shutting_down'), RV.errorMessage('draft', 503));
+  assert.match(RV.errorMessage('draft', 503, 'shutting_down'), /^Behalf is restarting\./);
+});
+
+test('errorMessage: the code is untrusted: only an own sentence of that action is ever picked', () => {
+  for (const code of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf', 'def', '503', 'codes', '', undefined, null, 7, {}, ['origin'], 'ORIGIN', 'origin ']) {
+    for (const a of ALL_ACTIONS) assert.strictEqual(RV.errorMessage(a, 500, code), RV.errorMessage(a, 500), `${a} ${String(code)}`);
+  }
+  // a code that is another action's is not this action's
+  assert.strictEqual(RV.errorMessage('seal', 429, 'user_limit'), RV.errorMessage('seal', 429));
+  assert.strictEqual(RV.errorMessage('keyCreate', 429, 'rate_limited'), 'Something went wrong. Please try again.', 'the sign-in actions are account-view.js, not here');
+  assert.strictEqual(RV.errorMessage('nope', 401, 'signin_required'), 'Something went wrong. Please try again.');
+  assert.strictEqual(RV.errorMessage('create', 0, 'signin_required'), "We couldn't reach the server. Check your connection and try again.", 'no connection beats a code');
+});
+
+test('every create and draft sentence by code is plain: no protocol jargon, a full sentence', () => {
+  for (const [a, c] of [['create', 'signin_required'], ['create', 'origin'], ['create', 'content_type'], ['create', 'saving_unavailable'], ['create', 'user_limit'], ['create', 'ip_limit'], ['create', 'daily_limit'], ['draft', 'shutting_down']]) {
+    const s = RV.errorMessage(a, 599, c);
+    assert.ok(/[.]$/.test(s) && s.length > 20 && !JARGON.test(s), s);
+  }
+});
+
 
 // ---------- fingerprints and decision key ----------
 test('fingerprint: stable for identical input', () => {
@@ -1305,6 +1381,10 @@ test('mcpUrl and mcpCommand are built from the origin they are given', () => {
   assert.strictEqual(RV.mcpUrl('http://localhost:3000'), 'http://localhost:3000/mcp');
   assert.strictEqual(RV.mcpCommand('https://behalf.example'), 'claude mcp add --transport http behalf https://behalf.example/mcp');
   assert.strictEqual(RV.mcpUrl(undefined), '/mcp', 'a missing origin is empty, never "undefined"');
+  // the Authorization header is there only when a key is in play
+  for (const none of [undefined, null, 0, false, {}]) assert.strictEqual(RV.mcpCommand('https://behalf.example', none), 'claude mcp add --transport http behalf https://behalf.example/mcp', String(none));
+  assert.strictEqual(RV.mcpCommand('https://behalf.example', 'bh_abc'), 'claude mcp add --transport http behalf https://behalf.example/mcp --header "Authorization: Bearer bh_abc"');
+  assert.strictEqual(RV.mcpCommand('https://behalf.example', ''), 'claude mcp add --transport http behalf https://behalf.example/mcp', 'an empty key is no key');
 });
 
 test('givenName: clean text for a real name, empty for the placeholder or nothing', () => {
@@ -1387,4 +1467,14 @@ test('chatAnnouncement: a seq the room does not have says nothing', () => {
   const R = view({ seat: 'A', envelopes: [esc(1, 'Yes')] });
   const plan = { add: [], replace: [9], remove: [], fps: {}, prev: {} };
   assert.strictEqual(RV.chatAnnouncement(R, plan, {}), null);
+});
+
+test('the census: every machine code the server can send (ApiError third arguments, the quota tuple, errors.js constants and factories) is listed in EXPECTED or as MCP-only', () => {
+  assert.deepStrictEqual(unclassifiedCodes(), []);
+  const found = codesInServer();
+  // the census sees what it must: a census that found nothing would pass everything
+  for (const code of ['origin', 'content_type', 'rate_limited', 'saving_unavailable', 'signin_required', 'user_limit', 'ip_limit', 'daily_limit', 'shutting_down']) assert.ok(found.has(code), code);
+  const { savingUnavailable, signinRequired } = require('../lib/errors');
+  assert.strictEqual(savingUnavailable().apiCode, 'saving_unavailable');
+  assert.strictEqual(signinRequired().apiCode, 'signin_required');
 });

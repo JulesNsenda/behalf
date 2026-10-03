@@ -2295,3 +2295,149 @@ test('a logout or revoke refused because the store was failing is still owed aft
   assert.equal(h.store.persistCalls.length, 1, 'and so is the revoke');
   assert.equal(h.store.persistCalls[0][0], 'agentkey');
 });
+
+// ---------- the web pages' side of the API: the real browser library and view modules against the real server ----------
+const BrowserUI = require('../web/ui/ui.js');
+const AccountView = require('../web/js/account-view.js');
+const RoomView = require('../web/js/room-view.js');
+const { EXPECTED } = require('../test-support/refusals');
+const { loadPage } = require('../test-support/fake-page');
+
+// UI.request over the in-process server, as a browser on PUBLIC would send it: same-origin Origin and the session cookie.
+async function asBrowser(h, cookie, fn) {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
+  globalThis.fetch = async (url, init = {}) => {
+    const headers = { origin: ORIGIN, ...(cookie ? { cookie } : {}), ...(init.headers || {}) };
+    if (init.body !== undefined) headers['content-length'] = Buffer.byteLength(init.body);
+    const r = await h.req(init.method || 'GET', url, { headers, body: init.body });
+    return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => { if (r.json === null) throw new SyntaxError('no JSON'); return r.json; } };
+  };
+  try { return await fn(); } finally {
+    if (saved) Object.defineProperty(globalThis, 'fetch', saved); else delete globalThis.fetch;
+  }
+}
+
+test('the pages talk to the real server: /api/me, the agent key panel, UI.request with no body, and sign out, all as the scripts use them', T, async (t) => {
+  const h = await boot(t);
+  const out = await asBrowser(h, null, () => BrowserUI.request('GET', '/api/me'));
+  assert.deepEqual(AccountView.parseMe(out.data), { signin: 'github', user: null, agentKey: null });
+  assert.equal(AccountView.slot(AccountView.parseMe(out.data), '/connect').kind, 'signed-out');
+  assert.equal((await asBrowser(h, null, () => BrowserUI.loadConfig())).signin, 'github');
+
+  const s = await signIn(h, { next: '/connect' });
+  await asBrowser(h, s.cookie, async () => {
+    const me = AccountView.parseMe((await BrowserUI.request('GET', '/api/me')).data);
+    assert.deepEqual(me, { signin: 'github', user: { login: 'octocat' }, agentKey: null });
+    assert.deepEqual(AccountView.slot(me, '/connect'), { kind: 'signed-in', text: 'Signed in as octocat', signOut: 'Sign out' });
+    assert.equal(AccountView.keyPanel(me, null, '/connect').state, 'no-key');
+
+    // Make a key with no body: the library alone says it is JSON, which the server's guard needs.
+    const made = await BrowserUI.request('POST', '/api/me/agent-key', {});
+    assert.equal(made.status, 201, JSON.stringify(made));
+    assert.match(made.data.key, /^bh_/);
+    assert.equal(typeof made.data.createdAt, 'number');
+    const after = AccountView.parseMe((await BrowserUI.request('GET', '/api/me')).data);
+    const panel = AccountView.keyPanel(after, null, '/connect');
+    assert.equal(panel.state, 'has-key');
+    assert.ok(panel.lead.startsWith('You created an agent key on ' + AccountView.formatDate(made.data.createdAt) + '.'), panel.lead);
+    assert.equal(AccountView.keyPanel(after, made.data, '/connect').state, 'new-key');
+    // The command the page shows for that key carries the header MCP reads, and the server knows the key.
+    assert.match(RoomView.mcpCommand('https://behalf.test', made.data.key), /--header "Authorization: Bearer bh_/);
+    assert.deepEqual(h.app.auth.userForAgentKey(made.data.key), { id: '1001', login: 'octocat' });
+
+    const revoked = await BrowserUI.request('POST', '/api/me/agent-key/revoke', {});
+    assert.deepEqual(revoked, { ok: true, status: 204, data: {} });
+    assert.equal(h.app.auth.userForAgentKey(made.data.key), null);
+    assert.equal(AccountView.parseMe((await BrowserUI.request('GET', '/api/me')).data).agentKey, null);
+
+    const loggedOut = await BrowserUI.request('POST', '/auth/logout', {});
+    assert.deepEqual(loggedOut, { ok: true, status: 204, data: {} });
+  });
+  // The same POST without the library's content type is what the server refuses: the library fix is what makes the buttons work.
+  assert.equal((await h.post('/auth/logout', { cookie: s.cookie, type: null })).status, 415);
+  // The sign-in link the slot builds is a route the server serves, and it comes back to the page it was on.
+  const link = await h.req('GET', AccountView.signinHref('/connect'));
+  assert.equal(link.status, 302);
+  assert.match(cookieValue(link, OAUTH), /\.\/connect$/);
+});
+
+test('every coded refusal the server source names for a web action is provoked over real HTTP, and the page has a sentence of its own for it', T, async (t) => {
+  const seen = new Set();
+  const ACCOUNT = ['logout', 'keyCreate', 'keyRevoke'];
+  const sentence = (a, s, c) => (ACCOUNT.includes(a) ? AccountView : RoomView).errorMessage(a, s, c);
+  const check = (action, res) => {
+    const body = res.json || {};
+    assert.equal(typeof body.code, 'string', `${action}: ${res.status} ${res.text} carries no code`);
+    const own = sentence(action, res.status, body.code);
+    assert.notEqual(own, sentence(action, res.status), `${action} ${res.status} ${body.code}: no sentence of its own`);
+    assert.ok(!own.includes(body.error), 'the server text is not what the page shows');
+    seen.add(`${action} ${res.status} ${body.code}`);
+  };
+  const h = await boot(t, { extra: { PER_USER_DAILY: '1', DAILY_ROOM_LIMIT: '2' } });
+  const s = await signIn(h);
+  // the guards, on every action behind them
+  const posts = { create: '/api/rooms', logout: '/auth/logout', keyCreate: '/api/me/agent-key', keyRevoke: '/api/me/agent-key/revoke' };
+  for (const [action, p] of Object.entries(posts)) {
+    check(action, await h.post(p, { cookie: s.cookie, origin: 'https://evil.test', body: roomBody }));
+    check(action, await h.post(p, { cookie: s.cookie, type: 'text/plain', body: roomBody }));
+  }
+  // signed out (logout needs no session, so it has no 401)
+  for (const action of ['create', 'keyCreate', 'keyRevoke']) check(action, await h.post(posts[action], { body: roomBody }));
+  // the account's own limit, then the whole service's
+  assert.equal((await h.post('/api/rooms', { cookie: s.cookie, body: roomBody })).status, 201);
+  check('create', await h.post('/api/rooms', { cookie: s.cookie, body: roomBody }));
+  h.gh.id = 1002; h.gh.login = 'second';
+  const s2 = await signIn(h);
+  assert.equal((await h.post('/api/rooms', { cookie: s2.cookie, body: roomBody })).status, 201);
+  h.gh.id = 1003; h.gh.login = 'third';
+  const s3 = await signIn(h);
+  check('create', await h.post('/api/rooms', { cookie: s3.cookie, body: roomBody }));
+  // minting is the one rate-limited route
+  for (let i = 0; i < 10; i++) assert.equal((await h.post('/api/me/agent-key', { cookie: s3.cookie })).status, 201);
+  check('keyCreate', await h.post('/api/me/agent-key', { cookie: s3.cookie }));
+  // saving has been failing: each action that has to save says so
+  h.store.failing = true;
+  check('create', await h.post('/api/rooms', { cookie: s2.cookie, body: roomBody }));
+  check('keyCreate', await h.post('/api/me/agent-key', { cookie: s2.cookie }));
+  check('keyRevoke', await h.post('/api/me/agent-key/revoke', { cookie: s2.cookie }));
+  check('logout', await h.post('/auth/logout', { cookie: s2.cookie }));
+  // the address's own limit exists only with sign-in off
+  const off = await boot(t, { signin: 'off', extra: { PER_IP_DAILY: '1' } });
+  assert.equal((await off.post('/api/rooms', { origin: null, body: roomBody })).status, 201);
+  check('create', await off.post('/api/rooms', { origin: null, body: roomBody }));
+  // Every coded refusal the hand-written table lists for these four actions was provoked (a draft's shutting_down needs a stopping server).
+  const wanted = [];
+  for (const action of ['create', 'logout', 'keyCreate', 'keyRevoke']) for (const [status, code] of EXPECTED[action]) wanted.push(`${action} ${status} ${code}`);
+  assert.deepEqual([...seen].sort(), wanted.sort(), 'every coded (action, status, code) of EXPECTED was provoked');
+});
+
+test('the real page scripts, over real HTTP: the key buttons and sign-out work (JSON POSTs, not 415s), and the panel follows what the server did', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h, { next: '/connect' });
+  await asBrowser(h, s.cookie, async () => {
+    const page = loadPage({ request: (m, u, b) => BrowserUI.request(m, u, b), config: { live: true, passcode: false, signin: 'github' }, origin: PUBLIC });
+    await page.flush();
+    assert.ok(page.byId('key-create'), 'signed in, no key');
+    page.byId('key-create').click();
+    await page.flush();
+    const key = page.byId('agent-key').value;
+    assert.match(key, /^bh_/);
+    assert.deepEqual(h.app.auth.userForAgentKey(key), { id: '1001', login: 'octocat' }, 'the server made it');
+    page.byId('key-revoke').click();
+    await page.flush();
+    assert.equal(h.app.auth.userForAgentKey(key), null, 'the server deleted it');
+    assert.ok(!page.panelHtml().includes('id="agent-key"'));
+    assert.deepEqual(page.toasts, [['Your agent key no longer works.', 'ok']]);
+    page.byId('sign-out').click();
+    await page.flush();
+    assert.equal(h.app.auth.userForSession(s.session), null, 'the server ended the session');
+    assert.ok(page.slotHtml().includes('id="account-signin"'));
+  });
+  // a script that sent no body would be refused: this is what the server says to it
+  await asBrowser(h, (await signIn(h)).cookie, async () => {
+    for (const p of ['/api/me/agent-key', '/api/me/agent-key/revoke', '/auth/logout']) {
+      const r = await BrowserUI.request('POST', p);
+      assert.deepEqual([r.status, r.data.code], [415, 'content_type'], p);
+    }
+  });
+});

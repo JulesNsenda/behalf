@@ -245,7 +245,7 @@
 
     // ---- help drafting ----
 
-    function helpFail(status) { ui.showError('help-error', RV.errorMessage('draft', status)); }
+    function helpFail(status, code) { ui.showError('help-error', RV.errorMessage('draft', status, code)); }
 
     function draftFromHelp() {
       var f = readFields();

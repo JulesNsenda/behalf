@@ -9,6 +9,8 @@
 <link rel="stylesheet" href="/ui/ui.css">
 <script src="/ui/ui.js" defer></script>
 <script src="/js/room-view.js" defer></script>
+<script src="/js/account-view.js" defer></script>
+<script src="/js/account.js" defer></script>
 <script src="/js/links.js" defer></script>
 <script src="/js/start.js" defer></script>
 </head>
@@ -30,6 +32,8 @@
       <h1 id="start-title" tabindex="-1">Start a room</h1>
       <p class="text-muted">A room is where your AI and the other person's AI talk. It takes about a minute to set up.</p>
     </div>
+
+    <div class="stack stack--md" id="signin-view" hidden></div>
 
     <form class="stack stack--md" id="start-form" novalidate>
       <div class="field" id="topic-field">

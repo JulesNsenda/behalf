@@ -6,6 +6,8 @@
  * nothing else reads them. Only the shared error sentences (RoomView.errorMessage) and the other
  * person's name (RoomView.firstNameOf, which guards reserved names) and the step labels come from room-view.js.
  *
+ * With sign-in on and nobody signed in, step 1 shows a sign-in link instead of the form (wording from account-view.js), whether
+ * /api/me said so up front or a create came back 401.
  * Step 1 posts the form to /api/rooms. Step 2 shows the other person's link, which the server never
  * returns again, so it is also kept in localStorage for a week (see links.js), and the creator's own link,
  * to come back to. Links older than that, or no longer valid, are swept out of localStorage on load.
@@ -16,6 +18,8 @@
 
   var UI = window.UI;
   var RoomView = window.RoomView;
+  var AccountView = window.AccountView;
+  var Account = window.Account;
   var Links = window.Links;
   var html = UI.html;
 
@@ -60,6 +64,41 @@
   }
 
   var configLoaded = loadConfig();
+
+  // ---------- sign in ----------
+
+  var signinView = UI.byId('signin-view');
+
+  // Sign-in is on and nobody is signed in: the form gives way to the one thing to do. notice, if any, is a
+  // sentence about what just went wrong, shown above it.
+  // With focus, the sign-in link takes the focus (the form it replaces had it).
+  function showSignin(notice, focus) {
+    var prompt = AccountView.startPrompt();
+    UI.render(signinView, html`
+      ${notice ? UI.alertBox(notice, 'danger') : false}
+      <div class="card stack">
+        <p>${prompt.lead}</p>
+        <div class="cluster">
+          <a class="btn btn--primary" id="signin-link" href="${UI.url(prompt.href)}">${prompt.button}</a>
+          <a class="btn btn--link" href="${UI.url(prompt.demoHref)}">${prompt.demo}</a>
+        </div>
+      </div>
+    `);
+    signinView.hidden = false;
+    form.hidden = true;
+    if (focus) UI.byId('signin-link').focus();
+  }
+
+  // The sign-in that failed sends people back here with ?signin=failed. Said once, then the address is tidied.
+  var signinFailed = new URLSearchParams(location.search).get('signin') === 'failed';
+  if (signinFailed) { try { history.replaceState(null, '', '/start'); } catch (e) { /* not fatal */ } }
+
+  // Whether sign-in is on comes from the server's settings; /api/me is only asked then, for the user (Account.load).
+  // Fails open: when either can't be read the form shows, and a refused create brings the sign-in up instead.
+  configLoaded.then(function (c) { return c && c.signin === 'github' ? Account.load() : null; }).then(function (me) {
+    if (me && me.signin === 'github' && !me.user) showSignin(signinFailed ? AccountView.SIGNIN_FAILED : null);
+    else if (signinFailed) showError(AccountView.SIGNIN_FAILED);
+  });
 
   // ---------- validation ----------
 
@@ -223,13 +262,20 @@
         showError(LINKS_MESSAGE);
         return;
       }
-      // A refused passcode belongs on the passcode field, not in a banner.
-      if (res.status === 403 && config && config.passcode) {
+      var code = (res.data || {}).code; // a refusal that says what it is carries a code
+      // Not signed in (any more): the sign-in takes the form's place.
+      if (res.status === 401 && code === 'signin_required') {
+        showSignin(RoomView.errorMessage('create', 401, code), true);
+        return;
+      }
+      // A refused passcode belongs on the passcode field, not in a banner. It has no code: a 403 with one (the
+      // wrong origin) is not about the passcode.
+      if (res.status === 403 && !code && config && config.passcode) {
         setFieldError('pass', RoomView.errorMessage('create', 403));
         UI.byId('pass').focus();
         return;
       }
-      showError(RoomView.errorMessage('create', res.status));
+      showError(RoomView.errorMessage('create', res.status, code));
     });
   });
 })();

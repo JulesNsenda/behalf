@@ -635,6 +635,15 @@ test('request: resolves {ok, status, data} and sends a JSON body only when it is
   });
 });
 
+test('request: a call with no body stays bare (no headers), and an empty object body is sent as JSON', async () => {
+  await withFetch(reply(204, null, true), async (calls) => {
+    await UI.request('POST', '/x');
+    assert.deepStrictEqual(calls[0], ['/x', { method: 'POST' }], 'no body, no content type: callers that need one pass {}');
+    await UI.request('POST', '/auth/logout', {});
+    assert.deepStrictEqual(calls[1][1], { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  });
+});
+
 test('request: an error status still resolves, with whatever the body said', async () => {
   await withFetch(reply(403, { error: 'no' }), async () => {
     assert.deepStrictEqual(await UI.request('POST', '/x', {}), { ok: false, status: 403, data: { error: 'no' } });
@@ -664,17 +673,26 @@ test('request: a network failure is status 0 and never rejects, even when fetch 
   }
 });
 
-test('loadConfig: {live, passcode} from /api/config, asked once however often it is called', async () => {
+test('loadConfig: {live, passcode, signin} from /api/config, asked once however often it is called', async () => {
   const U = freshRequire();
   await withFetch(reply(200, { live: true, passcode: 'secret', maxTurns: 12, mcpUrl: 'x' }), async (calls) => {
     const a = U.loadConfig();
     const b = U.loadConfig();
     assert.strictEqual(a, b, 'the same promise');
-    assert.deepStrictEqual(await a, { live: true, passcode: true });
-    assert.deepStrictEqual(await U.loadConfig(), { live: true, passcode: true });
+    assert.deepStrictEqual(await a, { live: true, passcode: true, signin: 'off' });
+    assert.deepStrictEqual(await U.loadConfig(), { live: true, passcode: true, signin: 'off' });
     assert.strictEqual(calls.length, 1);
     assert.deepStrictEqual(calls[0], ['/api/config', { method: 'GET' }]);
   });
+});
+
+test('loadConfig: signin is "github" only when the server says exactly that, and "off" for anything else', async () => {
+  for (const [sent, want] of [['github', 'github'], ['off', 'off'], [undefined, 'off'], [null, 'off'], [true, 'off'], ['GitHub', 'off'], [{}, 'off'], ['github ', 'off']]) {
+    const U = freshRequire();
+    await withFetch(reply(200, { live: true, passcode: false, signin: sent }), async () => {
+      assert.deepStrictEqual(await U.loadConfig(), { live: true, passcode: false, signin: want }, String(sent));
+    });
+  }
 });
 
 test('loadConfig: a failed read is null and is not remembered, so the next call tries again', async () => {
@@ -683,8 +701,8 @@ test('loadConfig: a failed read is null and is not remembered, so the next call 
   const flaky = () => (++n === 1 ? Promise.reject(new Error('down')) : reply(200, { live: false, passcode: false })());
   await withFetch(flaky, async (calls) => {
     assert.strictEqual(await U.loadConfig(), null);
-    assert.deepStrictEqual(await U.loadConfig(), { live: false, passcode: false });
-    assert.deepStrictEqual(await U.loadConfig(), { live: false, passcode: false });
+    assert.deepStrictEqual(await U.loadConfig(), { live: false, passcode: false, signin: 'off' });
+    assert.deepStrictEqual(await U.loadConfig(), { live: false, passcode: false, signin: 'off' });
     assert.strictEqual(calls.length, 2, 'one failure, one success, then remembered');
   });
 });

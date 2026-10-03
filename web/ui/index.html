@@ -521,6 +521,90 @@
     </div>
     <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="site-header"></code></pre></div></details>
 
+    <p class="eyebrow-label">Account slot</p>
+    <p class="text-caption">A script fills <code>&lt;div class="site-header__account" id="account-slot" hidden&gt;</code>, which sits after the nav inside <code>.site-header__end</code> and is the same on every page that has the nav. With sign-in off it stays empty and hidden. Signed out, it holds a sign-in link. Signed in, it says who and offers Sign out. Neither is a primary button: the nav already has one. A header with the nav and the slot wraps; at phone width the slot drops to its own row and keeps to the right.</p>
+    <div class="guide-example stack stack--sm" data-snippet="account-slot">
+      <header class="site-header">
+        <div class="site-header__inner">
+          <a class="brand" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+          <div class="site-header__end">
+            <nav class="site-header__nav" aria-label="Example">
+            <a href="/ui/" aria-current="page">Home</a>
+            <a href="/spec">How it works</a>
+            <a class="btn btn--primary btn--small" href="/">Start a room</a>
+          </nav>
+            <div class="site-header__account"><a class="site-header__account-link" href="/auth/github?next=/">Sign in with GitHub</a></div>
+          </div>
+        </div>
+      </header>
+      <header class="site-header">
+        <div class="site-header__inner">
+          <a class="brand" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+          <div class="site-header__end">
+            <nav class="site-header__nav" aria-label="Example">
+            <a href="/ui/" aria-current="page">Home</a>
+            <a href="/spec">How it works</a>
+            <a class="btn btn--primary btn--small" href="/">Start a room</a>
+          </nav>
+            <div class="site-header__account"><span class="site-header__account-who">Signed in as octocat</span><button class="btn btn--link" type="button">Sign out</button></div>
+          </div>
+        </div>
+      </header>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="account-slot"></code></pre></div></details>
+
+    <p class="eyebrow-label">Account slot at phone width</p>
+    <p class="text-caption">The same header in a 390px column, as the real one is under 640px: the nav takes the first row and the slot sits on the right of the next.</p>
+    <div class="guide-example" data-snippet="account-slot-narrow">
+      <div class="guide-narrow">
+        <header class="site-header">
+          <div class="site-header__inner">
+            <a class="brand" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+            <div class="site-header__end">
+              <nav class="site-header__nav" aria-label="Example">
+            <a href="/ui/" aria-current="page">Home</a>
+            <a href="/spec">How it works</a>
+            <a class="btn btn--primary btn--small" href="/">Start a room</a>
+          </nav>
+              <div class="site-header__account"><span class="site-header__account-who">Signed in as octocat</span><button class="btn btn--link" type="button">Sign out</button></div>
+            </div>
+          </div>
+        </header>
+      </div>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="account-slot-narrow"></code></pre></div></details>
+
+    <p class="eyebrow-label">Agent key panel</p>
+    <p class="text-caption">On the connect page, above the steps: a card with the title, one sentence and the buttons for the state. The new key shows once, in a copy field with a warning. The key is set from script as a property, never in the markup. The words here are the ones account-view.js returns, and a test holds the two together.</p>
+    <div class="guide-example stack stack--md" data-snippet="key-panel">
+      <section class="card stack" aria-labelledby="guide-key-title">
+        <h2 id="guide-key-title" class="card__title">Your agent key</h2>
+        <p class="text-muted">An agent key is a secret code that lets your own AI agent open rooms for you. Rooms your agent opens count towards your daily limit. Create one, then give it to your agent.</p>
+        <div class="cluster"><button class="btn btn--secondary" type="button">Create an agent key</button></div>
+      </section>
+      <section class="card stack" aria-labelledby="guide-key-new-title">
+        <h2 id="guide-key-new-title" class="card__title">Your agent key</h2>
+        <p class="text-muted">Your new key is below, and the command in step 1 now includes it.</p>
+        <div class="field">
+          <label class="field__label" for="guide-agent-key">Your key</label>
+          <span class="field__hint" id="guide-agent-key-hint">Anyone with this key can open rooms as you. It is saved in your app's settings and your command history, so treat it like a password.</span>
+          <div class="copy-field">
+            <input class="input" id="guide-agent-key" type="text" readonly autocomplete="off" aria-describedby="guide-agent-key-hint">
+            <button class="btn btn--secondary" type="button" data-copy="guide-agent-key">Copy key</button>
+          </div>
+        </div>
+        <div class="callout callout--warn">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>
+          <div class="callout__body"><p>Copy it now. We can't show it again.</p></div>
+        </div>
+        <div class="cluster">
+          <button class="btn btn--secondary" type="button">Create a new key</button>
+          <button class="btn btn--link" type="button">Delete key</button>
+        </div>
+      </section>
+    </div>
+    <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="key-panel"></code></pre></div></details>
+
     <p class="eyebrow-label">Full footer</p>
     <div class="guide-example" data-snippet="footer-full">
       <footer class="footer footer--full">
@@ -570,6 +654,9 @@
   <!-- ======================================================== helpers -->
   <section class="stack stack--md" id="helpers" aria-labelledby="h-helpers">
     <div class="cluster"><h2 id="h-helpers">Layout and helpers</h2><span class="pill pill--warn">New, not on the canvas</span></div>
+
+    <p class="eyebrow-label">Requests and settings</p>
+    <p class="text-caption"><code>UI.request(method, url, body)</code> resolves <code>{ok, status, data}</code> and never rejects. A body is sent as JSON, and a call with no body sends no headers: pass <code>{}</code> to a POST that has nothing to say but must still be JSON, such as a sign-out. <code>UI.loadConfig()</code> resolves <code>{live, passcode, signin}</code>, or null when the settings couldn't be read: <code>signin</code> is <code>'github'</code> when people must sign in to open a room, else <code>'off'</code>.</p>
 
     <p class="eyebrow-label">Page widths</p>
     <p class="text-caption">Use <code>.container</code> for the full page width, then one of three narrower widths: form (640px), intro (720px) or read (760px).</p>
