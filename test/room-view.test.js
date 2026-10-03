@@ -779,7 +779,7 @@ test('errorMessage: fixed sentences per action, status-specific where it helps',
     assert.strictEqual(RV.errorMessage(a, undefined), m, `${a} default without a status`);
     assert.strictEqual(RV.errorMessage(a, 418), m, `${a} unknown status`);
   }
-  assert.strictEqual(RV.errorMessage('create', 429), "You've reached today's limit for new rooms. Try again tomorrow, or watch the demo.");
+  assert.strictEqual(RV.errorMessage('create', 429), "You can't open a new room right now. Try again tomorrow, or watch the demo.");
   assert.strictEqual(RV.errorMessage('create', 403), "That passcode didn't work. Check it and try again.");
   assert.strictEqual(RV.errorMessage('create', 503), 'This server has no built-in AI, so each person brings their own AI agent.');
   assert.strictEqual(RV.errorMessage('seal', 409), 'Your instructions are already locked.');
@@ -796,7 +796,7 @@ test('errorMessage: fixed sentences per action, status-specific where it helps',
 // Which index.js code regions belong to which action. Codes outside these (invalid JSON 400,
 // body too large 413, unknown room 404, unknown seat 400) are shared by every route and are
 // explicitly allowed to use the action's default sentence.
-// The region markers below rely on function order in lib/rooms.js: draftCard..answerEscalation and resume..startIfReady.
+// The region markers below rely on function order in lib/rooms.js: rollDay..sealCard, draftCard..answerEscalation and resume..startIfReady.
 function codesIn(src, startMarker, endMarker) {
   const from = src.indexOf(startMarker);
   assert.ok(from >= 0, startMarker);
@@ -810,7 +810,7 @@ test('errorMessage: every code index.js returns for an action has its own senten
   // the check every seat action passes before its own code
   const seatGate = codesIn(src, "if (!seat) return send(res, 403", "const action = parts[5]");
   const regions = {
-    create: codesIn(src, 'function createLiveRoom', 'function sealCard'),
+    create: codesIn(src, 'function rollDay', 'function sealCard'), // rollDay, checkPasscode, takeQuota, createLiveRoom
     demo: codesIn(src, "parts[1] === 'demo'", "parts[1] === 'rooms' && parts.length === 2"),
     draft: codesIn(src, 'async function draftCard(room', 'function answerEscalation'),
     seal: codesIn(src, 'function sealCard', 'function joinAsAgent'),

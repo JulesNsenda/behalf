@@ -33,11 +33,18 @@ function send(res, code, body, headers = {}) {
   res.end(isObj ? JSON.stringify(body) : body);
 }
 
-function readBody(req, limit = 64 * 1024) {
+// The body must be a JSON object (an empty body is {}). anyJson is for /mcp, where a batch is an array.
+function readBody(req, limit = 64 * 1024, { anyJson = false } = {}) {
   return new Promise((resolve, reject) => {
     let size = 0; const chunks = [];
     req.on('data', c => { size += c.length; if (size > limit) { reject(new ApiError(413, 'Body too large')); req.destroy(); } else chunks.push(c); });
-    req.on('end', () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {}); } catch { reject(new ApiError(400, 'Invalid JSON')); } });
+    req.on('end', () => {
+      try {
+        const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {};
+        if (!anyJson && (body === null || typeof body !== 'object' || Array.isArray(body))) throw new Error('not an object');
+        resolve(body);
+      } catch { reject(new ApiError(400, 'Invalid JSON')); }
+    });
     req.on('error', reject);
   });
 }
@@ -89,9 +96,10 @@ async function api(req, res, url) {
     const client = { res, seat: q.get('seat'), token: q.get('t') };
     if (!streams.has(room.id)) streams.set(room.id, new Set());
     streams.get(room.id).add(client);
-    res.write(`data: ${JSON.stringify(view(room, client.seat, client.token))}\n\n`);
+    // The cleanup is registered before anything that can throw (the first view), so a failure cannot leak the subscriber.
     const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 20000);
     req.on('close', () => { clearInterval(ping); streams.get(room.id) && streams.get(room.id).delete(client); });
+    res.write(`data: ${JSON.stringify(view(room, client.seat, client.token))}\n\n`);
     return;
   }
 
@@ -158,7 +166,7 @@ const server = http.createServer(async (req, res) => {
   try { url = new URL(req.url, 'http://x'); } catch { return send(res, 400, 'Bad request'); }
   try {
     if (url.pathname === '/health') return send(res, 200, { ok: true, live: proxy.live(), rooms: rooms.size, build: BUILD });
-    if (url.pathname === '/mcp') return await mcp.handle(req, res, ops, { readBody, clientIp });
+    if (url.pathname === '/mcp') return await mcp.handle(req, res, ops, { readBody: (r, limit) => readBody(r, limit, { anyJson: true }), clientIp });
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     if (url.pathname.startsWith('/room/')) return serveFile(res, path.join(PUBLIC, 'room.html'));
     if (url.pathname.startsWith('/brief/')) return serveFile(res, path.join(PUBLIC, 'agreement.html'));

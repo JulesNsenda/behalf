@@ -698,7 +698,7 @@
     create: {
       def: "We couldn't open the room. Please try again.",
       403: "That passcode didn't work. Check it and try again.",
-      429: "You've reached today's limit for new rooms. Try again tomorrow, or watch the demo.",
+      429: "You can't open a new room right now. Try again tomorrow, or watch the demo.",
       503: 'This server has no built-in AI, so each person brings their own AI agent.'
     },
     demo: {

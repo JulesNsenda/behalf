@@ -65,7 +65,7 @@ test('the v0 fixture loads, verifies, saves as schemaVersion 1 and reloads equal
   const store2 = createStore({ file: s.file, log: capture() });
   store2.load();
   assert.deepEqual(Object.fromEntries(store2.state.rooms), expected);
-  assert.deepEqual(plain(store2.state.usage), fixture().usage);
+  assert.deepEqual(plain(store2.state.usage), Object.assign({ failedByIp: {} }, fixture().usage));
   for (const r of store2.state.rooms.values()) assert.equal(pxp.verifyLedger(r.ledger).ok, true, r.id);
   assert.deepEqual(s.log.lines, []);
 });
@@ -88,14 +88,14 @@ test('a v1 file is not migrated again', (t) => {
   const s = setup(t, JSON.stringify({ schemaVersion: 1, rooms: { v1room01: r }, usage: { day: 'd', total: 2, byIp: { x: 2 } } }));
   s.store.load();
   assert.equal(s.store.state.rooms.get('v1room01').demo, 'kept');
-  assert.deepEqual(plain(s.store.state.usage), { day: 'd', total: 2, byIp: { x: 2 } });
+  assert.deepEqual(plain(s.store.state.usage), { day: 'd', total: 2, byIp: { x: 2 }, failedByIp: {} });
 });
 
 test('no file: empty state, and the data directory is created', (t) => {
   const s = setup(t);
   const st = s.store.load();
   assert.equal(st.rooms.size, 0);
-  assert.deepEqual(plain(st.usage), { day: '', total: 0, byIp: {} });
+  assert.deepEqual(plain(st.usage), { day: '', total: 0, byIp: {}, failedByIp: {} });
   assert.ok(realFs.existsSync(s.dir));
   assert.deepEqual(s.log.lines, []);
 });
@@ -437,6 +437,18 @@ test('stored byIp keys such as __proto__ cannot touch prototypes; bad numbers ar
   assert.deepEqual([usage.day, usage.total, Object.keys(usage.byIp).length, Object.getPrototypeOf(usage.byIp)], ['e', 0, 0, null]);
 });
 
+test('stored failedByIp gets the same null-prototype and finite-number handling, and resetUsage clears it', (t) => {
+  const s = setup(t, '{"schemaVersion":1,"rooms":{},"usage":{"day":"d","total":1,"byIp":{},"failedByIp":{"__proto__":2,"1.2.3.4":3,"bad":-1,"worse":"x"}}}');
+  s.store.load();
+  const f = s.store.state.usage.failedByIp;
+  assert.equal(Object.getPrototypeOf(f), null);
+  assert.deepEqual(Object.keys(f).sort(), ['1.2.3.4', '__proto__']);
+  assert.equal(({}).polluted, undefined);
+  s.store.resetUsage('e');
+  assert.equal(Object.getPrototypeOf(s.store.state.usage.failedByIp), null);
+  assert.deepEqual(Object.keys(s.store.state.usage.failedByIp), []);
+});
+
 test('stale tmp files are removed at load; load twice throws', (t) => {
   const s = setup(t, JSON.stringify({ schemaVersion: 1, rooms: {}, usage: {} }));
   realFs.writeFileSync(s.file + '.tmp', 'x');
@@ -499,4 +511,21 @@ test('rooms changed in memory right after load (restart rules) are written by th
   assert.equal(rooms.aaaa0001.status, 'paused');
   assert.equal(rooms.aaaa0001.interrupted, true);
   assert.equal(rooms.bbbb0002.status, 'paused');
+});
+
+test('an old persisted failedTotal is ignored', (t) => {
+  const s = setup(t, '{"schemaVersion":1,"rooms":{},"usage":{"day":"d","total":1,"byIp":{},"failedTotal":7}}');
+  s.store.load();
+  assert.equal('failedTotal' in s.store.state.usage, false);
+  s.store.flush();
+  assert.equal('failedTotal' in s.disk().usage, false);
+});
+
+test('saveUsage schedules a write without marking rooms dirty', (t) => {
+  const s = setup(t, JSON.stringify({ schemaVersion: 1, rooms: {}, usage: {} }));
+  s.store.load();
+  s.store.state.usage.failedByIp.x = 3;
+  s.store.saveUsage();
+  s.store.flush();
+  assert.deepEqual(s.disk().usage.failedByIp, { x: 3 });
 });
