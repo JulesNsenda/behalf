@@ -9,6 +9,7 @@ const { createApp } = require('../lib/app');
 const { loadConfig, loadSecrets } = require('../lib/config');
 const { createLog } = require('../lib/log');
 const { StoreError } = require('../lib/store');
+const { emptyUsage } = require('../lib/store-core');
 const demo = require('../lib/demo');
 const mcp = require('../lib/mcp');
 const { ROOT } = require('../test-support/paths');
@@ -304,11 +305,12 @@ test('createApp throws StoreError for a future-schema file and never exits', T, 
 test('createApp builds ops with the frozen members and the same sync convention', T, async (t) => {
   const { app } = setup(t);
   const { ops } = app;
-  for (const k of ['rooms', 'PUBLIC_URL', 'MAX_TURNS', 'ApiError', 'other', 'view', 'seatLink', 'authSeat', 'createLiveRoom', 'sealCard', 'joinAsAgent', 'answerEscalation', 'externalTurn', 'resume', 'live', 'passcodeRequired', 'log']) {
+  for (const k of ['rooms', 'PUBLIC_URL', 'MAX_TURNS', 'ApiError', 'other', 'view', 'seatLink', 'authSeat', 'createLiveRoom', 'sealCard', 'joinAsAgent', 'answerEscalation', 'externalTurn', 'resume', 'live', 'passcodeRequired', 'signinOn', 'userForAgentKey', 'log']) {
     assert.ok(k in ops, k);
   }
   assert.ok(ops.rooms instanceof Map);
   assert.equal(ops.PUBLIC_URL, 'http://test.invalid');
+  assert.equal(ops.signinOn, false, 'a boolean, decided once by the composition root');
   assert.equal(ops.live(), true);
   const room = liveRoom(app.domain);
   const v = ops.view(room, 'A', room.seats.A.token);
@@ -353,7 +355,7 @@ test('ops has exactly the frozen members', T, async (t) => {
   const { app } = setup(t);
   assert.deepEqual(Object.keys(app.ops).sort(), [
     'ApiError', 'MAX_TURNS', 'PUBLIC_URL', 'answerEscalation', 'authSeat', 'createLiveRoom', 'externalTurn', 'joinAsAgent',
-    'live', 'log', 'other', 'passcodeRequired', 'resume', 'rooms', 'sealCard', 'seatLink', 'view',
+    'live', 'log', 'other', 'passcodeRequired', 'resume', 'rooms', 'sealCard', 'seatLink', 'signinOn', 'userForAgentKey', 'view',
   ]);
   assert.equal(app.ops.rooms, app.domain.rooms);
 });
@@ -484,11 +486,15 @@ test('createApp deletes ROOM_PASSCODE from process.env only when it loaded the s
 test('createApp does not load an injected store, and close() closes it', T, async (t) => {
   const calls = [];
   const store = {
-    state: { rooms: new Map(), usage: { day: '', total: 0, byIp: Object.create(null) } },
+    kind: 'fake',
+    state: { rooms: new Map(), usage: emptyUsage() }, // the usage the real stores start from, not hand-written fields
     load() { calls.push('load'); throw new Error('must not be called'); },
     save(id) { calls.push('save:' + id); },
+    saveUsage() {},
     resetUsage() {},
     isSkipped() { return false; },
+    health() { return { ok: true, failingSince: null }; },
+    async drain() { return true; },
     close() { calls.push('close'); },
   };
   const app = createApp({ config: loadConfig({}), secrets: loadSecrets({}), log: createLog({ stream: { write() {} } }), proxy: fakeProxy([]), store });

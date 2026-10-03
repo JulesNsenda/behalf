@@ -650,7 +650,7 @@ test('createApp and bootApp refuse SIGNIN=github without both GitHub secrets, be
 });
 
 test('createHttpServer refuses sign-in without an auth object', () => {
-  assert.throws(() => createHttpServer({ domain: { rooms: new Map(), onChange: () => () => {} }, info: { signin: 'github', publicUrl: PUBLIC }, trustProxy: () => false }), TypeError);
+  assert.throws(() => createHttpServer({ domain: { rooms: new Map(), onChange: () => () => {} }, info: { signin: 'github', signinOn: true, publicUrl: PUBLIC }, trustProxy: () => false }), TypeError);
 });
 
 // ---------- over HTTP ----------
@@ -684,7 +684,7 @@ const cookieValue = (res, name) => {
 async function boot(t, { gh = fakeGithub(), signin = 'github', persist, extra, proxy } = {}) {
   const dir = mkTmp('auth-http-');
   const { out, log } = capture();
-  const config = loadConfig({ SIGNIN: signin, DROP_DATA_DIR: path.join(dir, 'data'), PUBLIC_URL: PUBLIC, GITHUB_BLOCKED_IDS: '666', PER_IP_DAILY: '100', DAILY_ROOM_LIMIT: '100', ...extra });
+  const config = loadConfig({ SIGNIN: signin, DROP_DATA_DIR: path.join(dir, 'data'), PUBLIC_URL: PUBLIC, GITHUB_BLOCKED_IDS: '666', PER_IP_DAILY: '100', PER_USER_DAILY: '100', DAILY_ROOM_LIMIT: '100', ...extra });
   const base = createStore({ file: path.join(dir, 'data', 'rooms.json'), log });
   base.load();
   const store = wrapStore(base, { persist });
@@ -1001,21 +1001,29 @@ test('/mcp never reads cookies: the same request with and without a session cook
   const h = await boot(t);
   const s = await signIn(h);
   const call = (id, name, args) => JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } });
-  const send = (cookie, payload) => h.req('POST', '/mcp', { headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(cookie ? { cookie } : {}) }, body: payload });
+  const send = (cookie, payload, key) => h.req('POST', '/mcp', { headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(cookie ? { cookie } : {}), ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: payload });
   const list = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
   const a = await send(null, list);
   const b = await send(s.cookie, list);
   assert.equal(a.status, 200);
   assert.deepEqual([b.status, b.text], [a.status, a.text]);
   const make = call(2, 'create_room', { topic: 'cookie test' });
-  const withCookie = await send(s.cookie, make);
-  const without = await send(null, make);
+  // With sign-in on, create_room needs the agent key: a session cookie changes nothing, with or without the key.
+  const refusedWith = await send(s.cookie, make);
+  const refusedWithout = await send(null, make);
+  assert.deepEqual([refusedWith.status, refusedWith.text], [refusedWithout.status, refusedWithout.text]);
+  assert.equal(refusedWith.json.result.isError, true);
+  assert.equal(h.app.domain.rooms.size, 0);
+  const key = (await h.post('/api/me/agent-key', { cookie: s.cookie })).json.key;
+  const withCookie = await send(s.cookie, make, key);
+  const without = await send(null, make, key);
   assert.equal(withCookie.status, without.status);
   // The random parts (the room id, the seat tokens) masked: what is left is the shape of the answer.
   const strip = (r) => JSON.stringify(r.json).split(JSON.parse(r.json.result.content[0].text).room_id).join('ID').replace(/t=[A-Za-z0-9_-]+/g, 't=T');
   assert.equal(strip(withCookie), strip(without));
-  // And a user the domain was never given: the rooms made over MCP carry no owner.
-  for (const room of h.app.domain.rooms.values()) assert.ok(!('ownerId' in room) && !('user' in room) && !JSON.stringify(room).includes('1001'));
+  // The owner is the key's user, whatever else the request carried.
+  assert.equal(h.app.domain.rooms.size, 2);
+  for (const room of h.app.domain.rooms.values()) assert.equal(room.ownerId, '1001');
 });
 
 // ---------- SIGNIN=off ----------
@@ -1748,6 +1756,512 @@ test('over HTTP, a restart on the same data keeps the session cookie working, an
   await run(async (req) => {
     assert.equal((await req('GET', '/api/me', { headers: { cookie } })).json.user, null, 'the logout survived a restart');
   });
+});
+
+// ---------- live rooms with sign-in: the owner, the per-user quota, MCP create_room and the agent key ----------
+const KEY_MISSING = 'create_room needs an agent key: sign in at /connect, create one, and add it to your MCP client as an Authorization header.';
+const KEY_REJECTED = 'That agent key no longer works: sign in at /connect and create a new one, then update the Authorization header in your MCP client.';
+const mcpCall = (h, name, args, headers = {}) => h.req('POST', '/mcp', {
+  headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
+  body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+});
+const toolText = (r) => r.json.result.content[0].text;
+const toolOut = (r) => r.json.result.structuredContent;
+const mintKey = async (h, s) => (await h.post('/api/me/agent-key', { cookie: s.cookie })).json.key;
+const bearer = (key) => ({ authorization: `Bearer ${key}` });
+const mcpRoom = { topic: 'Over MCP', your_principal: 'Ann', counterpart: 'Ben' };
+
+test('sign-in on: the domain refuses a live room with no user, with the same sentence and code as the web guard', T, async (t) => {
+  const h = await boot(t);
+  assert.throws(() => h.app.domain.createLiveRoom('203.0.113.1', roomBody), (e) => e.code === 401 && e.apiCode === 'signin_required' && e.message === 'Sign in to open a live room.');
+  assert.throws(() => h.app.ops.createLiveRoom('203.0.113.1', { ...roomBody, user: { id: '1001' }, ownerId: '1001' }), (e) => e.code === 401, 'a user in the body is not a user');
+  assert.equal(h.app.domain.rooms.size, 0);
+  assert.equal(Object.keys(h.app.store.state.usage.byUser).length, 0, 'nothing was counted');
+  const web = await h.post('/api/rooms', { body: roomBody });
+  assert.deepEqual([web.status, web.json], [401, { error: 'Sign in to open a live room.', code: 'signin_required' }]);
+});
+
+test('sign-in on: a web room is owned by the signed-in user, a user in the body changes nothing, and the quota counts that user', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h);
+  const r = await h.post('/api/rooms', { cookie: s.cookie, body: { ...roomBody, user: { id: '42' }, ownerId: '42' } });
+  assert.equal(r.status, 201, r.text);
+  const room = h.app.domain.rooms.get(r.json.id);
+  assert.equal(room.ownerId, '1001');
+  assert.deepEqual(Object.assign({}, h.app.store.state.usage.byUser), { 1001: 1 });
+  assert.equal(h.app.store.state.usage.total, 1);
+  const demo = await h.post('/api/demo', {});
+  assert.equal(demo.status, 201);
+  assert.ok(!('ownerId' in h.app.domain.rooms.get(demo.json.id)), 'a demo room has no owner');
+});
+
+test('sign-in on: the quota is the account\'s: a third room is 429, another user is fine, and the same user from another address is still capped', T, async (t) => {
+  const h = await boot(t, { extra: { PER_USER_DAILY: '2' } });
+  const sentence = 'You have opened the maximum live rooms for today. The demo is unlimited.';
+  const { domain } = h.app;
+  const ann = { id: '1001', login: 'octocat' };
+  const bob = { id: '1002', login: 'hubot' };
+  domain.createLiveRoom('203.0.113.1', roomBody, ann);
+  domain.createLiveRoom('203.0.113.2', roomBody, ann);
+  const usage = h.app.store.state.usage;
+  assert.throws(() => domain.createLiveRoom('203.0.113.3', roomBody, ann), (e) => e.code === 429 && e.message === sentence && e.apiCode === 'user_limit', 'the same user from a third address');
+  assert.throws(() => domain.createLiveRoom('203.0.113.1', roomBody, ann), (e) => e.code === 429 && e.apiCode === 'user_limit', 'and from an address it used');
+  assert.equal(usage.total, 2, 'a refusal counts nothing');
+  domain.createLiveRoom('203.0.113.1', roomBody, bob);
+  assert.deepEqual(Object.assign({}, usage.byUser), { 1001: 2, 1002: 1 });
+  assert.deepEqual(Object.assign({}, usage.byIp), {}, 'a signed-in user is not counted by address');
+  assert.equal(domain.rooms.size, 3);
+  // Over the web too: the same sentence, now with its own code.
+  const s = await signIn(h);
+  const web = await h.post('/api/rooms', { cookie: s.cookie, body: roomBody });
+  assert.deepEqual([web.status, web.json], [429, { error: sentence, code: 'user_limit' }]);
+});
+
+test('sign-in on: the address does not limit signed-in users: two users behind one address each reach their own limit; the global limit still applies', T, async (t) => {
+  const h = await boot(t, { extra: { PER_USER_DAILY: '2', PER_IP_DAILY: '1', DAILY_ROOM_LIMIT: '5' } });
+  const { domain } = h.app;
+  const usage = h.app.store.state.usage;
+  const [u1, u2, u3] = ['1', '2', '3'].map((id) => ({ id, login: 'u' + id }));
+  for (const u of [u1, u1, u2, u2]) domain.createLiveRoom('203.0.113.1', roomBody, u); // PER_IP_DAILY is 1: it is not what stops them
+  assert.throws(() => domain.createLiveRoom('203.0.113.1', roomBody, u1), (e) => e.apiCode === 'user_limit');
+  assert.throws(() => domain.createLiveRoom('203.0.113.1', roomBody, u2), (e) => e.apiCode === 'user_limit');
+  domain.createLiveRoom('203.0.113.1', roomBody, u3);
+  assert.equal(usage.total, 5);
+  assert.throws(() => domain.createLiveRoom('203.0.113.1', roomBody, u3), (e) => e.code === 429 && e.apiCode === 'daily_limit' && /Daily room limit/.test(e.message), 'the global limit');
+  assert.equal(usage.byUser['3'], 1, 'a refusal counted nothing');
+  assert.equal(Object.keys(usage.byIp).length, 0);
+});
+
+test('sign-in off: the per-address limit is exactly as before, with its own code, and the global one too', T, async (t) => {
+  const h = await boot(t, { signin: 'off', extra: { PER_IP_DAILY: '1', DAILY_ROOM_LIMIT: '2' } });
+  const { domain } = h.app;
+  domain.createLiveRoom('203.0.113.1', roomBody);
+  assert.throws(() => domain.createLiveRoom('203.0.113.1', roomBody), (e) => e.code === 429 && e.apiCode === 'ip_limit' && e.message === 'You have opened the maximum live rooms for today. The demo is unlimited.');
+  domain.createLiveRoom('203.0.113.2', roomBody);
+  assert.throws(() => domain.createLiveRoom('203.0.113.3', roomBody), (e) => e.code === 429 && e.apiCode === 'daily_limit');
+  assert.deepEqual(Object.assign({}, h.app.store.state.usage.byIp), { '203.0.113.1': 1, '203.0.113.2': 1 });
+});
+
+test('sign-in on: the per-user count resets at the day rollover', T, async (t) => {
+  const h = await boot(t, { extra: { PER_USER_DAILY: '1' } });
+  const { domain } = h.app;
+  const ann = { id: '1001', login: 'octocat' };
+  domain.createLiveRoom('203.0.113.1', roomBody, ann);
+  assert.throws(() => domain.createLiveRoom('203.0.113.1', roomBody, ann), (e) => e.code === 429);
+  h.clock.t += 2 * DAY;
+  domain.createLiveRoom('203.0.113.1', roomBody, ann);
+  assert.deepEqual(Object.assign({}, h.app.store.state.usage.byUser), { 1001: 1 });
+});
+
+for (const b of BACKENDS) {
+  test(`sign-in on, ${b.name}: the owner and the per-user count survive a restart, and a restart does not give the day back`, { ...T, skip: b.skip }, async (t) => {
+    const be = await b.make(t);
+    const clock = mkClock(Date.now());
+    const config = cfg({ PER_USER_DAILY: '2', PER_IP_DAILY: '100', DAILY_ROOM_LIMIT: '100' });
+    const open = async () => {
+      const store = await be.open();
+      const app = createApp({ config, secrets: secrets(), log: quietLog(), store, proxy: fakeProxy(), clock: { sleep: async () => {}, now: clock.now } });
+      return { store, app };
+    };
+    const close = async ({ store, app }) => { app.domain.stop(); assert.equal(await store.settle(), true); await store.close(); };
+    const ann = { id: '1001', login: 'octocat' };
+    const first = await open();
+    const room = first.app.domain.createLiveRoom('203.0.113.1', roomBody, ann);
+    first.app.domain.createLiveRoom('203.0.113.1', roomBody, ann);
+    await close(first);
+    const second = await open();
+    assert.equal(second.app.domain.rooms.get(room.id).ownerId, '1001');
+    assert.deepEqual(Object.assign({}, second.store.state.usage.byUser), { 1001: 2 });
+    assert.throws(() => second.app.domain.createLiveRoom('203.0.113.9', roomBody, ann), (e) => e.code === 429);
+    clock.t += 2 * DAY;
+    second.app.domain.createLiveRoom('203.0.113.1', roomBody, ann);
+    await close(second);
+    const third = await open();
+    assert.deepEqual(Object.assign({}, third.store.state.usage.byUser), { 1001: 1 }, 'the reset was saved');
+    await close(third);
+  });
+}
+
+test('MCP create_room with sign-in on: no key, a wrong key and a malformed header get one of two fixed sentences: none says missing, any header says rejected, and echo nothing', T, async (t) => {
+  const h = await boot(t);
+  const wrong = 'bh_not-a-real-key-1234567890';
+  for (const headers of [{}, bearer(wrong), { authorization: wrong }, { authorization: 'Bearer' }, { authorization: 'Basic abc' }, { authorization: 'Bearer a b' }]) {
+    const r = await mcpCall(h, 'create_room', mcpRoom, headers);
+    assert.equal(r.status, 200);
+    assert.equal(r.json.result.isError, true, JSON.stringify(headers));
+    assert.equal(toolText(r), headers.authorization === undefined ? KEY_MISSING : KEY_REJECTED, JSON.stringify(headers));
+    assert.ok(!r.text.includes(wrong));
+  }
+  assert.equal(h.app.domain.rooms.size, 0);
+  assert.equal(h.app.store.state.usage.total, 0);
+  assert.ok(!h.out.join('').includes(wrong), 'never logged');
+});
+
+test('MCP create_room with a valid agent key: the room is owned by the key\'s user and counted on that user, and the seat link is all the other tools need', T, async (t) => {
+  const h = await boot(t, { extra: { PER_USER_DAILY: '2' } });
+  const s = await signIn(h);
+  const key = await mintKey(h, s);
+  const r = await mcpCall(h, 'create_room', mcpRoom, bearer(key));
+  assert.notEqual(r.json.result.isError, true, toolText(r));
+  const out = toolOut(r);
+  const room = h.app.domain.rooms.get(out.room_id);
+  assert.equal(room.ownerId, '1001');
+  assert.equal(room.seats.A.mode, 'external');
+  assert.deepEqual(Object.assign({}, h.app.store.state.usage.byUser), { 1001: 1 });
+  assert.equal(Object.keys(h.app.store.state.usage.byIp).length, 0, 'counted on the user, not the address');
+  // The same user over the web shares the allowance.
+  assert.equal((await h.post('/api/rooms', { cookie: s.cookie, body: roomBody })).status, 201);
+  const third = await mcpCall(h, 'create_room', mcpRoom, bearer(key));
+  assert.equal(third.json.result.isError, true);
+  assert.equal(toolText(third), 'You have opened the maximum live rooms for today. The demo is unlimited.');
+  // No key header for the rest: the seat link is the credential.
+  const link = out.your_link;
+  const joined = await mcpCall(h, 'join_room', { link, agent_name: 'Agent A' });
+  assert.notEqual(joined.json.result.isError, true, toolText(joined));
+  const card = { principal: { name: 'Ann' }, goal: 'g', must_haves: ['m'] };
+  const sealed = await mcpCall(h, 'seal_intent_card', { link, card });
+  assert.notEqual(sealed.json.result.isError, true, toolText(sealed));
+  assert.notEqual((await mcpCall(h, 'get_room', { link })).json.result.isError, true);
+  assert.notEqual((await mcpCall(h, 'wait_for_turn', { link, timeout_seconds: 1 })).json.result.isError, true);
+  // And the invite link for seat B works the same way, from a client that holds no key.
+  assert.notEqual((await mcpCall(h, 'join_room', { link: out.invite_link_for_counterpart, agent_name: 'Agent B' })).json.result.isError, true);
+  assert.ok(!h.out.join('').includes(key), 'the key was never logged');
+});
+
+test('MCP create_room: a revoked key, a key whose user is gone and an idle key are refused, and a refusal counts nothing', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h);
+  // Revoked.
+  const k1 = await mintKey(h, s);
+  assert.notEqual((await mcpCall(h, 'create_room', mcpRoom, bearer(k1))).json.result.isError, true, 'it works first (so the refusal is the revocation)');
+  assert.equal((await h.post('/api/me/agent-key/revoke', { cookie: s.cookie })).status, 204);
+  assert.equal(toolText(await mcpCall(h, 'create_room', mcpRoom, bearer(k1))), KEY_REJECTED);
+  // Replaced by a new key: the old one is dead and the new one lives.
+  const k2 = await mintKey(h, s);
+  const k3 = await mintKey(h, s);
+  assert.equal(toolText(await mcpCall(h, 'create_room', mcpRoom, bearer(k2))), KEY_REJECTED);
+  assert.notEqual((await mcpCall(h, 'create_room', mcpRoom, bearer(k3))).json.result.isError, true);
+  // A user who is gone.
+  const saved = h.users.get('1001');
+  h.users.delete('1001');
+  assert.equal(toolText(await mcpCall(h, 'create_room', mcpRoom, bearer(k3))), KEY_REJECTED);
+  h.users.set('1001', saved);
+  assert.notEqual((await mcpCall(h, 'create_room', mcpRoom, bearer(k3))).json.result.isError, true, 'and the same key works again with its user (so that was the cause)');
+  const rooms = h.app.domain.rooms.size;
+  // Idle for 90 days.
+  h.clock.t += 91 * DAY;
+  assert.equal(toolText(await mcpCall(h, 'create_room', mcpRoom, bearer(k3))), KEY_REJECTED);
+  assert.equal(h.app.domain.rooms.size, rooms);
+});
+
+test('MCP create_room: a key of a blocked user is refused, through a second real app on the same store that blocks that id', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h);
+  const key = await mintKey(h, s);
+  assert.notEqual((await mcpCall(h, 'create_room', mcpRoom, bearer(key))).json.result.isError, true, 'unblocked, the key works');
+  const config = loadConfig({ SIGNIN: 'github', PUBLIC_URL: PUBLIC, GITHUB_BLOCKED_IDS: '1001', PER_IP_DAILY: '100', PER_USER_DAILY: '100', DAILY_ROOM_LIMIT: '100' });
+  const second = createApp({ config, secrets: secrets(), log: quietLog(), store: h.store, proxy: fakeProxy(), clock: { sleep: async () => {}, now: h.clock.now }, fetch: h.gh.fetch });
+  await new Promise((resolve) => second.listen(0, '127.0.0.1', resolve));
+  t.after(() => { second.domain.stop(); second.server.closeAllConnections(); second.server.close(); });
+  const rooms = second.domain.rooms.size;
+  const r = await mcpCall({ req: (m, p, o) => request(`http://127.0.0.1:${second.server.address().port}`, m, p, o) }, 'create_room', mcpRoom, bearer(key));
+  assert.equal(toolText(r), KEY_REJECTED);
+  assert.equal(second.domain.rooms.size, rooms, 'no room');
+});
+
+test('MCP create_room with the ops of a blocking auth: the wrapped lookup is refused (this proves only the MCP side of a null user)', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h);
+  const key = await mintKey(h, s);
+  const ops = { ...h.app.ops, userForAgentKey: () => null };
+  const reqs = { method: 'POST', headers: { authorization: `Bearer ${key}` }, socket: { remoteAddress: '1.2.3.4' } };
+  let body = '';
+  const res = { writeHead() {}, end: (b) => { body = b || ''; } };
+  const rpc = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_room', arguments: mcpRoom } };
+  await require('../lib/mcp').handle(reqs, res, ops, { readBody: async () => rpc, clientIp: () => '1.2.3.4' });
+  assert.equal(JSON.parse(body).result.content[0].text, KEY_REJECTED);
+  assert.equal(h.app.domain.rooms.size, 0);
+});
+
+test('/mcp never reads a session cookie: a valid session does not authorize create_room, and a key does not need one', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h);
+  const r = await mcpCall(h, 'create_room', mcpRoom, { cookie: s.cookie });
+  assert.equal(toolText(r), KEY_MISSING);
+  const bad = await mcpCall(h, 'create_room', mcpRoom, { cookie: s.cookie, ...bearer('bh_nope') });
+  assert.equal(toolText(bad), KEY_REJECTED, 'a session next to a bad key is still a bad key');
+  const key = await mintKey(h, s);
+  assert.notEqual((await mcpCall(h, 'create_room', mcpRoom, bearer(key))).json.result.isError, true, 'the key alone is enough');
+  assert.equal(h.app.domain.rooms.size, 1);
+});
+
+test('MCP: instructions and the create_room description are built per mode: on is off plus the agent-key clauses, and nothing else changes', () => {
+  const mcp = require('../lib/mcp');
+  const off = mcp.instructionsFor(false);
+  const on = mcp.instructionsFor(true);
+  assert.equal(off, mcp.INSTRUCTIONS);
+  assert.deepEqual(mcp.toolsFor(false), mcp.TOOLS);
+  assert.notEqual(on, off);
+  assert.match(on, /create_room also needs your principal's agent key, sent as an Authorization: Bearer header/);
+  assert.ok(!/Authorization/.test(off), 'the off text says nothing of the key');
+  // One inserted clause: cut it out and the two are the same.
+  let i = 0;
+  while (off[i] === on[i]) i++;
+  const clause = on.slice(i, i + on.length - off.length);
+  assert.equal(on.slice(0, i) + on.slice(i + clause.length), off, 'on adds one clause and removes nothing');
+  assert.match(clause, /agent key/);
+  const tools = mcp.toolsFor(true);
+  assert.deepEqual(tools.map((x) => x.name), mcp.TOOLS.map((x) => x.name));
+  const changed = tools.filter((x, k) => JSON.stringify(x) !== JSON.stringify(mcp.TOOLS[k])).map((x) => x.name);
+  assert.deepEqual(changed, ['create_room'], 'only the create_room description changes');
+  assert.ok(tools[0].description.startsWith(mcp.TOOLS[0].description));
+  assert.match(tools[0].description, /Authorization: Bearer header/);
+  assert.deepEqual(tools[0].inputSchema, mcp.TOOLS[0].inputSchema);
+  assert.ok('passcode' in tools[0].inputSchema.properties);
+  assert.ok(!('agent_key' in tools[0].inputSchema.properties) && !('user' in tools[0].inputSchema.properties));
+});
+
+test('MCP over HTTP serves the instructions and the tool list of its mode', T, async (t) => {
+  const mcp = require('../lib/mcp');
+  const ask = (h, method, params) => h.req('POST', '/mcp', { headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+  const on = await boot(t);
+  assert.equal((await ask(on, 'initialize', { protocolVersion: '2025-06-18' })).json.result.instructions, mcp.instructionsFor(true));
+  assert.deepEqual((await ask(on, 'tools/list')).json.result.tools, mcp.toolsFor(true));
+  const off = await boot(t, { signin: 'off' });
+  assert.equal((await ask(off, 'initialize', { protocolVersion: '2025-06-18' })).json.result.instructions, mcp.INSTRUCTIONS);
+  assert.deepEqual((await ask(off, 'tools/list')).json.result.tools, mcp.TOOLS);
+});
+
+test('MCP: any use of an agent key refreshes it, so daily join_room use keeps it alive past 90 days; an unused one idles out', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h);
+  const used = await mintKey(h, s);
+  const made = toolOut(await mcpCall(h, 'create_room', mcpRoom, bearer(used)));
+  const sha = (k) => crypto.createHash('sha256').update(k).digest('hex');
+  const born = h.keys.get(sha(used)).lastUsedAt;
+  for (let day = 1; day <= 100; day++) {
+    h.clock.t += DAY;
+    assert.notEqual((await mcpCall(h, 'get_room', { link: made.your_link }, bearer(used))).json.result.isError, true);
+  }
+  assert.ok(h.keys.get(sha(used)).lastUsedAt > born + 99 * DAY, 'lastUsedAt moved with the use');
+  const again = await mcpCall(h, 'create_room', mcpRoom, bearer(used));
+  assert.notEqual(again.json.result.isError, true, 'still alive after 100 days: it counts from the last use, not the last create_room');
+  // Without the daily use, the same key dies.
+  const idle = await mintKey(h, s);
+  h.clock.t += 91 * DAY;
+  assert.equal(toolText(await mcpCall(h, 'create_room', mcpRoom, bearer(idle))), KEY_REJECTED);
+});
+
+test('MCP: the Authorization scheme is case-insensitive (RFC 7235); a double space or a tab after it is refused, on purpose', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h);
+  const key = await mintKey(h, s);
+  for (const header of [`bearer ${key}`, `BEARER ${key}`, `Bearer ${key}`]) {
+    const r = await mcpCall(h, 'create_room', mcpRoom, { authorization: header });
+    assert.notEqual(r.json.result.isError, true, header.slice(0, 8));
+  }
+  const before = h.app.domain.rooms.size;
+  for (const header of [`Bearer  ${key}`, `Bearer\t${key}`, `Bearer ${key} x`]) {
+    const r = await mcpCall(h, 'create_room', mcpRoom, { authorization: header });
+    assert.equal(toolText(r), KEY_REJECTED, JSON.stringify(header.slice(0, 9)));
+  }
+  assert.equal(h.app.domain.rooms.size, before);
+});
+
+test('POST /api/rooms reads the session again after the body: a logout or a vanished user while the body is arriving is a 401', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h);
+  const slow = (before) => new Promise((resolve, reject) => {
+    const u = new URL(h.base);
+    const payload = JSON.stringify(roomBody);
+    const req = http.request({ host: u.hostname, port: u.port, method: 'POST', path: '/api/rooms', headers: { origin: ORIGIN, 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload), cookie: s.cookie } }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, text: Buffer.concat(chunks).toString() }));
+    });
+    req.on('error', reject);
+    req.write(payload.slice(0, 10));
+    setTimeout(async () => { try { await before(); } catch (e) { reject(e); return; } req.end(payload.slice(10)); }, 100);
+  });
+  const ok = await slow(async () => {});
+  assert.equal(ok.status, 201, ok.text);
+  const out = await slow(async () => { assert.equal((await h.post('/auth/logout', { cookie: s.cookie })).status, 204); });
+  assert.equal(out.status, 401, out.text);
+  assert.equal(JSON.parse(out.text).code, 'signin_required');
+  assert.equal(h.app.domain.rooms.size, 1, 'no room was made');
+  assert.equal(h.app.store.state.usage.byUser['1001'], 1, 'and nothing was counted');
+  // A user that vanished (or was blocked) mid-body: the session is still there, its user is not.
+  const s2 = await signIn(h);
+  const gone = await new Promise((resolve, reject) => {
+    const u = new URL(h.base);
+    const payload = JSON.stringify(roomBody);
+    const req = http.request({ host: u.hostname, port: u.port, method: 'POST', path: '/api/rooms', headers: { origin: ORIGIN, 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload), cookie: s2.cookie } }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, text: Buffer.concat(chunks).toString() }));
+    });
+    req.on('error', reject);
+    req.write(payload.slice(0, 10));
+    setTimeout(() => { h.users.delete('1001'); req.end(payload.slice(10)); }, 100);
+  });
+  assert.equal(gone.status, 401, gone.text);
+  assert.equal(h.app.domain.rooms.size, 1);
+});
+
+test('sign-in off: web and MCP create exactly as before: no user, no owner, no per-user count, and a bearer header is ignored', T, async (t) => {
+  const h = await boot(t, { signin: 'off', extra: { PER_USER_DAILY: '1' } });
+  const web = await h.post('/api/rooms', { type: 'application/json', origin: null, body: roomBody });
+  assert.equal(web.status, 201, web.text);
+  assert.deepEqual(Object.keys(web.json).sort(), ['id', 'links', 'modes']);
+  const a = await mcpCall(h, 'create_room', mcpRoom);
+  const b = await mcpCall(h, 'create_room', mcpRoom, bearer('bh_anything-at-all'));
+  const c = await mcpCall(h, 'create_room', mcpRoom, bearer('bh_anything-at-all'));
+  for (const r of [a, b, c]) assert.notEqual(r.json.result.isError, true, toolText(r));
+  const shape = (r) => JSON.stringify(r.json).split(toolOut(r).room_id).join('ID').replace(/t=[A-Za-z0-9_-]+/g, 't=T');
+  assert.equal(shape(a), shape(b));
+  assert.equal(shape(b), shape(c));
+  for (const room of h.app.domain.rooms.values()) assert.ok(!('ownerId' in room));
+  assert.equal(h.app.domain.rooms.size, 4, 'a per-user limit of 1 does not apply');
+  assert.equal(Object.keys(h.app.store.state.usage.byUser).length, 0);
+  const given = h.app.domain.createLiveRoom('203.0.113.1', roomBody, { id: '7', login: 'x' });
+  assert.ok(!('ownerId' in given), 'a user handed to a server with sign-in off is ignored');
+  assert.equal(Object.keys(h.app.store.state.usage.byUser).length, 0);
+  assert.equal(h.app.ops.userForAgentKey('bh_anything-at-all'), null);
+  assert.equal(h.app.ops.userForAgentKey(undefined), null);
+});
+
+test('the owner id never appears in anything a client is sent: views of both seats and the demo, the ledger, the brief, SSE and the MCP results', T, async (t) => {
+  const OWNER = '987654321';
+  const h = await boot(t, { gh: fakeGithub({ id: Number(OWNER) }) });
+  const s = await signIn(h);
+  const key = await mintKey(h, s);
+  const made = toolOut(await mcpCall(h, 'create_room', mcpRoom, bearer(key)));
+  const room = h.app.domain.rooms.get(made.room_id);
+  assert.equal(room.ownerId, OWNER);
+  assert.ok(JSON.stringify(room).includes(OWNER), 'the owner is on the stored room (so the absence below means something)');
+  const seen = [JSON.stringify(made)];
+  const call = async (name, args) => { const r = await mcpCall(h, name, args); assert.notEqual(r.json.result.isError, true, toolText(r)); seen.push(r.text); return toolOut(r); };
+  const card = (n) => ({ principal: { name: n }, goal: 'g', must_haves: ['m'] });
+  await call('join_room', { link: made.your_link, agent_name: 'A' });
+  await call('join_room', { link: made.invite_link_for_counterpart, agent_name: 'B' });
+  await call('seal_intent_card', { link: made.your_link, card: card('Ann') });
+  await call('seal_intent_card', { link: made.invite_link_for_counterpart, card: card('Ben') });
+  await call('send_envelope', { link: made.your_link, message: 'm', status: 'continue', proposal: { terms: ['the term'], depends_on: [] } });
+  await call('send_envelope', { link: made.invite_link_for_counterpart, message: 'ok', status: 'agree' });
+  assert.equal(room.status, 'agreed');
+  assert.ok(room.brief, 'there is a brief');
+  await call('get_room', { link: made.your_link });
+  await call('get_brief', { room_id: made.room_id });
+  await call('get_brief', { link: made.invite_link_for_counterpart });
+  const web = (p) => h.req('GET', p);
+  for (const seat of ['A', 'B']) {
+    const r = await web(`/api/rooms/${room.id}?seat=${seat}&t=${room.seats[seat].token}`);
+    assert.equal(r.status, 200);
+    seen.push(r.text);
+  }
+  seen.push((await web(`/api/rooms/${room.id}`)).text);
+  seen.push((await web(`/api/rooms/${room.id}/ledger`)).text);
+  // A web-made room, and the demo.
+  const webRoom = await h.post('/api/rooms', { cookie: s.cookie, body: roomBody });
+  seen.push(webRoom.text, (await web(`/api/rooms/${webRoom.json.id}?seat=A&t=${h.app.domain.rooms.get(webRoom.json.id).seats.A.token}`)).text);
+  const demo = await h.post('/api/demo', {});
+  seen.push(demo.text, (await web(`/api/rooms/${demo.json.id}?seat=A&t=${demo.json.token}`)).text);
+  // The first event of the stream.
+  const sse = await new Promise((resolve, reject) => {
+    const u = new URL(h.base);
+    const req = http.request({ host: u.hostname, port: u.port, path: `/api/rooms/${room.id}/events?seat=A&t=${room.seats.A.token}` }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; if (data.includes('\n\n')) { req.destroy(); resolve(data); } });
+      res.on('error', () => resolve(data));
+    });
+    req.on('error', () => resolve(''));
+    req.end();
+  });
+  seen.push(sse);
+  assert.ok(sse.length > 0, 'the stream sent something');
+  assert.ok(seen.length >= 14 && seen.every((x) => typeof x === 'string' && x.length > 0));
+  for (const text of seen) assert.ok(!text.includes(OWNER), 'the owner id leaked: ' + text.slice(0, 200));
+  assert.ok(!/ownerId/.test(seen.join('')));
+});
+
+test('end to end over real HTTP with a fake GitHub: login, mint, MCP create_room is owned and counted on the user, a second user behind the same address is not limited by it, a revoked key is refused', T, async (t) => {
+  const h = await boot(t, { extra: { PER_IP_DAILY: '1', PER_USER_DAILY: '2', DAILY_ROOM_LIMIT: '50' } });
+  const { usage } = h.app.store.state;
+  const ann = await signIn(h);
+  assert.equal((await h.req('GET', '/api/me', { headers: { cookie: ann.cookie } })).json.user.login, 'octocat');
+  const annKey = await mintKey(h, ann);
+  const first = await mcpCall(h, 'create_room', mcpRoom, bearer(annKey));
+  assert.notEqual(first.json.result.isError, true, toolText(first));
+  assert.equal(h.app.domain.rooms.get(toolOut(first).room_id).ownerId, '1001');
+  assert.deepEqual(Object.assign({}, usage.byUser), { 1001: 1 });
+  assert.deepEqual(Object.assign({}, usage.byIp), {}, 'counted on the user, not the address');
+  // PER_IP_DAILY is 1 and every request here comes from 127.0.0.1: a second room for the same user is still fine.
+  assert.notEqual((await mcpCall(h, 'create_room', mcpRoom, bearer(annKey))).json.result.isError, true);
+  // A second account, same address.
+  h.gh.id = 1002; h.gh.login = 'hubot';
+  const ben = await signIn(h);
+  assert.notEqual(ben.session, ann.session);
+  const benKey = await mintKey(h, ben);
+  const benRoom = await mcpCall(h, 'create_room', mcpRoom, bearer(benKey));
+  assert.notEqual(benRoom.json.result.isError, true, toolText(benRoom));
+  assert.equal(h.app.domain.rooms.get(toolOut(benRoom).room_id).ownerId, '1002');
+  assert.equal((await h.post('/api/rooms', { cookie: ben.cookie, body: roomBody })).status, 201);
+  assert.deepEqual(Object.assign({}, usage.byUser), { 1001: 2, 1002: 2 });
+  assert.deepEqual(Object.assign({}, usage.byIp), {});
+  assert.equal(usage.total, 4);
+  // Ann is at her limit and Ben's is a separate count.
+  assert.equal(toolText(await mcpCall(h, 'create_room', mcpRoom, bearer(annKey))), 'You have opened the maximum live rooms for today. The demo is unlimited.');
+  // Revoking Ann's key ends it, and Ben's still works for his own limit-free tools.
+  assert.equal((await h.post('/api/me/agent-key/revoke', { cookie: ann.cookie })).status, 204);
+  const after = await mcpCall(h, 'create_room', mcpRoom, bearer(annKey));
+  assert.equal(after.json.result.isError, true);
+  assert.equal(toolText(after), KEY_REJECTED);
+  assert.equal(usage.total, 4, 'the refusals counted nothing');
+  assert.deepEqual(Object.assign({}, usage.byUser), { 1001: 2, 1002: 2 });
+});
+
+test('MCP create_room: a user or owner smuggled in as tool arguments is not a user, with no key and with a key', T, async (t) => {
+  const h = await boot(t);
+  const forged = { ...mcpRoom, user: { id: '42', login: 'x' }, user_id: '42', ownerId: '42', owner: '42' };
+  assert.equal(toolText(await mcpCall(h, 'create_room', forged)), KEY_MISSING);
+  assert.equal(h.app.domain.rooms.size, 0);
+  const s = await signIn(h);
+  const r = await mcpCall(h, 'create_room', forged, bearer(await mintKey(h, s)));
+  assert.notEqual(r.json.result.isError, true, toolText(r));
+  assert.equal(h.app.domain.rooms.get(toolOut(r).room_id).ownerId, '1001');
+  assert.deepEqual(Object.assign({}, h.app.store.state.usage.byUser), { 1001: 1 });
+});
+
+test('the owner id is in no SSE event, for either seat, at any point of a negotiation run through the real server, nor in /api/me, /api/config or /health', T, async (t) => {
+  const OWNER = '987654321';
+  const { openSse } = require('../test-support/sse');
+  const h = await boot(t, { gh: fakeGithub({ id: Number(OWNER) }) });
+  const s = await signIn(h);
+  const key = await mintKey(h, s);
+  const made = toolOut(await mcpCall(h, 'create_room', mcpRoom, bearer(key)));
+  const room = h.app.domain.rooms.get(made.room_id);
+  assert.equal(room.ownerId, OWNER);
+  const streams = ['A', 'B'].map((seat) => openSse(h.base, `/api/rooms/${room.id}/events?seat=${seat}&t=${room.seats[seat].token}`));
+  const spectator = openSse(h.base, `/api/rooms/${room.id}/events`);
+  t.after(() => { for (const x of [...streams, spectator]) x.close(); });
+  await streams[0].next(0); await streams[1].next(0);
+  const card = (n) => ({ principal: { name: n }, goal: 'g', must_haves: ['m'] });
+  const call = async (name, args) => { const r = await mcpCall(h, name, args); assert.notEqual(r.json.result.isError, true, toolText(r)); };
+  await call('join_room', { link: made.your_link, agent_name: 'A' });
+  await call('join_room', { link: made.invite_link_for_counterpart, agent_name: 'B' });
+  await call('seal_intent_card', { link: made.your_link, card: card('Ann') });
+  await call('seal_intent_card', { link: made.invite_link_for_counterpart, card: card('Ben') });
+  await call('send_envelope', { link: made.your_link, message: 'm', status: 'continue', proposal: { terms: ['the term'], depends_on: [] } });
+  await call('send_envelope', { link: made.invite_link_for_counterpart, message: 'ok', status: 'agree' });
+  assert.equal(room.status, 'agreed');
+  for (const x of streams) await x.drain();
+  const seen = [];
+  for (const x of streams) { assert.ok(x.events.length >= 3, 'the stream followed the whole negotiation: ' + x.events.length); seen.push(...x.events.map((e) => e.text)); }
+  assert.ok(streams.every((x) => x.events.at(-1).json.status === 'agreed'), 'a stream saw the agreement');
+  await spectator.drain(); seen.push(...spectator.events.map((e) => e.text));
+  for (const p of ['/api/me', '/api/config', '/health']) seen.push((await h.req('GET', p, { headers: { cookie: s.cookie } })).text);
+  seen.push((await h.req('POST', '/mcp', { headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) })).text);
+  for (const text of seen) assert.ok(!text.includes(OWNER) && !/ownerId/.test(text), 'the owner id leaked: ' + text.slice(0, 200));
 });
 
 // ---------- the whole file's logs ----------
