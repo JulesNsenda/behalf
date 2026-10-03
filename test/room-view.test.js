@@ -2,7 +2,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const { readRepo } = require('../test-support/paths');
+const { readRepo, serverSource } = require('../test-support/paths');
+
 const { loadPure } = require('../test-support/source');
 const { JARGON } = require('../test-support/copy');
 const pxp = require('../lib/pxp');
@@ -763,7 +764,7 @@ test('recordEntry: unknown or malformed entries get a fixed sentence', () => {
 });
 
 test('recordEntry: covers every ledger type the server writes', () => {
-  const src = readRepo('index.js') + readRepo('lib/pxp.js');
+  const src = serverSource();
   const types = new Set([...src.matchAll(/appendLedger\(\w+, '([a-z_]+)'/g)].map(m => m[1]));
   assert.ok(types.size >= 7, [...types].join());
   for (const t of types) assert.notStrictEqual(RV.recordEntry(view(), { type: t, data: { seat: 'A' } }), 'Something happened in the room', t);
@@ -795,6 +796,7 @@ test('errorMessage: fixed sentences per action, status-specific where it helps',
 // Which index.js code regions belong to which action. Codes outside these (invalid JSON 400,
 // body too large 413, unknown room 404, unknown seat 400) are shared by every route and are
 // explicitly allowed to use the action's default sentence.
+// The region markers below rely on function order in lib/rooms.js: draftCard..answerEscalation and resume..startIfReady.
 function codesIn(src, startMarker, endMarker) {
   const from = src.indexOf(startMarker);
   assert.ok(from >= 0, startMarker);
@@ -804,16 +806,16 @@ function codesIn(src, startMarker, endMarker) {
 }
 
 test('errorMessage: every code index.js returns for an action has its own sentence', () => {
-  const src = readRepo('index.js');
+  const src = serverSource();
   // the check every seat action passes before its own code
   const seatGate = codesIn(src, "if (!seat) return send(res, 403", "const action = parts[5]");
   const regions = {
     create: codesIn(src, 'function createLiveRoom', 'function sealCard'),
     demo: codesIn(src, "parts[1] === 'demo'", "parts[1] === 'rooms' && parts.length === 2"),
-    draft: codesIn(src, "if (action === 'draft')", "if (action === 'seal')"),
+    draft: codesIn(src, 'async function draftCard(room', 'function answerEscalation'),
     seal: codesIn(src, 'function sealCard', 'function joinAsAgent'),
     answer: codesIn(src, 'function answerEscalation', 'function resume'),
-    resume: codesIn(src, 'function resume', 'const ops = {'),
+    resume: codesIn(src, 'function resume', 'function startIfReady'),
   };
   // the answer route has its own demo branch with a 409
   for (const c of codesIn(src, "if (action === 'answer')", "if (action === 'resume')")) regions.answer.add(c);

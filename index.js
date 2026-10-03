@@ -6,44 +6,26 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const pxp = require('./lib/pxp');
-const proxy = require('./lib/proxy');
-const demo = require('./lib/demo');
 const mcp = require('./lib/mcp');
-const { loadConfig, loadSecrets, ROOT } = require('./lib/config');
+const { ROOT } = require('./lib/config');
 const { createLog } = require('./lib/log');
-const { createStore } = require('./lib/store');
+const { createApp } = require('./lib/app');
+const { StoreError } = require('./lib/store');
+const { authSeat } = require('./lib/view');
 
 // Set before routing, so every response gets these, including /mcp (whose handler writes its own writeHead).
 // Every response carries the full policy: harmless on JSON, and it keeps one place to change.
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const SEC_HEADERS = { 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff', 'content-security-policy': CSP };
-const config = loadConfig();
-const secrets = loadSecrets();
-const { port: PORT, bindHost: HOST, dataDir: DATA_DIR, dailyRoomLimit: DAILY_ROOM_LIMIT, perIpDaily: PER_IP_DAILY, maxTurns: MAX_TURNS, demoDelayMs: DEMO_DELAY, publicUrl: PUBLIC_URL } = config;
-const PASSCODE = secrets.passcode;
-const STORE = path.join(DATA_DIR, 'rooms.json');
-const PUBLIC = path.join(ROOT, 'web');
 const log = createLog();
-
-// ---------- persistence ----------
-const store = createStore({ file: STORE, log });
-try { store.load(); } catch (e) { log.error('store.load_failed', {}, e); process.exit(1); }
-const rooms = store.state.rooms;
-const usage = store.state.usage;
-for (const r of rooms.values()) {
-  r.running = false; r.thinking = null;
-  // A built-in turn in flight is lost on restart; an external seat is simply still waiting.
-  if (r.status === 'negotiating' && !r.waitingOn) { r.status = 'paused'; r.interrupted = true; }
-}
-const save = store.save;
-
-// ---------- helpers ----------
-const id = (n = 8) => crypto.randomBytes(n).toString('base64url').replace(/[-_]/g, '').slice(0, n + 2);
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-const today = () => new Date().toISOString().slice(0, 10);
-const other = s => (s === 'A' ? 'B' : 'A');
-
-class ApiError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
+let app;
+try { app = createApp({ log }); } catch (e) { log.error(e instanceof StoreError ? 'store.load_failed' : 'app.init_failed', {}, e); process.exit(1); }
+const { config, domain, ops, view } = app;
+const { port: PORT, bindHost: HOST, dataDir: DATA_DIR, maxTurns: MAX_TURNS, publicUrl: PUBLIC_URL } = config;
+const { ApiError } = domain;
+const rooms = domain.rooms;
+const proxy = app.proxy;
+const PUBLIC = path.join(ROOT, 'web');
 
 function send(res, code, body, headers = {}) {
   const isObj = typeof body === 'object' && !Buffer.isBuffer(body);
@@ -66,287 +48,16 @@ function clientIp(req) {
   return xff[xff.length - 1] || req.socket.remoteAddress || 'unknown';
 }
 
-function authSeat(room, seatId, token) {
-  const s = room && room.seats && room.seats[seatId];
-  if (!s || !token) return null;
-  const a = Buffer.from(String(token).padEnd(64).slice(0, 64));
-  const b = Buffer.from(s.token.padEnd(64).slice(0, 64));
-  return crypto.timingSafeEqual(a, b) ? s : null;
-}
-
-function newSeat() {
-  return { token: id(16), name: '', card: null, cardHash: null, sealed: false, draftText: '', mode: 'builtin', agent: null };
-}
-
-const seatLink = (room, s) => `${PUBLIC_URL}/room/${room.id}?seat=${s}&t=${room.seats[s].token}`;
-
-// ---------- public view (never leaks the other side's card or tokens) ----------
-function view(room, seatId, token) {
-  const mine = seatId && authSeat(room, seatId, token) ? seatId : null;
-  const seats = {};
-  for (const s of ['A', 'B']) {
-    const st = room.seats[s];
-    seats[s] = {
-      name: (st.card && st.card.principal.name) || st.name || `Seat ${s}`,
-      role: st.card ? st.card.principal.role : '',
-      sealed: st.sealed, cardHash: st.cardHash, drafted: Boolean(st.card),
-      mode: st.mode || 'builtin', agent: st.agent || null, sealedVia: st.sealedVia || null,
-    };
-    if (mine === s || (room.demo && mine)) { seats[s].card = st.card; seats[s].draftText = st.draftText; }
-  }
-  return {
-    id: room.id, topic: room.topic, demo: room.demo, status: room.status, createdAt: room.createdAt,
-    seat: mine, seats, envelopes: room.envelopes, claims: Object.values(room.claims),
-    turn: room.turn, turnCount: room.turnCount, maxTurns: room.maxTurns,
-    pending: room.pending, error: room.error, brief: room.brief, interrupted: room.interrupted || false,
-    ledger: room.ledger.map(e => ({ n: e.n, type: e.type, at: e.at, hash: e.hash, prev: e.prev, data: e.data })),
-    ledgerCheck: pxp.verifyLedger(room.ledger),
-    thinking: room.thinking || null, waitingOn: room.waitingOn || null,
-    live: proxy.live(), mcpUrl: `${PUBLIC_URL}/mcp`,
-  };
-}
-
 // ---------- live updates (SSE) ----------
 const streams = new Map(); // roomId -> Set<{res, seat, token}>
-function emit(room) {
-  room.version = (room.version || 0) + 1;
-  save(room.id);
+domain.onChange((room, kind) => {
+  if (kind !== 'change') return;
   const set = streams.get(room.id);
   if (!set) return;
   for (const c of set) {
     try { c.res.write(`data: ${JSON.stringify(view(room, c.seat, c.token))}\n\n`); } catch {}
   }
-}
-
-// ---------- room lifecycle ----------
-function createRoom({ topic, demoMode }) {
-  const room = {
-    id: id(8), topic: pxp.str(topic, 160) || 'Untitled room', demo: Boolean(demoMode),
-    createdAt: new Date().toISOString(), status: 'drafting',
-    seats: { A: newSeat(), B: newSeat() }, envelopes: [], claims: {}, ledger: [],
-    turn: 'A', turnCount: 0, maxTurns: MAX_TURNS, pending: null, brief: null, error: null, waitingOn: null,
-  };
-  if (room.demo) room.seats.B.token = room.seats.A.token; // one person drives both seats in the demo
-  pxp.appendLedger(room, 'room_opened', { topic: room.topic, protocol: 'PXP/0' });
-  rooms.set(room.id, room);
-  save(room.id);
-  return room;
-}
-
-function takeQuota(ip) {
-  if (usage.day !== today()) store.resetUsage(today());
-  if (usage.total >= DAILY_ROOM_LIMIT) return 'Daily room limit reached. Try again tomorrow, or run the demo.';
-  if ((usage.byIp[ip] || 0) >= PER_IP_DAILY) return 'You have opened the maximum live rooms for today. The demo is unlimited.';
-  usage.total++; usage.byIp[ip] = (usage.byIp[ip] || 0) + 1;
-  save();
-  return null;
-}
-
-function createLiveRoom(ip, { topic, nameA, nameB, modeA, modeB, passcode }) {
-  const modes = { A: modeA === 'external' ? 'external' : 'builtin', B: modeB === 'external' ? 'external' : 'builtin' };
-  if (!proxy.live() && (modes.A === 'builtin' || modes.B === 'builtin')) {
-    throw new ApiError(503, "Built-in Claude proxies aren't enabled on this server yet. Choose \"Bring your own agent\" for both seats.");
-  }
-  if (PASSCODE && passcode !== PASSCODE) throw new ApiError(403, 'Wrong or missing passcode.');
-  const err = takeQuota(ip);
-  if (err) throw new ApiError(429, err);
-  const room = createRoom({ topic });
-  room.seats.A.name = pxp.str(nameA, 80);
-  room.seats.B.name = pxp.str(nameB, 80);
-  room.seats.A.mode = modes.A;
-  room.seats.B.mode = modes.B;
-  save(room.id);
-  return room;
-}
-
-function sealCard(room, seatId, cardInput, via) {
-  const seat = room.seats[seatId];
-  if (seat.sealed) throw new ApiError(409, 'Card already sealed.');
-  const card = pxp.normaliseCard(cardInput, seat.name);
-  const errs = pxp.validateCard(card);
-  if (errs.length) throw new ApiError(400, errs.join('; '));
-  seat.card = card;
-  seat.cardHash = pxp.hashOf(card);
-  seat.sealed = true;
-  seat.sealedVia = via;
-  pxp.appendLedger(room, 'card_sealed', { seat: seatId, principal: card.principal.name, card_hash: seat.cardHash, via });
-  emit(room);
-  startIfReady(room);
-}
-
-function joinAsAgent(room, seatId, agentName) {
-  const seat = room.seats[seatId];
-  if (room.demo) throw new ApiError(400, 'Demo rooms run scripted proxies. Create a live room to connect your own agent.');
-  if (seat.mode !== 'external') {
-    if (room.status !== 'drafting') throw new ApiError(409, "This seat already has a built-in proxy negotiating. An agent can only take over a seat before negotiation starts.");
-    seat.mode = 'external';
-  }
-  const name = pxp.str(agentName, 60) || 'External agent';
-  if (seat.agent !== name) {
-    seat.agent = name;
-    pxp.appendLedger(room, 'agent_joined', { seat: seatId, agent: name });
-    emit(room);
-  }
-}
-
-function answerEscalation(room, seatId, answer, via) {
-  if (!room.pending || room.pending.seat !== seatId) throw new ApiError(409, 'No question is waiting for this seat.');
-  answer = pxp.str(answer, 1000);
-  if (!answer) throw new ApiError(400, 'Write an answer for your proxy.');
-  const env = room.envelopes.find(e => e.seq === room.pending.seq);
-  if (env) { env.answer = answer; env.answer_via = via; }
-  const seat = room.seats[seatId];
-  seat.card.amendments.push({ question: room.pending.question, answer, at: new Date().toISOString() });
-  seat.cardHash = pxp.hashOf(seat.card);
-  pxp.appendLedger(room, 'principal_answer', { seat: seatId, speaker: 'principal', via, answer_hash: pxp.sha256(answer), card_hash: seat.cardHash });
-  room.pending = null;
-  room.turn = seatId; // the proxy that escalated resumes
-  run(room);
-}
-
-async function finalise(room, acceptEnv) {
-  const accepted = room.envelopes.find(e => e.seq === acceptEnv.accepts.seq);
-  const terms = accepted.proposal.terms;
-  const dependsOn = accepted.proposal.depends_on.map(cid => room.claims[cid]).filter(Boolean);
-  const unverifiedDeps = dependsOn.filter(c => !c.verified);
-  let authority = null;
-  try {
-    if (room.demo) authority = terms.map((t, i) => ({ term: t, ...(demo.authority[room.branch] || [])[i] }));
-    else if (proxy.live()) authority = await proxy.mapAuthority(room, terms);
-  } catch (e) { log.error('brief.authority_failed', { room: room.id }, e); }
-
-  const agreement = { terms, proposal_hash: accepted.proposal_hash, proposed_by: accepted.from.seat, proposed_seq: accepted.seq, accepted_by: acceptEnv.from.seat, accepted_seq: acceptEnv.seq };
-  pxp.appendLedger(room, 'agreement', { proposal_hash: agreement.proposal_hash, proposed_by: agreement.proposed_by, accepted_by: agreement.accepted_by });
-  room.brief = buildBrief(room, { agreement, authority, dependsOn, unverifiedDeps });
-  room.status = 'agreed';
-}
-
-function buildBrief(room, { agreement, authority, dependsOn, unverifiedDeps }) {
-  const escalations = room.envelopes.filter(e => e.escalation).map(e => ({
-    seat: e.from.seat, principal: e.from.principal, question: e.escalation.question, answer: e.answer || null, via: e.answer_via || null,
-  }));
-  const allUnverified = Object.values(room.claims).filter(c => !c.verified);
-  const challenged = Object.values(room.claims).filter(c => c.reviews.some(r => r.verdict !== 'accept'));
-  const flags = room.envelopes.flatMap(e => (e.protocol_flags || []).map(f => ({ seq: e.seq, seat: e.from.seat, flag: f })));
-  const check = pxp.verifyLedger(room.ledger);
-  const party = s => ({ name: room.seats[s].card.principal.name, card_hash: room.seats[s].cardHash, proxy: room.seats[s].mode === 'external' ? (room.seats[s].agent || 'External agent') : 'Built-in Claude proxy' });
-  return {
-    outcome: agreement ? 'agreed' : 'no_agreement',
-    agreement, authority,
-    depends_on: dependsOn || [],
-    unverified_dependencies: unverifiedDeps || [],
-    unverified_in_record: allUnverified,
-    challenged,
-    escalations, protocol_flags: flags,
-    parties: { A: party('A'), B: party('B') },
-    turns: room.envelopes.length,
-    ledger_head: check.head, ledger_ok: check.ok,
-    generated_at: new Date().toISOString(),
-  };
-}
-
-// Apply one proxy turn (from either kind of proxy) through protocol enforcement.
-async function advance(room, seatId, raw) {
-  const env = pxp.buildEnvelope(room, seatId, raw);
-  if (room.seats[seatId].mode === 'external') env.from.agent = room.seats[seatId].agent || 'External agent';
-  pxp.applyEnvelope(room, env);
-  room.turnCount++;
-  room.thinking = null;
-  room.waitingOn = null;
-
-  if (env.status === 'escalate') {
-    room.pending = {
-      seat: seatId, seq: env.seq, question: env.escalation.question, reason: env.escalation.reason,
-      options: room.demo ? demo.options : null,
-    };
-    room.status = 'paused';
-    pxp.appendLedger(room, 'escalation', { seat: seatId, seq: env.seq, question_hash: pxp.sha256(env.escalation.question) });
-  } else if (env.status === 'agree') {
-    await finalise(room, env);
-  } else {
-    room.turn = other(seatId);
-  }
-  emit(room);
-  return env;
-}
-
-// Drive the room until agreement, escalation, the turn cap, an error,
-// or a turn that belongs to an external agent (which then calls in).
-async function run(room) {
-  if (room.running) return;
-  room.running = true;
-  room.status = 'negotiating';
-  room.interrupted = false;
-  room.error = null;
-  try {
-    while (room.status === 'negotiating') {
-      if (room.turnCount >= room.maxTurns) {
-        room.status = 'stalled';
-        room.waitingOn = null;
-        pxp.appendLedger(room, 'turn_limit', { turns: room.turnCount });
-        room.brief = buildBrief(room, {});
-        break;
-      }
-      const seatId = room.turn;
-      if (room.seats[seatId].mode === 'external') {
-        room.waitingOn = seatId;
-        room.thinking = null;
-        break;
-      }
-      room.thinking = seatId;
-      emit(room);
-      let raw;
-      if (room.demo) {
-        await sleep(DEMO_DELAY);
-        const step = room.script.shift();
-        if (!step) { room.status = 'stalled'; room.brief = buildBrief(room, {}); break; }
-        raw = step.raw;
-      } else {
-        raw = await proxy.takeTurn(room, seatId);
-      }
-      await advance(room, seatId, raw);
-    }
-  } catch (e) {
-    log.error('room.run_failed', { room: room.id }, e);
-    room.status = 'error';
-    room.error = e.message;
-  } finally {
-    room.running = false;
-    room.thinking = null;
-    emit(room);
-  }
-}
-
-async function externalTurn(room, seatId, raw) {
-  if (room.status !== 'negotiating' || room.waitingOn !== seatId || room.running) {
-    throw new ApiError(409, room.pending ? 'The room is paused for a human answer.' : "It isn't your turn. Call wait_for_turn.");
-  }
-  room.running = true;
-  let env;
-  try { env = await advance(room, seatId, raw); }
-  finally { room.running = false; }
-  if (room.status === 'negotiating') run(room);
-  return env;
-}
-
-function startIfReady(room) {
-  if (room.seats.A.sealed && room.seats.B.sealed && room.status === 'drafting') {
-    if (room.demo) room.script = demo.opening.slice();
-    run(room);
-  }
-}
-
-function resume(room) {
-  if (!['error', 'paused'].includes(room.status) || room.pending) throw new ApiError(409, 'Nothing to resume.');
-  run(room);
-}
-
-// Shared operations, used by the web API and the MCP endpoint alike.
-const ops = {
-  rooms, PUBLIC_URL, MAX_TURNS, ApiError, other, view, seatLink,
-  authSeat, createLiveRoom, sealCard, joinAsAgent, answerEscalation, externalTurn, resume,
-  live: () => proxy.live(), passcodeRequired: () => Boolean(PASSCODE),
-};
+});
 
 // ---------- routes ----------
 async function api(req, res, url) {
@@ -354,19 +65,17 @@ async function api(req, res, url) {
   const q = url.searchParams;
 
   if (req.method === 'GET' && parts[1] === 'config') {
-    return send(res, 200, { live: proxy.live(), passcode: Boolean(PASSCODE), maxTurns: MAX_TURNS, protocol: 'PXP/0', mcpUrl: `${PUBLIC_URL}/mcp` });
+    return send(res, 200, { live: proxy.live(), passcode: ops.passcodeRequired(), maxTurns: MAX_TURNS, protocol: 'PXP/0', mcpUrl: `${PUBLIC_URL}/mcp` });
   }
 
   if (req.method === 'POST' && parts[1] === 'demo' && parts.length === 2) {
-    const room = createRoom({ topic: demo.topic, demoMode: true });
-    for (const s of ['A', 'B']) room.seats[s].card = pxp.normaliseCard(demo.cards[s]);
-    save(room.id);
+    const room = domain.createDemoRoom();
     return send(res, 201, { id: room.id, token: room.seats.A.token });
   }
 
   if (req.method === 'POST' && parts[1] === 'rooms' && parts.length === 2) {
     const body = await readBody(req);
-    const room = createLiveRoom(clientIp(req), body);
+    const room = domain.createLiveRoom(clientIp(req), body);
     return send(res, 201, { id: room.id, links: { A: `/room/${room.id}?seat=A&t=${room.seats.A.token}`, B: `/room/${room.id}?seat=B&t=${room.seats.B.token}` }, modes: { A: room.seats.A.mode, B: room.seats.B.mode } });
   }
 
@@ -400,43 +109,22 @@ async function api(req, res, url) {
     const action = parts[5];
 
     if (action === 'draft') {
-      if (seat.sealed) return send(res, 409, { error: 'Card already sealed.' });
-      if (room.demo) return send(res, 400, { error: 'Demo cards are pre-filled.' });
-      if (!proxy.live()) return send(res, 503, { error: 'Drafting with Claude is not enabled on this server. Fill in the card yourself.' });
-      const text = pxp.str(body.text, 4000);
-      const name = pxp.str(body.name, 80) || seat.name;
-      if (!text || !name) return send(res, 400, { error: 'Add your name and a brief.' });
-      seat.name = name; seat.draftText = text;
-      seat.drafts = (seat.drafts || 0) + 1;
-      if (seat.drafts > 5) return send(res, 429, { error: 'Draft limit reached for this seat. Edit the card directly.' });
-      try {
-        const out = await proxy.draftCard({ name, role: pxp.str(body.role, 120), topic: room.topic, text });
-        out.principal = { ...(out.principal || {}), name };
-        seat.card = pxp.normaliseCard(out, name);
-      } catch (e) { return send(res, 502, { error: 'Could not draft the card: ' + e.message }); }
-      emit(room);
-      return send(res, 200, { card: seat.card });
+      const card = await domain.draftCard(room, seatId, body);
+      return send(res, 200, { card });
     }
 
     if (action === 'seal') {
-      sealCard(room, seatId, room.demo ? seat.card : body.card, 'web');
+      domain.sealCard(room, seatId, room.demo ? seat.card : body.card, 'web');
       return send(res, 200, { ok: true, card_hash: seat.cardHash });
     }
 
     if (action === 'answer') {
-      if (room.demo) {
-        if (!room.pending || room.pending.seat !== seatId) return send(res, 409, { error: 'No question is waiting for this seat.' });
-        const key = Object.prototype.hasOwnProperty.call(demo.choices, body.option) ? body.option : 'dedupe';
-        room.branch = key;
-        room.script = demo.branches[key].slice();
-        answerEscalation(room, seatId, demo.answers[key], 'web');
-      } else {
-        answerEscalation(room, seatId, body.answer, 'web');
-      }
+      if (room.demo) domain.answerDemo(room, seatId, body.option);
+      else domain.answerEscalation(room, seatId, body.answer, 'web');
       return send(res, 200, { ok: true });
     }
 
-    if (action === 'resume') { resume(room); return send(res, 200, { ok: true }); }
+    if (action === 'resume') { domain.resume(room); return send(res, 200, { ok: true }); }
   }
 
   return send(res, 404, { error: 'Not found' });
