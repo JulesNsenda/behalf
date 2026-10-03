@@ -1,16 +1,15 @@
 type: nodejs
 healthCheck: /health
-# Drop provisions Postgres and sets DATABASE_URL.
+# Drop provisions Postgres and sets DATABASE_URL. Not declared under secrets: Drop's
+# redeploy check counts only secrets set by hand, so a required DATABASE_URL blocks
+# every redeploy. /health shows `store: postgres` once it is in use.
 database: postgres
 # The base layer: anything set in the Drop dashboard overrides these.
 env:
   SIGNIN: github
   PUBLIC_URL: https://behalf.dropkit.sh
-# Set in the dashboard, never here. Drop holds the app in needs-config until all are set. DATABASE_URL is the exception: Drop injects it.
+# Set in the dashboard, never here. Drop holds the app in needs-config until both are set.
 secrets:
-  DATABASE_URL:
-    required: true
-    description: Postgres connection URL. Drop sets it when database postgres is provisioned, so do not set it by hand
   GITHUB_CLIENT_ID:
     required: true
     description: Client ID of the Behalf GitHub OAuth app (callback https://behalf.dropkit.sh/auth/github/callback)
