@@ -1,11 +1,12 @@
 'use strict';
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
 const { ROOT } = require('../test-support/paths');
-const { start, mkTmp, rmTmp } = require('../test-support/server');
+const { start, mkTmp, rmTmp, makeSrc } = require('../test-support/server');
 
 let server = null;
 let dir = null;
@@ -107,21 +108,29 @@ test('/health reports ok', async () => {
 });
 
 // ---- path traversal ----
-const MARKER = "require('./lib/pxp')";
-const leaks = (r) => r.status === 200 && r.body.includes(MARKER);
+// A leak is a 200 whose body is the real contents of the file the path points at, read from disk, so the check
+// cannot go vacuous when code moves between files.
+const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const leaks = (r, rel) => { const src = read(rel); assert.ok(src.length > 100, rel + ' is unexpectedly small'); return r.status === 200 && r.body === src; };
 
-// [path, sent by fetch, sent raw]. fetch normalises dot segments, so the raw http request is
+// [path, sent by fetch, sent raw, file it would reach]. fetch normalises dot segments, so the raw http request is
 // the only way to put an un-normalised path on the wire.
 const TRAVERSAL = [
-  ['/../index.js', true, true],
-  ['/..%2findex.js', true, false],
-  ['/ui/../../index.js', true, true],
-  ['/ui/..%2f..%2findex.js', true, false],
-  ['/%2e%2e/index.js', false, true],
-  ['/ui/%2e%2e/%2e%2e/index.js', false, true],
+  ['/../index.js', true, true, 'index.js'],
+  ['/..%2findex.js', true, false, 'index.js'],
+  ['/ui/../../index.js', true, true, 'index.js'],
+  ['/ui/..%2f..%2findex.js', true, false, 'index.js'],
+  ['/%2e%2e/index.js', false, true, 'index.js'],
+  ['/ui/%2e%2e/%2e%2e/index.js', false, true, 'index.js'],
   // Raw backslash traversal: the doubled backslash is a real "\" in the request path.
-  ['/..\\index.js', false, true],
-  ['/ui/..\\..\\index.js', false, true],
+  ['/..\\index.js', false, true, 'index.js'],
+  ['/ui/..\\..\\index.js', false, true, 'index.js'],
+  ['/../lib/rooms.js', true, true, 'lib/rooms.js'],
+  ['/..%2flib%2frooms.js', true, false, 'lib/rooms.js'],
+  ['/%2e%2e/lib/rooms.js', false, true, 'lib/rooms.js'],
+  ['/../lib/http.js', true, true, 'lib/http.js'],
+  ['/..%2flib%2fhttp.js', true, false, 'lib/http.js'],
+  ['/%2e%2e/lib/http.js', false, true, 'lib/http.js'],
 ];
 
 async function fetchGet(p) {
@@ -143,16 +152,39 @@ function rawGet(p) {
 }
 
 test('traversal via fetch does not serve index.js source', async () => {
-  for (const [p] of TRAVERSAL.filter((t) => t[1])) {
+  for (const [p, , , file] of TRAVERSAL.filter((t) => t[1])) {
     const r = await fetchGet(p);
-    assert.ok(!leaks(r), `${p} leaked source (status ${r.status})`);
+    assert.ok(!leaks(r, file), `${p} leaked source (status ${r.status})`);
   }
 });
 
 test('traversal via raw un-normalised request does not serve index.js source', async () => {
-  for (const [p] of TRAVERSAL.filter((t) => t[2])) {
+  for (const [p, , , file] of TRAVERSAL.filter((t) => t[2])) {
     const r = await rawGet(p);
-    assert.ok(!leaks(r), `${p} leaked source (status ${r.status})`);
+    assert.ok(!leaks(r, file), `${p} leaked source (status ${r.status})`);
+  }
+});
+
+// The same checks against a source copy whose own .data/ sits under its root, with DROP_DATA_DIR unset, so a store file
+// is really one directory above the served web/. The positive controls show that a leak would be seen.
+test('a positive control leaks, and the store under the root is not served', async () => {
+  const ok = await fetchGet('/ui/ui.css');
+  assert.strictEqual(leaks(ok, 'web/ui/ui.css'), true, 'the leak check can see a served file');
+
+  const MARK = 'PLANTED-STORE-MARKER';
+  const src = makeSrc({ '.data/rooms.json': JSON.stringify({ schemaVersion: 1, rooms: {}, usage: {}, note: MARK }), 'web/index.html': '<p>served</p>' });
+  const s = await start(path.join(src, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1' });
+  try {
+    assert.strictEqual(s.exited, undefined, 'server exited: ' + s.out);
+    const get = async (p) => { const r = await fetch('http://127.0.0.1:' + s.port + p); return { status: r.status, body: await r.text() }; };
+    assert.strictEqual((await get('/index.html')).body, '<p>served</p>', 'positive control');
+    for (const p of ['/../.data/rooms.json', '/%2e%2e/.data/rooms.json', '/.data/rooms.json', '/..%2f.data%2frooms.json']) {
+      const r = await get(p);
+      assert.ok(!r.body.includes(MARK), p + ' leaked the store (status ' + r.status + ')');
+    }
+  } finally {
+    await s.stop();
+    rmTmp(src);
   }
 });
 
