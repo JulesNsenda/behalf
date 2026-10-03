@@ -18,6 +18,7 @@ test('defaults with an empty environment', () => {
     maxTurns: 10,
     demoDelayMs: 2600,
     publicUrl: 'https://proxy-room.dropkit.sh',
+    model: 'claude-sonnet-5-5',
   });
   assert.equal(ROOT, path.join(__dirname, '..'));
 });
@@ -74,4 +75,16 @@ test('secrets keep readable values but redact them in JSON and inspect', () => {
   assert.match(JSON.stringify(s), /\[redacted\]/);
   assert.match(util.inspect(s), /\[redacted\]/);
   assert.equal(loadSecrets({}).passcode, '');
+});
+
+test('the API key is a redacted secret and the model is plain config', () => {
+  const KEY = 'sk-ant-KEYVALUE-1234';
+  const s = loadSecrets({ ANTHROPIC_API_KEY: KEY });
+  assert.equal(s.apiKey, KEY);
+  for (const text of [JSON.stringify(s), util.inspect(s, { showHidden: true }), util.format('%o', s)]) assert.ok(!text.includes(KEY), text);
+  assert.equal(loadSecrets({}).apiKey, '');
+  const c = loadConfig({ ANTHROPIC_API_KEY: KEY });
+  assert.ok(!JSON.stringify(c).includes(KEY) && !('apiKey' in c));
+  assert.equal(loadConfig({ PXP_MODEL: 'm-1' }).model, 'm-1');
+  assert.equal(loadConfig({ PXP_MODEL: '' }).model, 'claude-sonnet-5-5');
 });

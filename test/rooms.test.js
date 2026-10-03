@@ -460,6 +460,9 @@ test('createApp deletes ROOM_PASSCODE from process.env only when it loaded the s
   const had = Object.prototype.hasOwnProperty.call(process.env, 'ROOM_PASSCODE');
   const saved = process.env.ROOM_PASSCODE;
   t.after(() => { if (had) process.env.ROOM_PASSCODE = saved; else delete process.env.ROOM_PASSCODE; });
+  const hadKey = Object.prototype.hasOwnProperty.call(process.env, 'ANTHROPIC_API_KEY'); // createApp also deletes the dev key
+  const savedKey = process.env.ANTHROPIC_API_KEY;
+  t.after(() => { if (hadKey) process.env.ANTHROPIC_API_KEY = savedKey; else delete process.env.ANTHROPIC_API_KEY; });
   const dir = mkTmp('rooms-env-');
   t.after(() => rmTmp(dir));
   const base = () => ({ config: loadConfig({ DROP_DATA_DIR: dir }), log: createLog({ stream: { write() {} } }), proxy: fakeProxy([]) });
