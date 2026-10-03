@@ -37,7 +37,7 @@ test('API surface is exactly alertBox,announce,byId,callout,copy,copyField,descr
 });
 
 // ---- icon ----
-const ICON_NAMES = ['lock', 'lock-sm', 'check', 'alert', 'info', 'link', 'copy', 'warn'];
+const ICON_NAMES = ['lock', 'lock-sm', 'check', 'alert', 'info', 'link', 'copy', 'warn', 'github'];
 
 test('icon: every known name is trusted SVG markup, decorative and sized by the icon classes', () => {
   for (const name of ICON_NAMES) {

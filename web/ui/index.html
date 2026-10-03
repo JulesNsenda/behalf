@@ -94,6 +94,7 @@
       <a class="btn btn--secondary" href="/spec">A link that looks like a button</a>
     </div>
     <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="btn-variants"></code></pre></div></details>
+    <p class="text-caption">A link button that sits next to another control, or under it, takes <code>.btn--flush</code> as well: it drops the left padding, so its words line up with the control's left edge. A call to sign in puts the GitHub mark (<code>UI.icon('github')</code>) before its words.</p>
 
     <div class="cluster"><p class="eyebrow-label">Disabled and busy</p><span class="pill pill--warn">New, not on the canvas</span></div>
     <div class="guide-example cluster" data-snippet="btn-states">
@@ -522,18 +523,18 @@
     <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="site-header"></code></pre></div></details>
 
     <p class="eyebrow-label">Account slot</p>
-    <p class="text-caption">A script fills <code>&lt;div class="site-header__account" id="account-slot" hidden&gt;</code>, which sits after the nav inside <code>.site-header__end</code> and is the same on every page that has the nav. With sign-in off it stays empty and hidden. Signed out, it holds a sign-in link. Signed in, it says who and offers Sign out. Neither is a primary button: the nav already has one. A header with the nav and the slot wraps; at phone width the slot drops to its own row and keeps to the right.</p>
+    <p class="text-caption">A script fills <code>&lt;div class="site-header__account" id="account-slot" hidden&gt;</code>, which comes first inside <code>.site-header__end</code>, before the nav, and is the same on every page that has the nav. It comes first so that on a phone, where it sits beside the logo, it is also first to tab to; on a wide screen CSS <code>order</code> moves it after the nav. With sign-in off it stays empty and hidden. Signed out, it holds a small secondary button with the GitHub mark (<code>UI.icon('github')</code>) and two labels: "Sign in with GitHub" on a wide screen, "Sign in" on a narrow one, where the CSS hides the other so a screen reader hears one. Signed in, it holds the login in bold and a Sign out link-button; "Signed in as" is <code>.sr-only</code> text before the login, and at phone width the login is hidden from sight too (still read out), so the row is the logo and Sign out. Neither is a primary button: the nav already has one.</p>
     <div class="guide-example stack stack--sm" data-snippet="account-slot">
       <header class="site-header">
         <div class="site-header__inner">
           <a class="brand" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
           <div class="site-header__end">
+            <div class="site-header__account"><a class="btn btn--secondary btn--small" href="/auth/github?next=/"><svg class="icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span class="site-header__account-long">Sign in with GitHub</span><span class="site-header__account-short">Sign in</span></a></div>
             <nav class="site-header__nav" aria-label="Example">
-            <a href="/ui/" aria-current="page">Home</a>
-            <a href="/spec">How it works</a>
-            <a class="btn btn--primary btn--small" href="/">Start a room</a>
-          </nav>
-            <div class="site-header__account"><a class="site-header__account-link" href="/auth/github?next=/">Sign in with GitHub</a></div>
+              <a href="/ui/" aria-current="page">Home</a>
+              <a href="/spec">How it works</a>
+              <a class="btn btn--primary btn--small" href="/">Start a room</a>
+            </nav>
           </div>
         </div>
       </header>
@@ -541,12 +542,12 @@
         <div class="site-header__inner">
           <a class="brand" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
           <div class="site-header__end">
+            <div class="site-header__account"><span class="site-header__account-who"><span class="sr-only">Signed in as </span><span class="site-header__account-login">octocat</span></span><button class="btn btn--link" type="button">Sign out</button></div>
             <nav class="site-header__nav" aria-label="Example">
-            <a href="/ui/" aria-current="page">Home</a>
-            <a href="/spec">How it works</a>
-            <a class="btn btn--primary btn--small" href="/">Start a room</a>
-          </nav>
-            <div class="site-header__account"><span class="site-header__account-who">Signed in as octocat</span><button class="btn btn--link" type="button">Sign out</button></div>
+              <a href="/ui/" aria-current="page">Home</a>
+              <a href="/spec">How it works</a>
+              <a class="btn btn--primary btn--small" href="/">Start a room</a>
+            </nav>
           </div>
         </div>
       </header>
@@ -554,22 +555,37 @@
     <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="account-slot"></code></pre></div></details>
 
     <p class="eyebrow-label">Account slot at phone width</p>
-    <p class="text-caption">The same header in a 390px column, as the real one is under 640px: the nav takes the first row and the slot sits on the right of the next.</p>
-    <div class="guide-example" data-snippet="account-slot-narrow">
+    <p class="text-caption">The same two states in a 390px column, as the real header is under 640px: logo and slot on the first row, the nav on the row below.</p>
+    <div class="guide-example stack stack--sm" data-snippet="account-slot-narrow">
       <div class="guide-narrow">
         <header class="site-header">
-          <div class="site-header__inner">
-            <a class="brand" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
-            <div class="site-header__end">
-              <nav class="site-header__nav" aria-label="Example">
-            <a href="/ui/" aria-current="page">Home</a>
-            <a href="/spec">How it works</a>
-            <a class="btn btn--primary btn--small" href="/">Start a room</a>
-          </nav>
-              <div class="site-header__account"><span class="site-header__account-who">Signed in as octocat</span><button class="btn btn--link" type="button">Sign out</button></div>
-            </div>
+        <div class="site-header__inner">
+          <a class="brand" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+          <div class="site-header__end">
+            <div class="site-header__account"><a class="btn btn--secondary btn--small" href="/auth/github?next=/"><svg class="icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span class="site-header__account-long">Sign in with GitHub</span><span class="site-header__account-short">Sign in</span></a></div>
+            <nav class="site-header__nav" aria-label="Example">
+              <a href="/ui/" aria-current="page">Home</a>
+              <a href="/spec">How it works</a>
+              <a class="btn btn--primary btn--small" href="/">Start a room</a>
+            </nav>
           </div>
-        </header>
+        </div>
+      </header>
+      </div>
+      <div class="guide-narrow">
+        <header class="site-header">
+        <div class="site-header__inner">
+          <a class="brand" href="/ui/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+          <div class="site-header__end">
+            <div class="site-header__account"><span class="site-header__account-who"><span class="sr-only">Signed in as </span><span class="site-header__account-login">octocat</span></span><button class="btn btn--link" type="button">Sign out</button></div>
+            <nav class="site-header__nav" aria-label="Example">
+              <a href="/ui/" aria-current="page">Home</a>
+              <a href="/spec">How it works</a>
+              <a class="btn btn--primary btn--small" href="/">Start a room</a>
+            </nav>
+          </div>
+        </div>
+      </header>
       </div>
     </div>
     <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="account-slot-narrow"></code></pre></div></details>
@@ -937,7 +953,7 @@ Stop and ask me before you agree to pay any fee.</pre>
     </div>
     <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="icons"></code></pre></div></details>
     <p class="text-caption">Sizes: <code>.icon</code> (20px), <code>.icon--sm</code> (14px) and <code>.icon--lg</code> (28px).</p>
-    <p class="text-caption">From script, <code>UI.icon(name)</code> returns one of these as markup, for <code>lock</code>, <code>lock-sm</code>, <code>check</code>, <code>alert</code>, <code>info</code>, <code>link</code>, <code>copy</code> and <code>warn</code>. An unknown name gives empty markup, so a name never reaches the page.</p>
+    <p class="text-caption">From script, <code>UI.icon(name)</code> returns one of these as markup, for <code>lock</code>, <code>lock-sm</code>, <code>check</code>, <code>alert</code>, <code>info</code>, <code>link</code>, <code>copy</code>, <code>warn</code> and <code>github</code> (the GitHub mark, filled rather than drawn with a stroke). An unknown name gives empty markup, so a name never reaches the page.</p>
   </section>
 
 </div>

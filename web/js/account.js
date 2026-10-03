@@ -92,9 +92,10 @@
       return;
     }
     if (d.kind === 'signed-out') {
-      UI.render(el, html`<a class="site-header__account-link" id="account-signin" href="${UI.url(d.href)}">${d.text}</a>`);
+      // One of the two labels is display:none at any width, so a screen reader hears only the one on screen.
+      UI.render(el, html`<a class="btn btn--secondary btn--small" id="account-signin" href="${UI.url(d.href)}">${UI.icon('github')}<span class="site-header__account-long">${d.text}</span><span class="site-header__account-short">${d.short}</span></a>`);
     } else {
-      UI.render(el, html`<span class="site-header__account-who">${d.text}</span><button class="btn btn--link" type="button" id="sign-out">${d.signOut}</button>`);
+      UI.render(el, html`<span class="site-header__account-who">${d.hint ? html`<span class="sr-only">${d.hint}</span>` : false}<span class="site-header__account-login">${d.who}</span></span><button class="btn btn--link" type="button" id="sign-out">${d.signOut}</button>`);
       var button = UI.byId('sign-out');
       button.addEventListener('click', function () { signOut(button); });
     }

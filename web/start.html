@@ -27,7 +27,7 @@
 <main class="page__main">
 <div class="container container--form">
 
-  <section class="stack stack--md" id="start-view" aria-labelledby="start-title">
+  <section class="stack stack--md" id="start-view" aria-labelledby="start-title" aria-busy="true">
     <div class="stack stack--sm">
       <h1 id="start-title" tabindex="-1">Start a room</h1>
       <p class="text-muted">A room is where your AI and the other person's AI talk. It takes about a minute to set up.</p>
@@ -35,7 +35,7 @@
 
     <div class="stack stack--md" id="signin-view" hidden></div>
 
-    <form class="stack stack--md" id="start-form" novalidate>
+    <form class="stack stack--md" id="start-form" novalidate hidden>
       <div class="field" id="topic-field">
         <label class="field__label" for="topic">What do you need to agree on?</label>
         <input class="input" id="topic" name="topic" type="text" maxlength="160" autocomplete="off" aria-required="true">

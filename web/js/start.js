@@ -7,7 +7,9 @@
  * person's name (RoomView.firstNameOf, which guards reserved names) and the step labels come from room-view.js.
  *
  * With sign-in on and nobody signed in, step 1 shows a sign-in link instead of the form (wording from account-view.js), whether
- * /api/me said so up front or a create came back 401.
+ * /api/me said so up front or a create came back 401. The form and that link both start hidden: one of them is shown once the
+ * settings and /api/me have answered (or DECIDE_MS has passed, which shows the form), so the page never shows the form and
+ * then swaps it. Pages require JS: if this script fails, both views stay hidden.
  * Step 1 posts the form to /api/rooms. Step 2 shows the other person's link, which the server never
  * returns again, so it is also kept in localStorage for a week (see links.js), and the creator's own link,
  * to come back to. Links older than that, or no longer valid, are swept out of localStorage on load.
@@ -79,8 +81,8 @@
       <div class="card stack">
         <p>${prompt.lead}</p>
         <div class="cluster">
-          <a class="btn btn--primary" id="signin-link" href="${UI.url(prompt.href)}">${prompt.button}</a>
-          <a class="btn btn--link" href="${UI.url(prompt.demoHref)}">${prompt.demo}</a>
+          <a class="btn btn--primary" id="signin-link" href="${UI.url(prompt.href)}">${UI.icon('github')}${prompt.button}</a>
+          <a class="btn btn--link btn--flush" href="${UI.url(prompt.demoHref)}">${prompt.demo}</a>
         </div>
       </div>
     `);
@@ -93,12 +95,27 @@
   var signinFailed = new URLSearchParams(location.search).get('signin') === 'failed';
   if (signinFailed) { try { history.replaceState(null, '', '/start'); } catch (e) { /* not fatal */ } }
 
-  // Whether sign-in is on comes from the server's settings; /api/me is only asked then, for the user (Account.load).
-  // Fails open: when either can't be read the form shows, and a refused create brings the sign-in up instead.
-  configLoaded.then(function (c) { return c && c.signin === 'github' ? Account.load() : null; }).then(function (me) {
-    if (me && me.signin === 'github' && !me.user) showSignin(signinFailed ? AccountView.SIGNIN_FAILED : null);
-    else if (signinFailed) showError(AccountView.SIGNIN_FAILED);
-  });
+  // Neither the form nor the sign-in shows until the page knows which one is wanted (both start hidden in start.html), so
+  // nobody sees the form turn into the sign-in. Whether sign-in is on comes from the server's settings; /api/me is only
+  // asked then, for the user (Account.load). Fails open: when either can't be read the form shows, and a refused create
+  // brings the sign-in up instead.
+  var DECIDE_MS = 2500; // a slow or silent answer must not leave the page empty: after this the form shows
+  var decidedOnce = false;
+
+  function decided(me) {
+    if (decidedOnce) return; // the deadline and a late answer: whichever comes second changes nothing
+    decidedOnce = true;
+    UI.byId('start-view').removeAttribute('aria-busy');
+    if (me && me.signin === 'github' && !me.user) {
+      showSignin(signinFailed ? AccountView.SIGNIN_FAILED : null);
+      return;
+    }
+    form.hidden = false;
+    if (signinFailed) showError(AccountView.SIGNIN_FAILED);
+  }
+
+  configLoaded.then(function (c) { return c && c.signin === 'github' ? Account.load() : null; }).then(decided, function () { decided(null); });
+  setTimeout(function () { decided(null); }, DECIDE_MS);
 
   // ---------- validation ----------
 

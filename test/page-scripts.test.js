@@ -214,7 +214,7 @@ test('signed out with sign-in on: the header holds a sign-in link back to this p
 
 test('signing out from the header: a JSON POST, the slot and the panel follow, and the focus goes to the sign-in link', async () => {
   const { page, server } = await withKey();
-  assert.ok(page.slotHtml().includes('Signed in as octocat'));
+  assert.ok(page.slotText().includes('Signed in as octocat'));
   page.byId('sign-out').click();
   await page.flush();
   const post = page.requests.filter((r) => r.url === '/auth/logout');
@@ -258,11 +258,31 @@ test('header slot on home and the protocol page: signed out is a sign-in link th
   assert.ok(!spec.page.slotHtml().includes('next='));
 });
 
+test('header slot, signed out: a small secondary button with the GitHub mark and both labels (the CSS shows one), never a primary', async () => {
+  const { page } = headerOnly('/', ME({ user: null }));
+  await page.flush();
+  const h = page.slotHtml();
+  assert.ok(h.startsWith('<a class="btn btn--secondary btn--small" id="account-signin" href="/auth/github?next=/">'), h);
+  assert.ok(h.includes('<svg class="icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">'), 'the GitHub mark, hidden from readers');
+  assert.ok(h.includes('<span class="site-header__account-long">Sign in with GitHub</span>'));
+  assert.ok(h.includes('<span class="site-header__account-short">Sign in</span>'));
+  assert.ok(!h.includes('btn--primary'));
+});
+
+test('header slot, signed in: the login and a Sign out button, with "Signed in as" read out but not shown, and a login-less user shown as "Signed in"', async () => {
+  const { page } = headerOnly('/', ME());
+  await page.flush();
+  assert.equal(page.slotHtml(), '<span class="site-header__account-who"><span class="sr-only">Signed in as </span><span class="site-header__account-login">octocat</span></span><button class="btn btn--link" type="button" id="sign-out">Sign out</button>');
+  const bare = headerOnly('/', ME({ user: { login: '' } }));
+  await bare.page.flush();
+  assert.equal(bare.page.slotHtml(), '<span class="site-header__account-who"><span class="site-header__account-login">Signed in</span></span><button class="btn btn--link" type="button" id="sign-out">Sign out</button>');
+});
+
 test('header slot on home and the protocol page: signed in shows who and Sign out, and no key panel is touched', async () => {
   for (const p of ['/', '/spec']) {
     const { page } = headerOnly(p, ME());
     await page.flush();
-    assert.ok(page.slotHtml().includes('Signed in as octocat'), p);
+    assert.ok(page.slotText().includes('Signed in as octocat'), p);
     assert.ok(page.slotHtml().includes('id="sign-out"'), p);
     assert.equal(page.byId('key-panel').hidden, true, p);
     assert.deepStrictEqual(page.requests.map((r) => r.url), ['/api/me'], p);
@@ -277,14 +297,14 @@ test('header slot: an /api/me that cannot be read leaves the slot hidden and emp
   assert.equal(page.slotHtml(), '');
   server.meFails = false;
   await page.window.Account.refresh();
-  assert.ok(page.slotHtml().includes('Signed in as octocat'));
+  assert.ok(page.slotText().includes('Signed in as octocat'));
   assert.equal(page.byId('account-slot').hidden, false);
 });
 
 test('header slot with the settings unreadable: it still asks /api/me, so a signed-in person sees who they are', async () => {
   const { page } = headerOnly('/', ME(), { config: null });
   await page.flush();
-  assert.ok(page.slotHtml().includes('Signed in as octocat'));
+  assert.ok(page.slotText().includes('Signed in as octocat'));
 });
 
 test('header slot: signing out on home toasts, shows the sign-in link back to home and moves focus to it', async () => {
@@ -305,7 +325,7 @@ test('header slot: a sign-out that never reached the server says so, and the slo
   await page.flush();
   assert.equal(page.toasts.length, 1);
   assert.equal(page.toasts[0][1], 'warn');
-  assert.ok(page.slotHtml().includes('Signed in as octocat'));
+  assert.ok(page.slotText().includes('Signed in as octocat'));
   assert.equal(page.focused, 'sign-out', 'focus goes to the control that is still there');
 });
 

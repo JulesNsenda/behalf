@@ -21,6 +21,7 @@
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   var SIGN_IN = 'Sign in with GitHub';
+  var SIGN_IN_SHORT = 'Sign in'; // the header button on a narrow screen, where the GitHub mark beside it says the rest
   var SIGNIN_FAILED = "Sign-in didn't work. Please try again.";
 
   // The link that starts a sign-in and comes back to this page, when the page is one it can come back to.
@@ -42,10 +43,13 @@
   }
 
   // What the header slot shows, or null when it stays empty (sign-in is off, or the answer couldn't be read).
+  //   signed-out  text and short are the button's words (wide and narrow screens), href where it goes
+  //   signed-in   who is the login (or "Signed in" when there is none); hint is the "Signed in as" that only a screen reader
+  //               hears before the login, empty when who already says it; signOut is the button's word
   function slot(me, path) {
     if (!me || me.signin !== 'github') return null;
-    if (!me.user) return { kind: 'signed-out', text: SIGN_IN, href: signinHref(path) };
-    return { kind: 'signed-in', text: me.user.login ? 'Signed in as ' + me.user.login : 'Signed in', signOut: 'Sign out' };
+    if (!me.user) return { kind: 'signed-out', text: SIGN_IN, short: SIGN_IN_SHORT, href: signinHref(path) };
+    return { kind: 'signed-in', who: me.user.login || 'Signed in', hint: me.user.login ? 'Signed in as ' : '', signOut: 'Sign out' };
   }
 
   // The sign-in call to action that replaces the form on the start page.

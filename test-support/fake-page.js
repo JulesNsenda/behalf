@@ -66,6 +66,8 @@ function runScripts(ctx, names) {
 //   scripts   the scripts to run (default account.js and connect.js)
 //   pathname, search, origin   where the page is
 //   lazy      true: any id asked for is an element (the start page's form); false: only the connect page's own elements and what was rendered
+//   setTimeout  stands in for the page's timer (a test that runs a deadline by hand)
+//   hidden    ids of lazy elements that start hidden, as in the page's markup (the start page's form and sign-in)
 function loadPage(opts) {
   const page = { focused: null, toasts: [], requests: [], replaced: [], fieldErrors: [], windowListeners: {} };
   const named = {};
@@ -77,6 +79,7 @@ function loadPage(opts) {
   panel.hidden = true;
   slot.hidden = true;
   const lazy = new Map();
+  for (const id of opts.hidden || []) { const e = makeEl(page, id); e.hidden = true; lazy.set(id, e); }
   const byId = (id) => {
     if (named[id]) return named[id];
     if (id === 'key-panel') return panel;
@@ -106,7 +109,7 @@ function loadPage(opts) {
   win.window = win;
   const store = new Map();
   const ctx = {
-    window: win, URLSearchParams, URL, Promise, Date, setTimeout,
+    window: win, URLSearchParams, URL, Promise, Date, setTimeout: opts.setTimeout || setTimeout,
     location: { origin: opts.origin || 'https://behalf.test', pathname: opts.pathname || '/connect', search: opts.search || '', assign() {} },
     history: { replaceState: (a, b, u) => { page.replaced.push(u); } },
     document: { activeElement: null, title: '' },
@@ -118,6 +121,7 @@ function loadPage(opts) {
   page.window = win;
   page.panelHtml = () => plain(panel.innerHTML);
   page.slotHtml = () => slot.innerHTML;
+  page.slotText = () => slot.innerHTML.replace(/<[^>]*>/g, ''); // what is read out: the markup without its tags
   page.command = () => named['mcp-command'].textContent;
   page.html = (id) => plain(byId(id).innerHTML);
   page.fire = (type, event) => { for (const fn of page.windowListeners[type] || []) fn(event || {}); };

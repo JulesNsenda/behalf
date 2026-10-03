@@ -434,13 +434,14 @@ function pageProblems(html, want) {
   // The account slot goes with the nav: one on every page that has the nav, none elsewhere, and in the right place.
   if (want.nav !== undefined) {
     if (f.account.length !== (want.nav ? 1 : 0)) problems.push('account slot: expected ' + (want.nav ? 'one' : 'none') + ', found ' + f.account.length);
-    else if (want.nav && !slotAfterNav(html)) problems.push('account slot: must follow the main nav, not sit inside it');
+    else if (want.nav && !slotBeforeNav(html)) problems.push('account slot: must come right before the main nav, not sit inside it');
   }
   return problems;
 }
-// The slot is a sibling right after the nav, the last thing in the end slot, empty and hidden until a script fills it.
-const SLOT_AFTER_NAV = /<\/nav><div class="site-header__account" id="account-slot" hidden><\/div><\/div><\/div><\/header>/;
-const slotAfterNav = (html) => [...html.matchAll(HEADER)].some((m) => SLOT_AFTER_NAV.test(norm(m[0])) && !fragments(m[0]).nav.some((n) => n.includes('account-slot')));
+// The slot is a sibling right before the nav, the first thing in the end slot (so a phone's tab order and its row follow the screen,
+// and CSS order puts it last on a wide one), empty and hidden until a script fills it.
+const SLOT_BEFORE_NAV = /<div class="site-header__end"><div class="site-header__account" id="account-slot" hidden><\/div><nav\b/;
+const slotBeforeNav = (html) => [...html.matchAll(HEADER)].some((m) => SLOT_BEFORE_NAV.test(norm(m[0])) && !fragments(m[0]).nav.some((n) => n.includes('account-slot')));
 
 test('site header and footers are identical on every page that links /ui/ui.css', () => {
   assert.deepStrictEqual(fragmentDrift(fragmentPages), []);
@@ -534,7 +535,7 @@ test('the page manifest check requires the main nav where the page has one and f
   const head = (end) => '<header class="site-header"><div class="site-header__inner"><div class="site-header__end">' + end + '</div></div></header>';
   const navOnly = '<nav class="site-header__nav" aria-label="Main"><a href="/">x</a></nav>';
   const slot = '<div class="site-header__account" id="account-slot" hidden></div>';
-  const nav = navOnly + slot;
+  const nav = slot + navOnly;
   const none = { full: false, slim: false };
   assert.deepStrictEqual(pageProblems(css + head(nav), { ...none, nav: true }), []);
   assert.deepStrictEqual(pageProblems(css + head('<span>Step 1 of 3</span>'), { ...none, nav: false }), []);
@@ -544,19 +545,19 @@ test('the page manifest check requires the main nav where the page has one and f
   for (const [name, want] of Object.entries(FOOTERS)) assert.strictEqual(typeof want.nav, 'boolean', name + ' states its nav');
 });
 
-test('the page manifest check wants the account slot after the nav, never inside it, and never twice', () => {
+test('the page manifest check wants the account slot right before the nav, never inside it, and never twice', () => {
   const css = '<link rel="stylesheet" href="/ui/ui.css">';
   const head = (end) => '<header class="site-header"><div class="site-header__inner"><div class="site-header__end">' + end + '</div></div></header>';
   const links = '<a href="/">x</a>';
   const nav = (inside) => '<nav class="site-header__nav" aria-label="Main">' + links + inside + '</nav>';
   const slot = '<div class="site-header__account" id="account-slot" hidden></div>';
   const want = { full: false, slim: false, nav: true };
-  assert.deepStrictEqual(pageProblems(css + head(nav('') + slot), want), []);
-  assert.deepStrictEqual(pageProblems(css + head(nav('') + slot.replace(' hidden', '')), want), ['account slot: must follow the main nav, not sit inside it'], 'it starts hidden');
-  assert.deepStrictEqual(pageProblems(css + head(nav(slot)), want), ['account slot: must follow the main nav, not sit inside it'], 'inside the nav');
-  assert.deepStrictEqual(pageProblems(css + head(slot + nav('')), want), ['account slot: must follow the main nav, not sit inside it'], 'before the nav');
-  assert.deepStrictEqual(pageProblems(css + head(nav('') + slot + slot), want), ['account slot: expected one, found 2']);
-  assert.deepStrictEqual(pageProblems(css + head(nav('') + slot.replace('<div', '<span').replace('</div>', '</span>')), want), ['account slot: expected one, found 0'], 'a div with that id');
+  assert.deepStrictEqual(pageProblems(css + head(slot + nav('')), want), []);
+  assert.deepStrictEqual(pageProblems(css + head(slot.replace(' hidden', '') + nav('')), want), ['account slot: must come right before the main nav, not sit inside it'], 'it starts hidden');
+  assert.deepStrictEqual(pageProblems(css + head(nav(slot)), want), ['account slot: must come right before the main nav, not sit inside it'], 'inside the nav');
+  assert.deepStrictEqual(pageProblems(css + head(nav('') + slot), want), ['account slot: must come right before the main nav, not sit inside it'], 'after the nav');
+  assert.deepStrictEqual(pageProblems(css + head(slot + slot + nav('')), want), ['account slot: expected one, found 2']);
+  assert.deepStrictEqual(pageProblems(css + head(slot.replace('<div', '<span').replace('</div>', '</span>') + nav('')), want), ['account slot: expected one, found 0'], 'a div with that id');
   // The slot is compared across pages on its own, so one page whose slot differs is drift.
   const page = (s) => ['p', css + head(nav('') + s)];
   assert.deepStrictEqual(fragmentDrift([page(slot), page(slot)]), []);
@@ -573,7 +574,7 @@ test('every page with the main nav carries the same account slot, and no other p
   assert.strictEqual(new Set(slots.flat()).size, 1);
   assert.strictEqual(slots[0][0], '<div class="site-header__account" id="account-slot" hidden></div>');
   for (const [n, h] of fragmentPages.filter(([, h]) => fragments(h).nav.length === 0)) assert.deepStrictEqual(fragments(h).account, [], n);
-  for (const [n, h] of withNav) assert.ok(slotAfterNav(h), n);
+  for (const [n, h] of withNav) assert.ok(slotBeforeNav(h), n);
 });
 
 test('the pages that fill the account slot, and start, load the sign-in scripts in order and before their own script; spec.html needs no room-view.js', () => {
@@ -680,6 +681,66 @@ test('start.js: the form is replaced, not just covered; sign-in on comes from th
   assert.match(read(path.join(WEB, 'start.html')), /<div class="stack stack--md" id="signin-view" hidden><\/div>/);
 });
 
+test('start page: the form and the sign-in both start hidden, and only the decision (settings, then /api/me) shows one, so the form never flashes before the sign-in', () => {
+  const html = read(path.join(WEB, 'start.html'));
+  assert.match(html, /<form class="stack stack--md" id="start-form" novalidate hidden>/);
+  assert.match(html, /<div class="stack stack--md" id="signin-view" hidden><\/div>/);
+  const heading = html.indexOf('id="start-title"');
+  const view = html.indexOf('id="signin-view"');
+  assert.ok(heading > 0 && heading < view, 'the heading and the lead come first');
+  assert.ok(!/<(?:h1|p)\b[^>]*\shidden/.test(html.slice(heading, view)), 'the heading and the lead are not hidden');
+  const src = read(path.join(WEB, 'js', 'start.js'));
+  const body = src.slice(src.indexOf('function decided'), src.indexOf('// ---------- validation'));
+  assert.match(body, /form\.hidden = false;/, 'the form is shown by the decision');
+  assert.match(body, /\.then\(decided, function \(\) \{ decided\(null\); \}\)/, 'a failure along the way fails open to the form');
+  assert.strictEqual((src.match(/form\.hidden = false/g) || []).length, 1, 'nothing else reveals the form before the decision');
+});
+
+test('the /ui guide draws the GitHub mark exactly as UI.icon does, in every example that has it', () => {
+  const mark = String(require('../web/ui/ui.js').icon('github'));
+  const guide = read(path.join(UI_DIR, 'index.html'));
+  const drawn = guide.match(/<svg class="icon" viewBox="0 0 16 16"[\s\S]*?<\/svg>/g) || [];
+  assert.ok(drawn.length >= 2, 'the signed-out slot examples, wide and narrow');
+  for (const svg of drawn) assert.strictEqual(svg, mark);
+});
+
+test('start page: busy until decided, and a deadline that shows the form', () => {
+  assert.match(read(path.join(WEB, 'start.html')), /<section class="stack stack--md" id="start-view" aria-labelledby="start-title" aria-busy="true">/);
+  const src = read(path.join(WEB, 'js', 'start.js'));
+  assert.match(src, /var DECIDE_MS = 2500;/);
+  assert.match(src, /if \(decidedOnce\) return;/);
+  assert.match(src, /UI\.byId\('start-view'\)\.removeAttribute\('aria-busy'\);/);
+  assert.match(src, /setTimeout\(function \(\) \{ decided\(null\); \}, DECIDE_MS\);/);
+  assert.match(src, /if this script fails, both views stay hidden/);
+});
+
+test('.btn--flush drops only the left padding of a link button, so it lines up with its neighbour', () => {
+  assert.match(read(path.join(UI_DIR, 'ui.css')), /\.btn--flush \{ padding-inline-start: 0; \}/);
+});
+
+test('the header account slot: a small secondary sign-in button with the GitHub mark, two labels, and at phone width it joins the logo row', () => {
+  const css = read(path.join(UI_DIR, 'ui.css'));
+  const js = read(path.join(WEB, 'js', 'account.js'));
+  assert.match(js, /class="btn btn--secondary btn--small" id="account-signin"/);
+  assert.match(js, /UI\.icon\('github'\)/);
+  assert.match(js, /site-header__account-long">\$\{d\.text\}<\/span><span class="site-header__account-short">\$\{d\.short\}/);
+  assert.match(css, /\.site-header__account-short \{ display: none; \}/, 'the short label is for narrow screens only');
+  const phone = css.slice(css.indexOf('@media (max-width: 640px) {\n    .container, .site-header__inner'));
+  assert.match(phone, /\.site-header__end:has\(\.site-header__nav\) \{ display: contents; \}/, 'the end box dissolves so the slot sits beside the logo');
+  assert.match(phone, /\.site-header__account \{ order: 0; \}/, 'the slot follows page order again: first, beside the logo');
+  assert.match(phone, /\.site-header__account-login \{ position: absolute;[^}]*clip-path: inset\(50%\);/, 'the login is hidden from sight but still read out');
+  assert.match(css, /\.site-header__account \{[^}]*order: 1; \}/, 'wide: the slot goes after the nav');
+  assert.match(phone, /\.site-header__account-long \{ display: none; \}\s*\.site-header__account-short \{ display: inline; \}/);
+  const guide = read(path.join(UI_DIR, 'guide.css'));
+  for (const rule of ['.guide-narrow .site-header__end:has(.site-header__nav) { display: contents; }', '.guide-narrow .site-header__account { order: 0; }']) assert.ok(guide.includes(rule), rule);
+  // Each phone-width rule the guide copies for its narrow example is in the real 640px block too, written the same way.
+  const rules = (text) => text.split('\n').map((l) => l.trim()).filter((l) => /^\.guide-narrow|^\.site-header/.test(l) && l.endsWith('}'));
+  const copies = rules(guide).filter((l) => l.startsWith('.guide-narrow ') && !/max-width|padding-inline|margin-inline-start/.test(l));
+  assert.ok(copies.length >= 4, 'the guide copies the slot rules');
+  for (const copy of copies) assert.ok(phone.includes(copy.replace('.guide-narrow ', '')), 'not in the 640px block: ' + copy);
+  assert.match(read(path.join(UI_DIR, 'index.html')), /<div class="guide-narrow">\s*<header class="site-header">[\s\S]*?site-header__account-short/, 'the /ui guide shows the narrow header');
+});
+
 test('connect.js: the key is never written into markup, and the sign-in scripts keep nothing in browser storage', () => {
   const src = read(path.join(WEB, 'js', 'connect.js'));
   const inTemplates = templateBodies(src);
@@ -732,7 +793,7 @@ test('the header only wraps where it holds the nav; the room, start and agreemen
   const css = read(path.join(UI_DIR, 'ui.css'));
   assert.match(css, /\.site-header__end \{ margin-inline-start: auto; display: flex; align-items: center; gap: var\(--space-3\); font-size: var\(--size-15\); color: var\(--ink-subtle\); \}/, 'the end slot rule is as it was');
   assert.match(css, /\.site-header__end:has\(\.site-header__nav\) \{ flex-wrap: wrap;/);
-  assert.match(css, /\.site-header__account \{[^}]*margin-inline-start: auto;/, 'at phone width the slot drops to its own row and keeps to the right');
+  assert.match(css, /\.site-header__account \{[^}]*margin-inline-start: auto;/, 'the slot keeps to the right of the nav');
   assert.ok(!/(?<![\w-])\.account(?:__|\b)/.test(css.replace(/\.site-header__account/g, '')), 'the old class names are gone');
 });
 test('the agent key never reaches storage, the address bar or a cookie: no account script touches them', () => {

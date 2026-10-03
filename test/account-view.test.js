@@ -75,12 +75,12 @@ test('slot: empty with sign-in off or unreadable, a sign-in link when signed out
   assert.strictEqual(AV.slot(ME_OFF, '/'), null);
   assert.strictEqual(AV.slot(null, '/'), null);
   assert.strictEqual(AV.slot(undefined, '/connect'), null);
-  assert.deepStrictEqual(AV.slot(ME_OUT, '/connect'), { kind: 'signed-out', text: 'Sign in with GitHub', href: '/auth/github?next=/connect' });
-  assert.deepStrictEqual(AV.slot(ME_OUT, '/'), { kind: 'signed-out', text: 'Sign in with GitHub', href: '/auth/github?next=/' });
-  assert.deepStrictEqual(AV.slot(ME_OUT, '/spec'), { kind: 'signed-out', text: 'Sign in with GitHub', href: '/auth/github' }, 'a page it cannot come back to signs in and lands on the home page');
-  assert.deepStrictEqual(AV.slot(ME_IN, '/spec'), { kind: 'signed-in', text: 'Signed in as octocat', signOut: 'Sign out' });
-  assert.deepStrictEqual(AV.slot(ME_KEY, '/'), { kind: 'signed-in', text: 'Signed in as octocat', signOut: 'Sign out' });
-  assert.deepStrictEqual(AV.slot({ signin: 'github', user: { login: '' }, agentKey: null }, '/'), { kind: 'signed-in', text: 'Signed in', signOut: 'Sign out' });
+  assert.deepStrictEqual(AV.slot(ME_OUT, '/connect'), { kind: 'signed-out', text: 'Sign in with GitHub', short: 'Sign in', href: '/auth/github?next=/connect' });
+  assert.deepStrictEqual(AV.slot(ME_OUT, '/'), { kind: 'signed-out', text: 'Sign in with GitHub', short: 'Sign in', href: '/auth/github?next=/' });
+  assert.deepStrictEqual(AV.slot(ME_OUT, '/spec'), { kind: 'signed-out', text: 'Sign in with GitHub', short: 'Sign in', href: '/auth/github' }, 'a page it cannot come back to signs in and lands on the home page');
+  assert.deepStrictEqual(AV.slot(ME_IN, '/spec'), { kind: 'signed-in', who: 'octocat', hint: 'Signed in as ', signOut: 'Sign out' });
+  assert.deepStrictEqual(AV.slot(ME_KEY, '/'), { kind: 'signed-in', who: 'octocat', hint: 'Signed in as ', signOut: 'Sign out' });
+  assert.deepStrictEqual(AV.slot({ signin: 'github', user: { login: '' }, agentKey: null }, '/'), { kind: 'signed-in', who: 'Signed in', hint: '', signOut: 'Sign out' });
 });
 
 // ---------- start page ----------
@@ -220,7 +220,7 @@ test('the /ui guide shows the words this module returns: its header slot and key
   const shown = AV.keyPanel(ME_IN, { key: 'bh_' + 'x'.repeat(30), createdAt: 1 }, '/connect');
   const none = AV.keyPanel(ME_IN, null, '/connect');
   const strings = [
-    AV.slot(ME_OUT, '/').text, AV.slot(ME_OUT, '/').href, AV.slot(ME_IN, '/').text, AV.slot(ME_IN, '/').signOut,
+    AV.slot(ME_OUT, '/').text, AV.slot(ME_OUT, '/').short, AV.slot(ME_OUT, '/').href, AV.slot(ME_IN, '/').who, AV.slot(ME_IN, '/').hint, AV.slot(ME_IN, '/').signOut,
     none.title, none.lead, none.create,
     shown.lead, shown.field.label, shown.field.note, shown.field.button, shown.warning, shown.create, shown.revoke,
   ];

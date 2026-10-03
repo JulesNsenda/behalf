@@ -2328,7 +2328,7 @@ test('the pages talk to the real server: /api/me, the agent key panel, UI.reques
   await asBrowser(h, s.cookie, async () => {
     const me = AccountView.parseMe((await BrowserUI.request('GET', '/api/me')).data);
     assert.deepEqual(me, { signin: 'github', user: { login: 'octocat' }, agentKey: null });
-    assert.deepEqual(AccountView.slot(me, '/connect'), { kind: 'signed-in', text: 'Signed in as octocat', signOut: 'Sign out' });
+    assert.deepEqual(AccountView.slot(me, '/connect'), { kind: 'signed-in', who: 'octocat', hint: 'Signed in as ', signOut: 'Sign out' });
     assert.equal(AccountView.keyPanel(me, null, '/connect').state, 'no-key');
 
     // Make a key with no body: the library alone says it is JSON, which the server's guard needs.
