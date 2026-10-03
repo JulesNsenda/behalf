@@ -18,6 +18,13 @@ const { KINDS } = require('../lib/store-core');
 const minimalRoom = (id) => ({ id, seats: { A: { mode: 'builtin', token: 't' + id + 'a' }, B: { mode: 'builtin', token: 't' + id + 'b' } }, ledger: [], envelopes: [], claims: {}, demo: false });
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
+// A logger that records: every line as { level, event, fields, err }, with helpers to ask what was logged.
+function capture() {
+  const lines = [];
+  const mk = (level) => (event, fields, err) => lines.push({ level, event, fields: fields || {}, err });
+  return { lines, info: mk('info'), warn: mk('warn'), error: mk('error'), events: () => lines.map((l) => l.event), has: (event) => lines.some((l) => l.event === event) };
+}
+
 function runStoreContract(name, makeStore) {
   // Each case gets a fresh store and cleans up after itself.
   const it = (title, fn) => test(`${name} contract: ${title}`, async (t) => {
@@ -339,4 +346,4 @@ function runStoreContract(name, makeStore) {
   });
 }
 
-module.exports = { runStoreContract, minimalRoom, plain };
+module.exports = { runStoreContract, minimalRoom, plain, capture };

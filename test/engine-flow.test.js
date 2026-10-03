@@ -386,8 +386,10 @@ test('GET /api/config has a fixed key set', T, async () => {
 
 test('GET /health has a fixed key set', T, async () => {
   const r = await getJson('/health');
-  assert.deepStrictEqual(keys(r.json), ['build', 'live', 'ok', 'rooms']);
+  assert.deepStrictEqual(keys(r.json), ['build', 'live', 'ok', 'rooms', 'store', 'storeOk']);
   assert.strictEqual(r.json.ok, true);
+  assert.strictEqual(r.json.store, 'file');
+  assert.strictEqual(r.json.storeOk, true);
 });
 
 // ---------- MCP protocol edges ----------

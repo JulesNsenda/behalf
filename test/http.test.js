@@ -31,8 +31,8 @@ async function boot(t, { overrides } = {}) {
   const app = createApp({ config, secrets: loadSecrets({}), log, proxy: fakeProxy(), clock: { sleep: async () => {} }, file, ...overrides });
   await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
   const port = app.server.address().port;
-  t.after(() => {
-    app.shutdown();
+  t.after(async () => {
+    await app.drain().catch(() => {});
     if (app.server.closeAllConnections) app.server.closeAllConnections();
     app.close();
     rmTmp(dir);
@@ -360,36 +360,36 @@ test('resolveStatic: raw paths that leave the web directory resolve to null', ()
   assert.equal(resolveStatic(pub, '/a/../ui/ui.css'), path.join(pub, 'ui', 'ui.css'), 'dot segments that stay inside are fine');
 });
 
-// ---- shutdown ----
-test('shutdown writes pending changes at once, ends the streams, is idempotent and returns true', T, async (t) => {
+// ---- drain ----
+test('drain writes pending changes, ends the streams, is idempotent and resolves true', T, async (t) => {
   const { app, port, base, file, d } = await boot(t);
   const { id } = await createDemo(base);
   const c = openStream(port, ev(id));
   await c.ready;
   assert.ok(!fs.existsSync(file) || !fs.readFileSync(file, 'utf8').includes(id), 'the debounced save has not run yet');
-  assert.equal(app.shutdown(), true);
-  assert.ok(fs.readFileSync(file, 'utf8').includes(id), 'the room is on disk immediately');
+  assert.equal(await app.drain(), true);
+  assert.ok(fs.readFileSync(file, 'utf8').includes(id), 'the room is on disk once drain has resolved');
   await waitFor(() => c.closed, (v) => v === true, { what: 'the stream to be ended' });
   assert.equal(d.streamCount(id), 0);
   assert.equal(app.server.listening, false);
-  assert.equal(app.shutdown(), true);
+  assert.equal(await app.drain(), true);
 });
 
-test('shutdown returns false when the write fails', T, async (t) => {
+test('drain resolves false when the write fails', T, async (t) => {
   const { app, dir } = await boot(t);
   fs.rmSync(path.join(dir, 'data'), { recursive: true, force: true });
   fs.writeFileSync(path.join(dir, 'data'), 'now a file, so the directory cannot be recreated');
-  assert.equal(app.shutdown(), false);
+  assert.equal(await app.drain(), false);
 });
 
-test('after shutdown a running demo takes no further turn', T, async (t) => {
+test('after drain a running demo takes no further turn', T, async (t) => {
   const { app } = await boot(t, { overrides: { clock: { sleep: () => sleep(150) } } });
   const room = app.domain.createDemoRoom();
   app.domain.sealCard(room, 'A', room.seats.A.card, 'web');
   app.domain.sealCard(room, 'B', room.seats.B.card, 'web');
   await waitFor(() => room.envelopes.length, (n) => n >= 1, { intervalMs: 5, what: 'the demo to start' });
   assert.equal(room.status, 'negotiating', 'more turns are still to come');
-  app.shutdown();
+  await app.drain();
   await sleep(30); // a turn already past its stop check may finish
   const n = room.envelopes.length;
   await sleep(500);
@@ -521,15 +521,15 @@ test('a real SIGINT flushes the store and exits 130', { ...T, skip: process.plat
   assert.ok(r.saved.includes(r.id), 'the room was written before exit');
 });
 
-test('shutdown still writes the store when stopping the turn loop throws', T, async (t) => {
+test('drain still writes the store when stopping the turn loop throws, and a second call reports the same outcome', T, async (t) => {
   const { app, file, base } = await boot(t);
   const { id } = await createDemo(base);
   const stop = app.domain.stop;
   app.domain.stop = () => { throw new Error('stop failed'); };
-  assert.throws(() => app.shutdown(), /stop failed/);
+  await assert.rejects(app.drain(), /stop failed/);
   app.domain.stop = stop; // the cleanup stops the domain again
   assert.ok(fs.readFileSync(file, 'utf8').includes(id), 'the room reached the disk anyway');
-  assert.equal(app.shutdown(), true, 'a second call reports the same outcome');
+  await assert.rejects(app.drain(), /stop failed/, 'a second call is the same outcome');
 });
 
 test('SSE limits: demo seats count against globalAnon, live seats use the headroom', T, async (t) => {

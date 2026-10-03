@@ -21,24 +21,48 @@ process.on('exit', killAll);
 process.on('SIGINT', () => { killAll(); process.exit(130); });
 process.on('SIGTERM', () => { killAll(); process.exit(143); });
 
-// Spawn a server; resolve with {port, out, stop} once it prints its port, or {exited, out, stop} if it dies first.
-function start(entry, env) {
-  const child = spawn(process.execPath, [entry], { env: baseEnv(env), shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+// The one listen line index.js prints; the port is captured.
+const LISTEN = /on :(\d+) /;
+
+// Spawn node on `entry` (with node `args`, e.g. ['-r', preload]) in the allowlisted env plus `env`, tracked so a crashed test
+// leaves no server behind. Returns { child, exited, listening, out(), stdout(), stop() }: exited resolves { code, signal, out,
+// stdout } when the process is gone; listening resolves the port, or null if it exited without printing the listen line;
+// stdout() is what went to stdout only (the listen line is its first line). A child that outlives killAfterMs is killed.
+function spawnServer(entry, env, args = [], killAfterMs = 30000) {
+  const child = spawn(process.execPath, [...args, entry], { env: baseEnv(env), shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
   children.add(child);
   let out = '';
-  const closed = new Promise((r) => { child.once('close', r); child.once('error', r); });
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { child.kill(); reject(new Error('no start/exit within 10s. Output:\n' + out)); }, 10000);
-    const done = (v) => { clearTimeout(timer); resolve(v); };
+  let stdout = '';
+  const exited = new Promise((resolve) => {
+    const done = (code, signal) => { clearTimeout(timer); resolve({ code, signal, out, stdout }); };
+    const timer = setTimeout(() => child.kill('SIGKILL'), killAfterMs);
+    child.once('close', done);
+    child.once('error', () => done(null, null));
+  });
+  const listening = new Promise((resolve) => {
+    child.stdout.on('data', (d) => { out += d; stdout += d; const m = LISTEN.exec(stdout); if (m) resolve(Number(m[1])); });
     child.stderr.on('data', (d) => { out += d; });
-    child.stdout.on('data', (d) => {
-      out += d;
-      const m = /on :(\d+) /.exec(out);
-      if (m) done({ port: Number(m[1]), out, stop: async () => { if (child.exitCode === null) child.kill(); await closed; } });
+    exited.then(() => resolve(null));
+  });
+  const stop = async () => { if (child.exitCode === null) child.kill(); await exited; };
+  return { child, exited, listening, out: () => out, stdout: () => stdout, stop };
+}
+
+// Spawn a server; resolve with {port, out, stop} once it prints its port, or {exited, out, stop} if it dies first.
+function start(entry, env, args = []) {
+  const s = spawnServer(entry, env, args, 10000);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { s.child.kill(); reject(new Error('no start/exit within 10s. Output:\n' + s.out())); }, 10000);
+    s.listening.then((port) => {
+      clearTimeout(timer);
+      if (port !== null) return resolve({ port, out: s.out(), stop: s.stop });
+      return s.exited.then((r) => resolve({ exited: r.code, out: r.out, stop: async () => {} }));
     });
-    child.once('close', (code) => done({ exited: code, out, stop: async () => {} }));
   });
 }
+
+// index.js on a free loopback port with `dir` as its data dir.
+const spawnIndex = (dir, env = {}, args = [], killAfterMs) => spawnServer(path.join(ROOT, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', DROP_DATA_DIR: dir, ...env }, args, killAfterMs);
 
 const mkTmp = (prefix) => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 // Windows holds file handles briefly after a child exits, hence the retries.
@@ -71,4 +95,4 @@ async function getView(base, id, seat, token) {
   return { status: res.status, R: res.status === 200 ? await res.json() : null };
 }
 
-module.exports = { baseEnv, start, mkTmp, rmTmp, makeSrc, postJson, getView };
+module.exports = { baseEnv, start, spawnServer, spawnIndex, mkTmp, rmTmp, makeSrc, postJson, getView };

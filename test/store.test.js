@@ -9,18 +9,12 @@ const pxp = require('../lib/pxp');
 const { ROOT } = require('../test-support/paths');
 const { mkTmp, rmTmp } = require('../test-support/server');
 const { sleep } = require('../test-support/http');
-const { runStoreContract, minimalRoom, plain } = require('../test-support/store-contract');
+const { runStoreContract, minimalRoom, plain, capture } = require('../test-support/store-contract');
 const core = require('../lib/store-core');
 
 const FIXTURE = path.join(ROOT, 'test-support', 'fixtures', 'rooms.v0.json');
 const QUARANTINE = /^rooms\.json\.corrupt-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z$/;
 const PARTIAL = /^rooms\.json\.partial-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z$/;
-
-function capture() {
-  const lines = [];
-  const mk = (level) => (event, fields, err) => lines.push({ level, event, fields: fields || {}, err });
-  return { lines, info: mk('info'), warn: mk('warn'), error: mk('error'), events: () => lines.map((l) => l.event) };
-}
 
 function setup(t, content, fs, opts) {
   const root = mkTmp('store-');
@@ -738,8 +732,8 @@ test('a failed write marks its records dirty again, retries by itself, and healt
   assert.equal(s.store.flush(), false);
   assert.equal(s.store.health().failingSince, first.failingSince, 'the streak keeps its first failure time');
   fail = false;
-  assert.deepEqual(clock.delays(), [40], 'the retry the failed write scheduled, after the backoff');
-  clock.advance(40);
+  assert.deepEqual(clock.delays(), [200], 'the retry the failed write scheduled, after the backoff: a base of at least 100 ms, doubled once');
+  clock.advance(200);
   assert.ok(s.disk().rooms.okroom01, 'the room was written without another save()');
   assert.deepEqual(s.store.health(), { ok: true, failingSince: null });
 });
@@ -991,8 +985,8 @@ test('backoff: debounce doubling to a 30 s cap, a save during it only marks, the
   s.save('room0001');
   assert.equal(clock.timers.length, 1);
   assert.equal(clock.delays()[0], 30000);
-  // One log line per failed attempt, never one per save; here every attempt is at least one step apart.
-  assert.equal(s.log.lines.filter((l) => l.event === 'store.write_failed').length, 9);
+  // Attempts at 1300, 1600, 2200, ... 69400: logged at the first of the streak, then at most once per 30 s cap (39400, 69400).
+  assert.equal(s.log.lines.filter((l) => l.event === 'store.write_failed').length, 3);
   fake.probe.fail = false;
   clock.advance(30000);
   await sleep(5);
@@ -1003,7 +997,7 @@ test('backoff: debounce doubling to a 30 s cap, a save during it only marks, the
   await s.close();
 });
 
-test('backoff: settle() and persist() do not wait for it, and a failure is logged once per backoff step, not on every call', async () => {
+test('backoff: settle() and persist() do not wait for it, and a failure is logged once per backoff cap, not on every call', async () => {
   const fake = fakeAsyncBackend({ delayMs: 0, debounceMs: 300 });
   const clock = manualClock();
   const s = fake.open(clock);
@@ -1015,6 +1009,9 @@ test('backoff: settle() and persist() do not wait for it, and a failure is logge
   assert.equal(await s.persist('room', 'room0001'), false);
   assert.equal(s.log.lines.filter((l) => l.event === 'store.write_failed').length, 1, 'throttled by the step');
   clock.t += 300;
+  assert.equal(await s.settle(), false);
+  assert.equal(s.log.lines.filter((l) => l.event === 'store.write_failed').length, 1, 'still inside the cap');
+  clock.t += 30000;
   assert.equal(await s.settle(), false);
   assert.equal(s.log.lines.filter((l) => l.event === 'store.write_failed').length, 2);
   fake.probe.fail = false;
@@ -1266,11 +1263,11 @@ test('write cycle: an async writeOnce that resolves to anything but true is a fa
 });
 
 // A cycle over one room map with a counting synchronous writeOnce, on the manual clock.
-function syncCycle({ results = [], clock = manualClock(), serialiser, log = capture() } = {}) {
+function syncCycle({ results = [], clock = manualClock(), serialiser, log = capture(), debounceMs = 10, onWrite } = {}) {
   const c = { writes: 0, clock, log };
   c.cycle = core.createWriteCycle({
-    serialiser: serialiser || core.createSerialiser(log), sources: { room: new Map([['r', { a: 1 }]]) }, log, clock, debounceMs: 10,
-    writeOnce() { c.writes++; return results.length ? results.shift() : true; },
+    serialiser: serialiser || core.createSerialiser(log), sources: { room: new Map([['r', { a: 1 }]]) }, log, clock, debounceMs,
+    writeOnce() { c.writes++; if (onWrite) onWrite(c); return results.length ? results.shift() : true; },
   });
   c.cycle.setLoaded();
   return c;
@@ -1315,8 +1312,8 @@ test('write cycle: a failed pass always arms the retry, even if it took no marks
   assert.equal(c.cycle.api.flush(), true);
   assert.equal(await c.cycle.api.persist('room'), false, 'a forced pass, which failed; it took no marks');
   assert.equal(c.cycle.api.health().ok, false);
-  assert.deepEqual(c.clock.delays(), [10], 'the retry is armed');
-  c.clock.advance(10); // no marks, but failing: the pass still runs writeOnce
+  assert.deepEqual(c.clock.delays(), [100], 'the retry is armed (the base is at least 100 ms)');
+  c.clock.advance(100); // no marks, but failing: the pass still runs writeOnce
   assert.equal(c.writes, 3);
   assert.deepEqual(c.cycle.api.health(), { ok: true, failingSince: null });
   assert.deepEqual(c.clock.delays(), [], 'and nothing is left armed');
@@ -1402,4 +1399,174 @@ test('write cycle: a pass that throws out of finish() in a timer is contained: n
     assert.doesNotThrow(() => c.clock.advance(10));
     assert.equal(c.writes, 1);
   } finally { process.removeListener('unhandledRejection', onUnhandled); }
+});
+
+test('write cycle: after a recovery the backoff starts over: the next delay is the debounce, the step is the base again, and the first failure logs', () => {
+  const c = syncCycle({ results: [false, true, false] });
+  const fails = () => c.log.lines.filter((l) => l.event === 'store.write_failed').length;
+  assert.equal(c.cycle.api.flush(), false);
+  assert.equal(fails(), 1);
+  assert.deepEqual(c.clock.delays(), [100]);
+  assert.equal(c.cycle.api.flush(), true, 'recovered at once, with no time passed: the old backoff deadline is still in the future');
+  c.cycle.api.save('r');
+  assert.deepEqual(c.clock.delays(), [10], 'a mark after the recovery waits only the debounce');
+  c.clock.advance(10);
+  assert.equal(c.cycle.api.health().ok, false);
+  assert.deepEqual(c.clock.delays(), [100], 'the step restarted from the base, not doubled');
+  assert.equal(fails(), 2, 'the first failure of a new streak logs even inside the previous throttle window');
+});
+
+test('write cycle: no timer is pending after close(), and a save() after close() arms none', () => {
+  const c = syncCycle();
+  c.cycle.api.save('r');
+  assert.equal(c.clock.timers.length, 1);
+  c.cycle.api.close();
+  assert.equal(c.clock.timers.length, 0);
+  c.cycle.api.save('r');
+  c.cycle.api.collection('room').save('r');
+  assert.equal(c.clock.timers.length, 0);
+  assert.equal(c.cycle.api.flush(), false);
+});
+
+test('write cycle: a debounce of 0 cannot make a hot retry loop, and a long streak never reaches NaN', () => {
+  const c = syncCycle({ debounceMs: 0, results: Array(2000).fill(false) });
+  assert.equal(c.cycle.api.flush(), false);
+  assert.deepEqual(c.clock.delays(), [100]);
+  for (let i = 0; i < 1500; i++) c.cycle.api.flush();
+  assert.deepEqual(c.clock.delays(), [30000]);
+});
+
+test('write cycle: settle() gives up after 50 passes when marks keep arriving, instead of spinning', async () => {
+  const c = syncCycle({ onWrite: (x) => x.cycle.api.save('r') });
+  assert.equal(await c.cycle.api.settle(), false);
+  assert.equal(c.writes, 50);
+});
+
+// ---- Gate 2 batch: parseStoreDoc option, seeded cache, id validation, shared helpers ----
+test('parseStoreDoc: allSkippedFatal false keeps going with every room skipped; the default refuses it', () => {
+  const raw = { schemaVersion: 1, rooms: { bad00001: { id: 'bad00001' } } };
+  assert.equal(core.parseStoreDoc(raw).error, 'EALLSKIPPED');
+  const doc = core.parseStoreDoc(raw, undefined, { allSkippedFatal: false });
+  assert.equal(doc.error, undefined);
+  assert.deepEqual(doc.skipped.room, ['bad00001']);
+  assert.deepEqual(doc.records.room, []);
+});
+
+test('serialiser: a record whose text equals the seeded one is not upserted again, and the snapshot still holds it', () => {
+  const ser = core.createSerialiser(capture());
+  const room = minimalRoom('room0001');
+  const map = new Map([['room0001', room], ['room0002', minimalRoom('room0002')]]);
+  ser.seed('room', 'room0001', core.KIND.room.encode(room));
+  const res = ser.pass('room', map, { all: true });
+  assert.deepEqual(res.upserts.map(([id]) => id), ['room0002']);
+  assert.deepEqual(ser.snapshot('room', map, res).map(([id]) => id), ['room0001', 'room0002']);
+  room.note = 'changed';
+  assert.deepEqual(ser.pass('room', map, { all: true }).upserts.map(([id]) => id), ['room0001', 'room0002']);
+  assert.deepEqual(ser.pass('room', new Map(), { all: true }).removed, ['room0001']);
+});
+
+test('record ids: 1 to 256 characters with no NUL; anything else throws at save() and persist(), and a bad map key is skipped and logged', async (t) => {
+  const s = setup(t);
+  s.store.load();
+  for (const bad of ['', 'x'.repeat(257), 'a' + String.fromCharCode(0) + 'b', 5, null, {}]) {
+    assert.throws(() => s.store.save(bad), /invalid record id/, String(bad));
+    assert.throws(() => s.store.collection('user').save(bad), /invalid record id/, String(bad));
+    assert.throws(() => s.store.persist('room', bad), /invalid record id/, String(bad));
+  }
+  s.store.save('x'.repeat(256));
+  s.store.state.rooms.set('a' + String.fromCharCode(0) + 'b', minimalRoom('a'));
+  s.store.state.rooms.set('okroom01', minimalRoom('okroom01'));
+  s.store.save();
+  assert.equal(s.store.flush(), true);
+  assert.deepEqual(Object.keys(s.disk().rooms), ['okroom01']);
+  assert.ok(s.log.events().includes('store.record_bad_id'));
+});
+
+test('safeCode keeps only an E-code, and resetUsage empties the counters under the new day and saves', () => {
+  assert.equal(core.safeCode({ code: 'ENOENT' }), 'ENOENT');
+  assert.equal(core.safeCode({ code: 'enoent' }), null);
+  assert.equal(core.safeCode({ code: 'SECRET text' }, 'EIO'), 'EIO');
+  assert.equal(core.safeCode(null, 'EIO'), 'EIO');
+  const data = core.createData();
+  data.state.usage.total = 4; data.state.usage.byUser.x = 1;
+  let saved = 0;
+  core.resetUsage(data, { saveUsage: () => { saved++; } }, '2026-10-04');
+  assert.deepEqual(plain(data.state.usage), { day: '2026-10-04', total: 0, byIp: {}, failedByIp: {}, byUser: {} });
+  assert.equal(saved, 1);
+});
+
+test('every migration is idempotent: applying each step twice gives what once gives, for a v0 room and a current-shape room', () => {
+  assert.ok(core.MIGRATIONS.length >= 1);
+  const v0 = () => { const r = minimalRoom('v0room001'); delete r.seats.A.mode; delete r.seats.B.mode; r.demo = 'yes'; return r; };
+  const current = () => { const r = minimalRoom('current01'); r.demo = true; r.note = 'x'; return r; };
+  for (const make of [v0, current]) {
+    for (const step of core.MIGRATIONS) {
+      const once = make();
+      step(once);
+      const twice = make();
+      step(twice);
+      step(twice);
+      assert.deepEqual(twice, once, step.name);
+    }
+  }
+  const r = v0();
+  for (const step of core.MIGRATIONS) step(r);
+  assert.equal(r.seats.A.mode, 'builtin');
+  assert.equal(r.demo, false);
+});
+
+test('a lone surrogate in a record id is refused, a proper pair is not', async (t) => {
+  const s = setup(t);
+  s.store.load();
+  const hi = String.fromCharCode(0xd83d);
+  const lo = String.fromCharCode(0xde00);
+  for (const bad of ['a' + hi, hi + 'a', 'a' + lo, lo, lo + hi, 'a' + hi + hi + lo + lo]) {
+    assert.throws(() => s.store.save(bad), /invalid record id/, JSON.stringify(bad));
+  }
+  s.store.save('a' + hi + lo + 'b'); // a pair is a character
+  s.store.state.rooms.set('x' + hi, minimalRoom('lone'));
+  s.store.save();
+  assert.equal(s.store.flush(), true);
+  assert.ok(!Object.keys(s.disk().rooms).includes('x' + hi));
+  assert.ok(s.log.events().includes('store.record_bad_id'));
+});
+
+test('write cycle: lose(at) closes for good and keeps health not ok from `at` (the earlier of that and a write failure), and a lost store logs no write failure', async () => {
+  const c = syncCycle({ results: [true, false] });
+  assert.equal(c.cycle.api.flush(), true);
+  await c.cycle.api.lose(5000);
+  assert.deepEqual(c.cycle.api.health(), { ok: false, failingSince: 5000 });
+  assert.equal(c.cycle.api.flush(), false, 'closed');
+  assert.equal(c.writes, 1);
+  // a write already failing earlier keeps the earlier time
+  const d = syncCycle({ results: [false] });
+  assert.equal(d.cycle.api.flush(), false);
+  const since = d.cycle.api.health().failingSince;
+  await d.cycle.api.lose(since + 9000);
+  assert.equal(d.cycle.api.health().failingSince, since);
+  // a write that fails after the loss is not logged: the loss was
+  const e = syncCycle({ results: [], serialiser: undefined });
+  let release;
+  const fake = core.createWriteCycle({
+    serialiser: core.createSerialiser(e.log), sources: { room: new Map([['r', { a: 1 }]]) }, log: e.log, clock: e.clock, debounceMs: 10,
+    writeOnce: () => new Promise((resolve, reject) => { release = () => reject(new Error('late')); }),
+  });
+  fake.setLoaded();
+  const p = fake.api.settle();
+  const lost = fake.api.lose(7000); // close waits for the write in flight
+  release();
+  assert.equal(await p, false);
+  await lost;
+  assert.equal(e.log.lines.filter((l) => l.event === 'store.write_failed').length, 0);
+  assert.equal(fake.api.health().ok, false);
+});
+
+test('decodeStoreText: a BOM is ignored, text that is not JSON is EPARSE, and the rest is parseStoreDoc', () => {
+  const doc = JSON.stringify({ schemaVersion: 1, rooms: { room0001: minimalRoom('room0001') } });
+  assert.equal(core.decodeStoreText('\uFEFF' + doc).records.room.length, 1);
+  assert.equal(core.decodeStoreText('{"rooms": nope').error, 'EPARSE');
+  assert.equal(core.decodeStoreText('').error, 'EPARSE');
+  assert.equal(core.decodeStoreText('[]').error, 'ESHAPE');
+  assert.equal(core.decodeStoreText('{"schemaVersion":99,"rooms":{}}').error, 'EFUTURESCHEMA');
+  assert.equal(core.corruptPath('/d/rooms.json', Date.UTC(2026, 9, 3, 1, 2, 3, 4)), '/d/rooms.json.corrupt-2026-10-03T01-02-03.004Z');
 });

@@ -80,3 +80,15 @@ test('app.init_failed names the bad variable through the code field and never th
   assert.ok(line.includes('errorClass="ConfigError"'), line);
   assert.ok(!line.includes(MARKER), line);
 });
+
+test('DRAIN_DEADLINE_MS is strict, 100 to 9000 (under the platform\'s 10 s), and defaults to 8000', () => {
+  for (const blank of [undefined, '', '  ']) assert.equal(loadConfig({ DRAIN_DEADLINE_MS: blank }).drainDeadlineMs, 8000);
+  assert.equal(loadConfig({}).drainDeadlineMs, 8000);
+  assert.equal(loadConfig({ DRAIN_DEADLINE_MS: '100' }).drainDeadlineMs, 100);
+  assert.equal(loadConfig({ DRAIN_DEADLINE_MS: ' 9000 ' }).drainDeadlineMs, 9000);
+  for (const bad of ['99', '0', '9001', '10000', '-1', '1.5', 'abc', '400ms', MARKER]) {
+    assert.throws(() => loadConfig({ DRAIN_DEADLINE_MS: bad }), (e) => e instanceof ConfigError && e.code === 'BAD_DRAIN_DEADLINE_MS' && !e.message.includes(MARKER), bad);
+  }
+  assert.equal(strictInt({ X: '3' }, 'X', 5, 10, 3), 3);
+  assert.throws(() => strictInt({ X: '2' }, 'X', 5, 10, 3), ConfigError);
+});

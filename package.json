@@ -3,8 +3,15 @@
   "version": "0.1.0",
   "description": "Behalf: reference implementation of PXP v0, the Proxy Exchange Protocol for agentic proxies",
   "main": "index.js",
-  "scripts": { "start": "node index.js", "test": "node --test" },
-  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "license": "MIT",
-  "dependencies": {}
+  "dependencies": {
+    "pg": "8.23.1"
+  }
 }

@@ -15,7 +15,9 @@ test('a corrupt rooms.json is quarantined with one structured store.quarantined 
   const bytes = '{"rooms": ' + SECRET + ' not json';
   const s = await bootServer('load-failed-', {}, (dir) => fs.writeFileSync(path.join(dir, 'rooms.json'), bytes));
   try {
-    const lines = s.out.split('\n').filter((l) => l.includes('store.'));
+    // On the platform (DROP_DATA_DIR set) with no DATABASE_URL the boot also warns that it fell back to the file store.
+    assert.equal(s.out.split('\n').filter((l) => l.includes('store.file_fallback')).length, 1, s.out);
+    const lines = s.out.split('\n').filter((l) => l.includes('store.') && !l.includes('store.file_fallback'));
     assert.equal(lines.length, 1, s.out);
     assert.match(lines[0], /^level=error event="store\.quarantined"/);
     assert.ok(!s.out.includes(SECRET), 'file content leaked into output');

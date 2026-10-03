@@ -23,6 +23,7 @@ test('defaults with an empty environment', () => {
     trustProxy: 'private',
     publicUrl: 'https://behalf.dropkit.sh',
     model: 'claude-sonnet-5-5',
+    drainDeadlineMs: 8000,
   });
   assert.equal(ROOT, path.join(__dirname, '..'));
 });
