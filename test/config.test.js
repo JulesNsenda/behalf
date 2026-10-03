@@ -17,6 +17,10 @@ test('defaults with an empty environment', () => {
     perIpDaily: 3,
     maxTurns: 10,
     demoDelayMs: 2600,
+    roomTtlDays: 30,
+    demoTtlHours: 24,
+    maxRooms: 5000,
+    trustProxy: 'private',
     publicUrl: 'https://proxy-room.dropkit.sh',
     model: 'claude-sonnet-5-5',
   });

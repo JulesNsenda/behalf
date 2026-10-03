@@ -40,7 +40,7 @@ before(async () => {
   store.usage.day = patchedDay;
   srv = await bootServer('store-load-', {
     DEMO_DELAY_MS: '1', DAILY_ROOM_LIMIT: String(store.usage.total),
-    ROOM_TTL_DAYS: '100000', DEMO_TTL_HOURS: '100000000', MAX_ROOMS: '100000',
+    ROOM_TTL_DAYS: '3650', DEMO_TTL_HOURS: '87600', MAX_ROOMS: '1000000', // the maximums: fixture rooms (2026) stay unevicted until 2036
   }, (dir) => fs.writeFileSync(path.join(dir, 'rooms.json'), JSON.stringify(store)));
   api = client(srv.base);
 });
