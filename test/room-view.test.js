@@ -283,6 +283,16 @@ test('guessCount: after an agreement counts brief.unverified_dependencies only',
   assert.strictEqual(RV.guessCount(view({ status: 'agreed', claims, brief: {} })), 0);
 });
 
+test('noDealReason: a live room stalled before its turn limit reached the AI allowance, and the outcome reads "No deal. ..."', () => {
+  const spent = view({ status: 'stalled', turnCount: 3, maxTurns: 8 });
+  assert.strictEqual(RV.noDealReason(spent), 'The room reached its limit on AI use.');
+  assert.strictEqual(RV.outcome(spent).text, 'No deal. The room reached its limit on AI use.');
+  const atLimit = view({ status: 'stalled', turnCount: 8, maxTurns: 8 });
+  assert.strictEqual(RV.noDealReason(atLimit), "The AIs didn't agree within 8 turns.");
+  assert.strictEqual(RV.noDealReason(view({ status: 'stalled', turnCount: 3, maxTurns: 8, demo: true })), "The AIs didn't agree within 8 turns.", 'a demo that ran out of script');
+  assert.ok(!JARGON.test(RV.noDealReason(spent)));
+});
+
 test('noDealReason: names the turn limit only when it is a positive whole number', () => {
   assert.strictEqual(RV.noDealReason(view({ maxTurns: 8 })), "The AIs didn't agree within 8 turns.");
   const FALLBACK = "The AIs didn't agree in the turns they had.";
@@ -304,8 +314,8 @@ test('guessPill and outcome wording', () => {
   assert.deepStrictEqual(RV.outcome(view({ status: 'agreed', brief: dep(0) })), { tone: 'ok', text: 'Deal reached. Nothing unconfirmed.', linkLabel: SEE, replayable: false });
   assert.deepStrictEqual(RV.outcome(view({ status: 'agreed', brief: dep(1) })), { tone: 'warn', text: 'Deal reached, with 1 unconfirmed point', linkLabel: SEE, replayable: false });
   assert.deepStrictEqual(RV.outcome(view({ status: 'agreed', brief: dep(3) })), { tone: 'warn', text: 'Deal reached, with 3 unconfirmed points', linkLabel: SEE, replayable: false });
-  assert.deepStrictEqual(RV.outcome(view({ status: 'stalled' })), { tone: 'warn', text: "No deal. The AIs didn't agree within 12 turns.", linkLabel: FAILED, replayable: false });
-  assert.deepStrictEqual(RV.outcome(view({ status: 'stalled', maxTurns: 1 })), { tone: 'warn', text: "No deal. The AIs didn't agree within 1 turn.", linkLabel: FAILED, replayable: false });
+  assert.deepStrictEqual(RV.outcome(view({ status: 'stalled', turnCount: 12 })), { tone: 'warn', text: "No deal. The AIs didn't agree within 12 turns.", linkLabel: FAILED, replayable: false });
+  assert.deepStrictEqual(RV.outcome(view({ status: 'stalled', turnCount: 1, maxTurns: 1 })), { tone: 'warn', text: "No deal. The AIs didn't agree within 1 turn.", linkLabel: FAILED, replayable: false });
   assert.strictEqual(RV.outcome(view({ status: 'negotiating' })), null);
   assert.strictEqual(RV.outcome(null), null);
 });
@@ -788,6 +798,7 @@ test('errorMessage: fixed sentences per action, status-specific where it helps',
   assert.strictEqual(RV.errorMessage('seal', 400), 'Something is missing. Say what you are trying to achieve and add at least one thing the deal must include.');
   assert.ok(/fill in the fields yourself/.test(RV.errorMessage('draft', 503)));
   assert.strictEqual(RV.errorMessage('draft', 429), "You've used all the drafts for this place. Fill in the fields yourself.");
+  assert.strictEqual(RV.errorMessage('draft', 404), 'This room has closed. Start a new one to keep going.');
   assert.strictEqual(RV.errorMessage('seal', 403), RV.errorMessage('answer', 403));
   // the demo route has no failure codes of its own
   assert.strictEqual(RV.errorMessage('demo', 429), RV.errorMessage('demo', 500));

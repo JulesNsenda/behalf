@@ -40,14 +40,15 @@ function fakeProxy(turns, extra) {
   }, extra);
 }
 
-function setup(t, { turns = [], maxTurns = 10, proxy, content, overrides } = {}) {
+function setup(t, { turns = [], maxTurns = 10, proxy, content, overrides, limits } = {}) {
   const dir = mkTmp('rooms-');
   t.after(() => rmTmp(dir));
   const file = path.join(dir, 'data', 'rooms.json');
   if (content !== undefined) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, content); }
   const out = [];
   const log = createLog({ stream: { write: (s) => out.push(s) } });
-  const config = loadConfig({ DROP_DATA_DIR: path.join(dir, 'data'), MAX_TURNS: String(maxTurns), PUBLIC_URL: 'http://test.invalid' });
+  // The fixture rooms are old on purpose: eviction is off here unless a test sets its own limits.
+  const config = { ...loadConfig({ DROP_DATA_DIR: path.join(dir, 'data'), MAX_TURNS: String(maxTurns), PUBLIC_URL: 'http://test.invalid' }), roomTtlDays: 1e6, demoTtlHours: 1e9, maxRooms: 1e6, ...limits };
   const p = proxy || fakeProxy(turns);
   const app = createApp(Object.assign({ config, secrets: loadSecrets({}), log, proxy: p, clock: { sleep: async () => {} }, file }, overrides));
   t.after(() => app.close());
@@ -529,7 +530,7 @@ test('createApp uses the injected proxy and demo', T, async (t) => {
 test('the domain exposes exactly its operations', T, async (t) => {
   const { domain } = setup(t);
   assert.deepEqual(Object.keys(domain).sort(), [
-    'ApiError', 'answerDemo', 'answerEscalation', 'busy', 'createDemoRoom', 'createLiveRoom', 'draftCard', 'externalTurn',
+    'ApiError', 'answerDemo', 'answerEscalation', 'busy', 'chargeCall', 'createDemoRoom', 'createLiveRoom', 'draftCard', 'enforceCapacity', 'evictExpired', 'externalTurn',
     'hydrate', 'joinAsAgent', 'onChange', 'other', 'resume', 'rooms', 'sealCard', 'seatLink', 'stop',
   ]);
 });
@@ -574,7 +575,7 @@ test('the turn cap clears waitingOn and records turn_limit, even when run() star
   sealBoth(domain, room);
   await settle(room);
   assert.equal(room.waitingOn, 'A');
-  room.maxTurns = room.turnCount; // the cap is already reached
+  room.turnCount = room.maxTurns; // the cap is already reached
   room.status = 'error';
   domain.resume(room);
   await settle(room);
@@ -753,16 +754,6 @@ test('MCP next_action on an error room reads as two clean sentences, with no dou
   assert.ok(!raw.includes('..'), 'no doubled full stop');
 });
 
-test('MCP next_action on an error room reads as two clean sentences, with no doubled full stop', T, async (t) => {
-  const { domain, app } = setup(t, { turns: [new Error('boom')] });
-  const room = liveRoom(domain);
-  sealBoth(domain, room);
-  await settle(room);
-  const raw = await mcpCall(app, 'get_room', { link: app.ops.seatLink(room, 'A') });
-  assert.ok(raw.includes("The room hit an error: The AI service didn't respond. Your principal can press Resume in the web view."), raw);
-  assert.ok(!raw.includes('..'), 'no doubled full stop');
-});
-
 test('D13: the draft 502 is a fixed sentence, and the detail goes only to the log', T, async (t) => {
   const MARKER = 'DRAFT-MARKER-' + Math.random();
   const proxy = fakeProxy([], { draftCard: async () => { throw new Error('upstream said ' + MARKER); } });
@@ -906,14 +897,14 @@ test('busy is true while the turn loop runs, and a failed draft clears it', T, a
   await settle(room);
 });
 
-test('a draft that finishes after its room was evicted is discarded with 409', T, async (t) => {
+test('a draft that finishes after its room was evicted is discarded with 404', T, async (t) => {
   let release;
   const gate = new Promise((r) => { release = r; });
   const proxy = fakeProxy([], { draftCard: async () => { await gate; return { principal: { name: 'x' }, goal: 'g', must_haves: ['m'] }; } });
   const { domain } = setup(t, { proxy });
   const room = liveRoom(domain);
   const p = domain.draftCard(room, 'A', DRAFT);
-  const refused = assert.rejects(p, (e) => e.code === 409);
+  const refused = assert.rejects(p, (e) => e.code === 404 && e.message === 'Room not found');
   domain.rooms.delete(room.id);
   release();
   await refused;
@@ -934,9 +925,9 @@ test('room.error by cause: AI service, a client-safe ApiError from the proxy, or
   const r1 = liveRoom(ai.domain); sealBoth(ai.domain, r1); await settle(r1);
   assert.equal(r1.error, "The AI service didn't respond.");
 
-  const budget = setup(t, { turns: [new ApiError(409, 'This room has used its AI budget.')] });
+  const budget = setup(t, { turns: [new ApiError(409, 'Upstream-chosen text that is not a fixed sentence.')] });
   const r2 = liveRoom(budget.domain); sealBoth(budget.domain, r2); await settle(r2);
-  assert.equal(r2.error, 'This room has used its AI budget.');
+  assert.equal(r2.error, "The AI service didn't respond.", 'only a fixed sentence is stored');
 
   const bad = { get message() { throw new Error('ledger bug MARKER-X'); } };
   const own = setup(t, { turns: [bad] });
@@ -1042,9 +1033,9 @@ test('D17: failed guesses are keyed by IPv4, any IPv4-mapped form, or the IPv6 /
   for (const ip of ['x'.repeat(200), 'not an ip', '', 'unknown', '1.2.3', '::g']) make(ip, 'w');
   const f = app.store.state.usage.failedByIp;
   assert.equal(f['1.2.3.4'], 6);
-  assert.equal(f['2001:db8:1:2'], 3);
-  assert.equal(f['2001:db8:1:3'], 1);
-  assert.equal(f['fe80:0:0:0'], 2);
+  assert.equal(f['2001:0db8:0001:0002'], 3);
+  assert.equal(f['2001:0db8:0001:0003'], 1);
+  assert.equal(f['fe80:0000:0000:0000'], 2);
   assert.equal(f.invalid, 6);
   for (const k of Object.keys(f)) assert.ok(k.length <= 64, k.slice(0, 20));
 });

@@ -529,3 +529,16 @@ test('saveUsage schedules a write without marking rooms dirty', (t) => {
   s.store.flush();
   assert.deepEqual(s.disk().usage.failedByIp, { x: 3 });
 });
+
+test('.partial- copies are never pruned: six old ones and the new one all survive, and so do the corrupt files', (t) => {
+  const f = fixture();
+  f.rooms.bad00001 = 'nope';
+  const s = setup(t, JSON.stringify(f));
+  for (let i = 1; i <= 6; i++) realFs.writeFileSync(path.join(s.dir, `rooms.json.partial-2020-01-0${i}T00-00-00.000Z`), 'old' + i);
+  for (let i = 1; i <= 6; i++) realFs.writeFileSync(path.join(s.dir, `rooms.json.corrupt-2020-01-0${i}T00-00-00.000Z`), 'old' + i);
+  s.store.load();
+  const p = s.names().filter((n) => n.startsWith('rooms.json.partial-'));
+  assert.equal(p.length, 7);
+  for (let i = 1; i <= 6; i++) assert.ok(p.includes(`rooms.json.partial-2020-01-0${i}T00-00-00.000Z`), 'old copy ' + i);
+  assert.equal(s.names().filter((n) => n.startsWith('rooms.json.corrupt-')).length, 6);
+});

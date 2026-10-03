@@ -329,7 +329,10 @@
   // Why a room ended without a deal. maxTurns counts only when it is a positive whole number.
   function noDealReason(R) {
     var n = R && R.maxTurns;
-    return typeof n === 'number' && isFinite(n) && n > 0 && Math.floor(n) === n
+    var valid = typeof n === 'number' && isFinite(n) && n > 0 && Math.floor(n) === n;
+    // A live room that stopped before its turn limit ran out of AI allowance (a demo stops when its script ends).
+    if (valid && R.status === 'stalled' && !R.demo && typeof R.turnCount === 'number' && R.turnCount < n) return 'The room reached its limit on AI use.';
+    return valid
       ? "The AIs didn't agree within " + n + (n === 1 ? ' turn.' : ' turns.')
       : "The AIs didn't agree in the turns they had.";
   }
@@ -679,6 +682,7 @@
       def: "We couldn't write a draft just now. You can fill in the fields yourself.",
       400: 'Add your name and a short description first.',
       403: NO_ACCESS,
+      404: 'This room has closed. Start a new one to keep going.',
       409: 'Your instructions are already locked.',
       429: "You've used all the drafts for this place. Fill in the fields yourself.",
       502: "The drafting helper had a problem. You can fill in the fields yourself.",
