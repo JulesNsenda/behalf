@@ -1,7 +1,7 @@
 {
-  "name": "proxy-room",
+  "name": "behalf",
   "version": "0.1.0",
-  "description": "Proxy Room: reference implementation of PXP v0, the Proxy Exchange Protocol for agentic proxies",
+  "description": "Behalf: reference implementation of PXP v0, the Proxy Exchange Protocol for agentic proxies",
   "main": "index.js",
   "scripts": { "start": "node index.js", "test": "node --test" },
   "engines": { "node": ">=18" },

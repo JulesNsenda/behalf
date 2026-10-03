@@ -830,7 +830,7 @@
   // The connector address of this server, and the command that adds it to Claude Code.
   function mcpUrl(origin) { return str(origin) + '/mcp'; }
 
-  function mcpCommand(origin) { return 'claude mcp add --transport http proxy-room ' + mcpUrl(origin); }
+  function mcpCommand(origin) { return 'claude mcp add --transport http behalf ' + mcpUrl(origin); }
 
   // The message an agent is asked to act on, given the viewer's own room link.
   function agentPrompt(link) {
@@ -846,7 +846,7 @@
 
   // The browser tab title for a room.
   function docTitle(R) {
-    return (str(R && R.topic).trim() || 'Room') + ' · Proxy Room';
+    return (str(R && R.topic).trim() || 'Room') + ' · Behalf';
   }
 
   // Every fixed sentence the room page shows, with names filled in: plain strings only. R may be null,

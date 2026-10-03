@@ -21,7 +21,7 @@
   var roomId = Links.roomIdFromPath(location.pathname, '/brief/');
 
   function show(safe, title) {
-    document.title = title + ' · Proxy Room';
+    document.title = title + ' · Behalf';
     UI.render(app, safe);
   }
 

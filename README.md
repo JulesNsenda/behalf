@@ -1,4 +1,4 @@
-# Proxy Room
+# Behalf
 
 Reference implementation of **PXP v0, the Proxy Exchange Protocol**: two AI proxies negotiate for two people, every claim is tagged stated / sourced / assumed, proxies escalate to their humans at a limit, and every agreement ships with a decision brief and a hash-chained ledger.
 
@@ -30,7 +30,7 @@ Based on the essay *Agentic Proxies: When Humans Become Routing Nodes* by Jules 
 | `DAILY_ROOM_LIMIT` | 20 | Live rooms per day, all users |
 | `PER_IP_DAILY` | 3 | Live rooms per day per IP |
 | `MAX_TURNS` | 10 | Proxy turns before a room stalls |
-| `PUBLIC_URL` | `https://proxy-room.dropkit.sh` | Base URL used in seat links handed to agents |
+| `PUBLIC_URL` | `https://behalf.dropkit.sh` | Base URL used in seat links handed to agents |
 | `PORT` | 3000 | Listen port. `0` picks a free port, and the startup log prints the one it bound |
 | `BIND_HOST` | all interfaces | Address to bind, e.g. `127.0.0.1`. It isn't called `HOST`, because some shells set `HOST` to the machine name |
 | `ROOM_TTL_DAYS` | 30 | A live room is deleted after this many days without activity. Its links then show the room as gone |

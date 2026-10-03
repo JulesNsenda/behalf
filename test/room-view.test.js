@@ -1177,8 +1177,8 @@ test('composed wording: reviewLine, stoppedLine, recordLine, docTitle', () => {
   assert.strictEqual(RV.reviewLine({ sentence: "Kwame's AI disagrees with this", reason: 'too high' }), "Kwame's AI disagrees with this: too high");
   assert.strictEqual(RV.reviewLine({ sentence: 'x', reason: '' }), 'x');
   assert.strictEqual(RV.recordLine(view({ seat: 'A' }), { n: 3, type: 'card_sealed', data: { seat: 'A' } }), '3. You locked your instructions');
-  assert.strictEqual(RV.docTitle(view({ topic: 'Shop‮ setup' })), 'Shop setup · Proxy Room');
-  assert.strictEqual(RV.docTitle(null), 'Room · Proxy Room');
+  assert.strictEqual(RV.docTitle(view({ topic: 'Shop‮ setup' })), 'Shop setup · Behalf');
+  assert.strictEqual(RV.docTitle(null), 'Room · Behalf');
 });
 
 // ---------- page text without names ----------
@@ -1303,7 +1303,7 @@ test('step: the creator reopening their own URL (seat and t) keeps seat A and sk
 test('mcpUrl and mcpCommand are built from the origin they are given', () => {
   assert.strictEqual(RV.mcpUrl('https://behalf.example'), 'https://behalf.example/mcp');
   assert.strictEqual(RV.mcpUrl('http://localhost:3000'), 'http://localhost:3000/mcp');
-  assert.strictEqual(RV.mcpCommand('https://behalf.example'), 'claude mcp add --transport http proxy-room https://behalf.example/mcp');
+  assert.strictEqual(RV.mcpCommand('https://behalf.example'), 'claude mcp add --transport http behalf https://behalf.example/mcp');
   assert.strictEqual(RV.mcpUrl(undefined), '/mcp', 'a missing origin is empty, never "undefined"');
 });
 

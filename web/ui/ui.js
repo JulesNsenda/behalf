@@ -1,5 +1,5 @@
 /*
- * Proxy Room UI helpers. One classic script, no dependencies.
+ * Behalf UI helpers. One classic script, no dependencies.
  *
  * Safe-HTML rules (UI.html templates):
  *  - Always quote attributes:  <a href="${UI.url(u)}">  never  <a href=${x}>.

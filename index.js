@@ -1,5 +1,5 @@
 'use strict';
-// Proxy Room: reference implementation of PXP v0 (Proxy Exchange Protocol).
+// Behalf: reference implementation of PXP v0 (Proxy Exchange Protocol).
 // Zero dependencies. Node 18+.
 const { createLog } = require('./lib/log');
 const { createApp } = require('./lib/app');
@@ -10,7 +10,7 @@ let app;
 try { app = createApp({ log }); } catch (e) { log.error(e instanceof StoreError ? 'store.load_failed' : 'app.init_failed', {}, e); process.exit(1); }
 const { config, proxy } = app;
 
-const onListen = () => console.log(`Proxy Room (PXP/0) on :${app.server.address().port} · live=${proxy.live()} · model=${proxy.MODEL} · data=${config.dataDir} · mcp=${config.publicUrl}/mcp`);
+const onListen = () => console.log(`Behalf (PXP/0) on :${app.server.address().port} · live=${proxy.live()} · model=${proxy.MODEL} · data=${config.dataDir} · mcp=${config.publicUrl}/mcp`);
 app.listen(config.port, config.bindHost, onListen);
 
 // A redeploy sends SIGTERM: write what is pending, then leave; a failed write exits non-zero. EventSource clients reconnect on their own.

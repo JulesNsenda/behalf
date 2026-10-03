@@ -21,7 +21,7 @@ test('defaults with an empty environment', () => {
     demoTtlHours: 24,
     maxRooms: 5000,
     trustProxy: 'private',
-    publicUrl: 'https://proxy-room.dropkit.sh',
+    publicUrl: 'https://behalf.dropkit.sh',
     model: 'claude-sonnet-5-5',
   });
   assert.equal(ROOT, path.join(__dirname, '..'));
@@ -52,7 +52,7 @@ test('string variables fall back when empty, keep their value otherwise', () => 
 test('PUBLIC_URL loses one trailing slash; empty gives the default', () => {
   assert.equal(loadConfig({ PUBLIC_URL: 'https://x.test/' }).publicUrl, 'https://x.test');
   assert.equal(loadConfig({ PUBLIC_URL: 'https://x.test' }).publicUrl, 'https://x.test');
-  assert.equal(loadConfig({ PUBLIC_URL: '' }).publicUrl, 'https://proxy-room.dropkit.sh');
+  assert.equal(loadConfig({ PUBLIC_URL: '' }).publicUrl, 'https://behalf.dropkit.sh');
 });
 
 test('the config object is frozen', () => {

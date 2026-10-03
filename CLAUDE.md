@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Proxy Room is the reference implementation of **PXP v0 (Proxy Exchange Protocol)**: two AI proxies negotiate for two humans, every claim is tagged `stated` / `sourced` / `assumed`, proxies escalate to their humans at a limit, and an agreement produces a decision brief plus a hash-chained ledger. `spec/SPEC.md` is the normative protocol, and the code implements it.
+Behalf is the reference implementation of **PXP v0 (Proxy Exchange Protocol)**: two AI proxies negotiate for two humans, every claim is tagged `stated` / `sourced` / `assumed`, proxies escalate to their humans at a limit, and an agreement produces a decision brief plus a hash-chained ledger. `spec/SPEC.md` is the normative protocol, and the code implements it.
 
 ## Commands
 
@@ -174,7 +174,7 @@ Every page links `/ui/ui.css`. The old `style.css` is gone.
 - **Plain language:** user-facing copy has no protocol jargon. Say "Your AI", "Not confirmed", "Locked" and "Deal reached". Hashes and the ledger go behind a "Details" disclosure.
 - **Seat colour is fixed by seat** (`.party-a` blue, `.party-b` rust), never by viewer. Copy says "Your AI" where the page knows the viewer's seat.
 - **Footers:** full on reading pages (home, connect), slim on stopping points (invite, agreement), and none on task pages.
-- **URLs:** never hard-code the deploy hostname in `web/`. It changes with the Behalf rename.
+- **URLs:** never hard-code the deploy hostname in `web/`. It comes from `PUBLIC_URL` and changes per deploy.
 
 ## Keep in sync
 

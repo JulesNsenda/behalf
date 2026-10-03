@@ -8,10 +8,10 @@ const { ROOT } = require('../test-support/paths');
 const { start, mkTmp, rmTmp } = require('../test-support/server');
 
 const ROUTES = [
-  { url: '/start', title: /<title>Start a room · Proxy Room<\/title>/, script: '/js/start.js' },
-  { url: '/brief/x', title: /<title>Agreement · Proxy Room<\/title>/, script: '/js/agreement.js' },
-  { url: '/connect', title: /<title>Use your own AI agent · Proxy Room<\/title>/, script: '/js/connect.js' },
-  { url: '/spec', title: /<title>The protocol · Proxy Room<\/title>/, script: '/js/protocol.js' },
+  { url: '/start', title: /<title>Start a room · Behalf<\/title>/, script: '/js/start.js' },
+  { url: '/brief/x', title: /<title>Agreement · Behalf<\/title>/, script: '/js/agreement.js' },
+  { url: '/connect', title: /<title>Use your own AI agent · Behalf<\/title>/, script: '/js/connect.js' },
+  { url: '/spec', title: /<title>The protocol · Behalf<\/title>/, script: '/js/protocol.js' },
 ];
 
 let server = null;

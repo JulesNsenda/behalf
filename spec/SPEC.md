@@ -1,6 +1,6 @@
 # PXP — Proxy Exchange Protocol, v0 (draft)
 
-Status: draft, reference implementation is Proxy Room. Expect breaking changes until v1.
+Status: draft, reference implementation is Behalf. Expect breaking changes until v1.
 
 ## Why
 

@@ -172,7 +172,7 @@
     UI.byId('invite-view').hidden = false;
     UI.byId('invite-footer').hidden = false;
     UI.byId('step-label').textContent = RoomView.stepLabel(2);
-    document.title = 'Invite ' + otherName + ' · Proxy Room';
+    document.title = 'Invite ' + otherName + ' · Behalf';
     try { history.replaceState(null, '', '/start#invite'); } catch (e) { /* not fatal */ }
     UI.byId('invite-title').focus();
     window.scrollTo(0, 0);

@@ -7,7 +7,7 @@ const { bootServer } = require('../test-support/http');
 test('the listen line keeps its exact shape', async () => {
   const s = await bootServer('listen-line-', {});
   try {
-    assert.match(s.out, /^Proxy Room \(PXP\/0\) on :\d+ · live=(true|false) · model=\S+ · data=.+ · mcp=\S+\/mcp$/m);
+    assert.match(s.out, /^Behalf \(PXP\/0\) on :\d+ · live=(true|false) · model=\S+ · data=.+ · mcp=\S+\/mcp$/m);
   } finally {
     await s.stop();
   }
