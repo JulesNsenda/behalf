@@ -884,9 +884,38 @@ test('a statement-class rejection of a write is an ordinary failure: write_faile
   await store.close();
 });
 
-test('the default watchdog slack is generous (at least 15 s) and the statement timeout 5 s: a slow answer is not a dead connection', () => {
+test('the default watchdog slack is generous (at least 15 s) and the statement timeout 3 s, under the 4 s drain default: a slow answer is not a dead connection', () => {
   assert.ok(WATCHDOG_SLACK_MS >= 15000, String(WATCHDOG_SLACK_MS));
-  assert.equal(STATEMENT_MS, 5000);
+  assert.equal(STATEMENT_MS, 3000);
+  assert.ok(STATEMENT_MS < loadConfig({}).drainDeadlineMs, 'one statement fits the default drain deadline');
+});
+
+test('rowsToDoc takes its top-level keys from the kind table: a new kind round-trips, a singleton and an unknown kind do not add a collection', () => {
+  const { rowsToDoc } = require('../lib/store-pg');
+  const enc = (v) => JSON.stringify(v);
+  const kinds = {
+    room: { key: 'rooms' }, usage: { key: 'usage', singleton: 'today' },
+    widget: { key: 'widgets' }, user: { key: 'users' },
+  };
+  const rows = [
+    { kind: 'room', id: 'r1', doc: enc({ id: 'r1' }) }, { kind: 'widget', id: 'w1', doc: enc({ a: 1 }) },
+    { kind: 'widget', id: '__proto__', doc: enc({ b: 2 }) }, { kind: 'widget', id: 'bad', doc: '{not json' },
+    { kind: 'usage', id: 'today', doc: enc({ day: 'd' }) }, { kind: 'meta', id: 'schema', doc: enc({ version: 1 }) },
+    { kind: 'other', id: 'x', doc: '{}' },
+  ];
+  const { raw, texts } = rowsToDoc(rows, 1, { error() {} }, kinds);
+  assert.deepEqual(Object.keys(raw).sort(), ['rooms', 'schemaVersion', 'usage', 'users', 'widgets']);
+  assert.deepEqual(raw.widgets.w1, { a: 1 });
+  assert.equal(Object.getPrototypeOf(raw.widgets), null);
+  assert.deepEqual(raw.widgets.__proto__, { b: 2 });
+  assert.equal(raw.widgets.bad, null, 'unusable text is a null the core skips');
+  assert.deepEqual(raw.users, Object.create(null), 'a kind with no rows is an empty collection');
+  assert.deepEqual(raw.usage, { day: 'd' });
+  assert.equal(texts.widget.get('w1'), enc({ a: 1 }));
+  assert.equal(Object.hasOwn(texts, 'other'), false);
+  // And against the real table: every non-singleton kind of KIND has its collection.
+  const real = rowsToDoc([], 1, { error() {} });
+  assert.deepEqual(Object.keys(real.raw).sort(), ['agentkeys', 'rooms', 'schemaVersion', 'sessions', 'users']);
 });
 
 // A fake clock: sleeping moves time on and is recorded, so the boot's retry and lock loops run without waiting.

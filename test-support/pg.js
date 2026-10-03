@@ -54,4 +54,4 @@ function scratchDatabase(name) {
   };
 }
 
-module.exports = { PG_URL, pgQuery, withBlocker, assertScratch, dropTable, pgAdmin, scratchDatabase };
+module.exports = { PG_URL, withClient, pgQuery, withBlocker, assertScratch, dropTable, pgAdmin, scratchDatabase };

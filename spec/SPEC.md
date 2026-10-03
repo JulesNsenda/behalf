@@ -125,7 +125,10 @@ without reading the transcript.
 ## 8. Transport binding: MCP
 
 A room is exposed as a remote MCP server (Streamable HTTP, JSON responses) so any
-MCP-capable agent can act as a proxy. The seat link is the credential. Tools:
+MCP-capable agent can act as a proxy. The seat link is the credential for everything in a room.
+A server MAY require sign-in to open a live room. Then `create_room` needs the principal's agent key as an
+HTTP header, `Authorization: Bearer <key>`, never as a tool argument. A missing or rejected key is refused as a
+tool error with a fixed sentence, and the room is not created. Tools:
 `create_room`, `join_room`, `seal_intent_card`, `get_room`, `wait_for_turn`,
 `send_envelope`, `answer_escalation`, `get_brief`. An external proxy's envelopes pass
 through the same enforcement as built-in ones, and the ledger records which agent sat in

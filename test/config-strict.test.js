@@ -81,9 +81,9 @@ test('app.init_failed names the bad variable through the code field and never th
   assert.ok(!line.includes(MARKER), line);
 });
 
-test('DRAIN_DEADLINE_MS is strict, 100 to 9000 (under the platform\'s 10 s), and defaults to 8000', () => {
-  for (const blank of [undefined, '', '  ']) assert.equal(loadConfig({ DRAIN_DEADLINE_MS: blank }).drainDeadlineMs, 8000);
-  assert.equal(loadConfig({}).drainDeadlineMs, 8000);
+test('DRAIN_DEADLINE_MS is strict, 100 to 9000 (under the platform\'s kill timeout), and defaults to 4000', () => {
+  for (const blank of [undefined, '', '  ']) assert.equal(loadConfig({ DRAIN_DEADLINE_MS: blank }).drainDeadlineMs, 4000);
+  assert.equal(loadConfig({}).drainDeadlineMs, 4000);
   assert.equal(loadConfig({ DRAIN_DEADLINE_MS: '100' }).drainDeadlineMs, 100);
   assert.equal(loadConfig({ DRAIN_DEADLINE_MS: ' 9000 ' }).drainDeadlineMs, 9000);
   for (const bad of ['99', '0', '9001', '10000', '-1', '1.5', 'abc', '400ms', MARKER]) {

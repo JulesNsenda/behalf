@@ -8,54 +8,68 @@ Behalf is the reference implementation of **PXP v0 (Proxy Exchange Protocol)**: 
 
 ## Commands
 
-Zero dependencies, Node 18+ (it uses global `fetch`). There is no build or lint step.
+Node 18+ (it uses global `fetch`). There is no build or lint step. The one dependency is `pg` (`npm ci` locally; Drop runs `npm install`). It is loaded only when `DATABASE_URL` is set, so the file store, local dev and most of the suite run without `node_modules`.
 
 ```sh
 npm test                              # node:test suite in test/ (UI tokens + contrast, ui.js, server, pages)
 node index.js                         # or: npm start  (PORT defaults to 3000; PORT=0 picks a free port, BIND_HOST is optional)
 DEMO_DELAY_MS=200 node index.js       # speed up the scripted demo (default 2600ms per turn)
-curl localhost:3000/health            # {ok, live, rooms, build}; build = hash of the source tree
+curl localhost:3000/health            # {ok, live, rooms, store, storeOk, build}; build = hash of the source tree
 curl -XPOST localhost:3000/api/demo   # create a scripted demo room, then open /room/<id>?seat=A&t=<token>
 # Linux + Node 18, which also runs the POSIX-only tests. The repo is mounted read-only.
 docker run --rm -v "$PWD:/app:ro" -w /app node:18 node --test
 MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/app:ro" -w /app node:18 node --test   # the same, from Git Bash on Windows
+# The Postgres tests run only with PG_TEST_URL. Its database name must end in _test: the tests DROP the table.
+# PostgreSQL 13+ (the 16 image is what is used). The role needs CREATEDB (the auth and export tests make their own database), and the tests terminate backends, so use a scratch server. From Docker, reach the host as host.docker.internal.
+PG_TEST_URL=postgres://behalf:behalf@localhost:55432/behalf_test npm test
 ```
 
-Without `ANTHROPIC_API_KEY`, the scripted demo and rooms where both seats are "bring your own agent" (MCP) still work. Built-in Claude proxies, card drafting and the authority audit need the key. The other env vars are in the README table. State persists to `$DROP_DATA_DIR/rooms.json`, or `./.data/rooms.json` when that variable isn't set. Delete that file to reset.
+Without `ANTHROPIC_API_KEY`, the scripted demo and rooms where both seats are "bring your own agent" (MCP) still work. Built-in Claude proxies, card drafting and the authority audit need the key. The other env vars are in the README table. State persists to `$DROP_DATA_DIR/rooms.json`, or `./.data/rooms.json` when that variable isn't set. Delete that file to reset. With `DATABASE_URL`, state lives in the `behalf_records` table: drop it to reset. `SIGNIN` defaults to `off` locally, but must be set when `DROP_DATA_DIR` or `DATABASE_URL` is.
 
-Deployment: `drop.yaml` targets the Drop platform (`type: nodejs`, health check `/health`). Compare the `build` fingerprint from `/health` with a local run to confirm a deploy matches the local tree.
+Deployment: `drop.yaml` targets the Drop platform: `type: nodejs`, health check `/health`, `database: postgres` (Drop sets `DATABASE_URL`), `env:` with `SIGNIN: github` and `PUBLIC_URL`, and the two GitHub secrets declared `required` (Drop holds the app in `needs-config` until they are set). `drop.yaml` `env:` is Drop's base layer: a value set in the dashboard overrides it. The `/health` `build` fingerprint of a Drop deploy won't match a local run: Drop runs `npm install` (the detector's choice, so the resolved `package-lock.json` can differ) and its build changes the app directory. Confirm a deploy by `/health` `store` and `storeOk` (`postgres`, true) and `/api/config` `signin`. The README has the deploy steps, including the rollback export (`scripts/export-rooms.js`).
 
 ## Architecture
 
 The backend is a set of small `lib/` modules, each with one job, assembled in one place.
 
-**`lib/app.js`** is the composition root. `createApp(overrides)` builds every part and wires them together:
-- It reads the config and the secrets **once**.
-- It loads the store and builds the proxy, the domain and the HTTP server.
-- It assembles the `ops` object for `lib/mcp.js`.
+**`lib/app.js`** is the composition root.
+- `bootApp(overrides)` is the async entry. It reads the config and the secrets **once**, picks the store with `buildStore` (Postgres when `DATABASE_URL` is set, else the file), awaits its load, then calls `createApp`.
+- `createApp(overrides)` is synchronous. It builds the proxy, the domain, sign-in (`lib/auth.js`, only with `SIGNIN=github`) and the HTTP server, and assembles the `ops` object for `lib/mcp.js`.
+- `savePolicy` decides what may go on while saving fails: room creation keeps working for 60 seconds (`canCreate`), and revoking a session or key refuses at once (`canRevoke`), so a revocation that can't be saved never looks done.
+- `drain()` is how the process leaves: it stops the turn loop and the web layer, settles the store's writes, closes it, and resolves whether everything was saved. It is idempotent.
 
-Every dependency can be overridden (`config`, `secrets`, `log`, `store`, `proxy`, `fetch`, `timeouts`, `clock`, `demo`, …), so tests run the whole app in-process with fakes. `createApp` never exits the process. A store that can't load throws a `StoreError`.
+Every dependency can be overridden (`config`, `secrets`, `log`, `store`, `proxy`, `fetch`, `githubFetch`, `timeouts`, `clock`, `demo`, `http`, …), so tests run the whole app in-process with fakes. Neither function exits the process. A store that can't load throws a `StoreError`.
 
 **`index.js`** is a thin entry point. It does three things:
-- calls `createApp()`;
+- calls `bootApp()`. A failure exits 1 after one log line: `store.load_failed` for a `StoreError`, else `app.init_failed` (a `ConfigError` carries `BAD_<NAME>`);
 - listens, printing the listen line, which `test-support/server.js` matches, so keep it byte for byte;
-- maps `SIGTERM`/`SIGINT` to `app.shutdown()`, which flushes the store before exit.
+- leaves through one exit latch. `SIGTERM` runs `app.drain()` within `DRAIN_DEADLINE_MS` and exits 0, or 1 if it couldn't save. `SIGINT` drains the same way but always exits 130, whatever the save result. That matters because Drop's PM2 mode stops an app with SIGINT (PM2's default kill signal) and Docker with SIGTERM: a failed final save shows only in the log (`store.write_failed` for Postgres, `store.save_failed` for the file store, `app.drain_timeout` if the drain hung), not in the exit code. A lost store (`onFatal`), an unhandled rejection or an uncaught exception logs, drains for at most 2 seconds and exits 1. The first reason to leave wins.
 
 **`lib/config.js`** reads the environment once:
 - `loadConfig()` returns a frozen object of plain settings.
-- `loadSecrets()` returns `ROOM_PASSCODE` and `ANTHROPIC_API_KEY`, redacted in `JSON.stringify` and `util.inspect`.
+- `consumeSecrets()` returns `ROOM_PASSCODE`, `ANTHROPIC_API_KEY`, `DATABASE_URL`, `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, redacted in `JSON.stringify` and `util.inspect`, and deletes them from `process.env`.
+- `checkSignin(config, secrets)` checks that `SIGNIN=github` can work: both GitHub secrets (`BAD_SIGNIN_SECRETS`) and an https `PUBLIC_URL`, or http only on localhost (`BAD_PUBLIC_URL`).
+- New variables are strict: an invalid value throws `ConfigError` with code `BAD_<NAME>`, and the message never holds the value.
 
-Secrets are never in the config object. `createApp` deletes both from `process.env` after reading them.
+Secrets are never in the config object.
 
 **`lib/log.js`** writes one line per event to stderr. Its rules:
-- **Fields:** only allowlisted fields are written: room, seat, status, httpStatus, errorClass, code, durationMs, stack and reason (`reason` takes only `ttl` or `capacity`). A new field must be added to `ALLOWED`, and a test pins that list.
+- **Fields:** only allowlisted fields are written: room, seat, status, httpStatus, errorClass, code, durationMs, stack, reason and kind (`reason` takes only `ttl` or `capacity`; `kind` takes only a record kind or `meta`). A new field must be added to `ALLOWED`, and a test pins that list.
 - **Messages:** an error's `message` is **never** logged, because it can echo model output or a card. Log errors as `log.error(event, fields, err)`. The logger takes the class, a vetted code and well-formed stack frames from `err`.
 
-**`lib/store.js`** is persistence only. It holds the `rooms` Map and the daily `usage` in memory, and saves them to `rooms.json`. The rules:
-- **How a save is written:** each room is serialised on its own, so one bad room can't block the save. The write goes to a temp file (mode 0600, `fsync`) and is then renamed over `rooms.json`, with retries on Windows.
-- **Corrupt files:** a corrupt file is quarantined, and a room with a bad shape is preserved in a `.partial-<ts>` copy. Neither is silently dropped.
-- **Unreadable files:** any other read failure stops startup rather than overwriting the file.
-- **Schema versions:** a file with a newer `schemaVersion` is refused. Rolling back to an older build after a schema bump therefore crash-loops until the file is restored or migrated.
+**Persistence** is three modules with one public API. The in-memory state is the runtime source of truth, and the domain stays synchronous; a store loads it, then writes behind it.
+- **`lib/store-core.js`** is shared by both stores: validation, migrations, serialisation, the record kinds (rooms, `usage`, and the account collections `user`, `session` and `agentkey` from `collection(kind)`), and the write cycle. The write cycle runs one write at a time, never loses a change made during a write, backs off after a failure, reports `health()`, and `drain()`s.
+- **`lib/store.js`** is the file store, `rooms.json`. Each room is serialised on its own, so one bad room can't block a save. A write goes to a temp file (mode 0600, `fsync`), then is renamed over `rooms.json`, with retries on Windows. A file that can't be parsed is quarantined as `.corrupt-<ts>` (5 kept); a room with a bad shape, or a bad account record, is kept in a `.partial-<ts>` copy (never pruned). Any other read failure stops startup rather than overwrite the file.
+- **`scripts/export-rooms.js`** is the rollback export: it reads `behalf_records` (one read-only transaction, no lock) and writes a `rooms.json` in the file store's own shape, to a new path. It refuses to overwrite a file and never prints the URL or a record.
+- **`lib/store-pg.js`** is the Postgres store, one table `behalf_records (kind, id, doc, updated_at)`. One connection holds a session advisory lock and runs every transaction:
+  - **Holder wins.** A boot that can't get the lock within 45 seconds stops with `ELOCKED`. The platform runs one instance, stopping the old one before starting the new.
+  - **Epoch fence.** Each load writes a fresh epoch into the meta row, and every transaction (writes, the import, the migration) locks that row and refuses to go on if the epoch is not its own (`EEPOCH`).
+  - **Timing.** The writer session's `statement_timeout` (`STATEMENT_MS`, 3 s) is below the drain deadline (`DRAIN_DEADLINE_MS`, default 4 s), so a hung final write gives up before the drain does; releasing the connection has its own two 2 s limits. Drop kills the app 5 s after the stop signal under PM2 and 10 s under Docker (`docker stop -t 10`).
+  - **Fatal on loss.** If the connection ends, a statement gets no answer within its watchdog, or the epoch changes, the store logs `store.lock_lost` (`store.connection_lost` when a statement got no answer) and calls `onFatal`, and the process exits. Nothing reconnects; the platform restarts it.
+  - **Zombies** are reaped by the server: `idle_in_transaction_session_timeout`, plus TCP keepalive settings on the writer session for a dead peer holding the lock outside a transaction. Do not add `idle_session_timeout`: it would kill the legitimate holder.
+  - **The one-time import** copies `DROP_DATA_DIR/rooms.json` into an empty table in one transaction, then renames the file `rooms.json.imported-<ts>`. A crash leaves the table empty and the next boot imports again.
+  - Boot also refuses a transaction-mode pooler (`EPOOLER`, best-effort) and a table the role doesn't own (`ETABLEOWNER`). Database errors reach the logger as `PG_<SQLSTATE>`; messages, rows and the URL are never logged.
+- **Schema versions:** data with a newer `schemaVersion` is refused (`EFUTURESCHEMA`). An older build that predates accounts drops the account collections on its next write.
 
 **`lib/rooms.js`** is the domain. It owns the room lifecycle, the turn loop and the quota, and it never touches HTTP:
 - **The turn loop.** `run(room)` drives built-in proxies until one of these happens: agreement, escalation, `maxTurns` (stalled), an error, or a turn owned by an **external** seat. For an external seat it sets `waitingOn` and returns. The external agent then calls in through `externalTurn()`, which re-enters `run()`. `room.running` is the re-entrancy guard.
@@ -87,9 +101,13 @@ Secrets are never in the config object. `createApp` deletes both from `process.e
 - the SSE hub, which hears `onChange` and caps connections per room;
 - the `/health` build fingerprint.
 
-It never listens and never touches the store or the turn loop. The client IP comes from `lib/net.js`: `clientIp(req, trust)` returns a canonical address. It uses the last `X-Forwarded-For` entry only when `makeTrustProxy(TRUST_PROXY)` trusts the socket peer and the entry is a valid IP; otherwise it uses the socket address. `canonicalIp` is the single address grammar for both trust decisions and rate-limit keys. Static files resolve through `resolveStatic()`, which refuses any path that escapes `web/`. **`lib/errors.js`** holds `ApiError`, a status code plus a client-safe message, and `ProxyError`.
+It never listens and never touches the store or the turn loop. The client IP comes from `lib/net.js`: `clientIp(req, trust)` returns a canonical address. It uses the last `X-Forwarded-For` entry only when `makeTrustProxy(TRUST_PROXY)` trusts the socket peer and the entry is a valid IP; otherwise it uses the socket address. `canonicalIp` is the single address grammar for both trust decisions and rate-limit keys. Static files resolve through `resolveStatic()`, which refuses any path that escapes `web/`. **`lib/errors.js`** holds the error classes (`ApiError` is an HTTP status, a client-safe message and an optional machine `apiCode`; also `ProxyError`, `BudgetError` and `AuthError`), factories for the shared refusals (`savingUnavailable`, `signinRequired`, …) and the fixed MCP agent-key sentences.
 
-**`ops`** is the shared operations object passed to `lib/mcp.js`, so the web API and MCP call the same functions. Its members are frozen: all synchronous except `externalTurn`, and `lib/mcp.js` does not await them.
+**Sign-in** (`SIGNIN=github`) is two modules:
+- **`lib/auth.js`** works on plain values: no request, no response, no cookie. GitHub OAuth with PKCE S256 and no scope; a state works once; the GitHub token is used for one profile read and dropped. Records: `user` by GitHub id; `session` and `agentkey` by the SHA-256 of their token, which is never stored. A session lasts 7 days idle and 30 at most; an agent key ends after 90 days unused. Callbacks are rate-limited per address, and minting keys per user. Blocked ids (`GITHUB_BLOCKED_IDS`) count as absent everywhere.
+- **`lib/http-auth.js`** owns the cookies and routes: `GET /auth/github`, `GET /auth/github/callback`, `POST /auth/logout`, `GET /api/me`, `POST /api/me/agent-key` and `POST /api/me/agent-key/revoke`. Two `__Host-` cookies, both HttpOnly, Secure, SameSite=Lax: the OAuth state (10 minutes) and the session (30 days). `requireUser(req)` guards every cookie-authenticated action that needs a user: an `Origin` equal to `PUBLIC_URL`'s (403), a JSON content type (415), and a valid session (401). Logout passes the first two checks only, so it works with an expired session. With sign-in off, only `GET /api/me` answers, as signed out. `/mcp` never reads a cookie.
+
+**`ops`** is the shared operations object passed to `lib/mcp.js`, so the web API and MCP call the same functions. Its members are frozen: all synchronous except `externalTurn`, and `lib/mcp.js` does not await them. `signinOn` and `userForAgentKey(key)` (the key's `{ id, login }`, or null) serve the agent-key check.
 
 **`lib/pxp.js`** is the protocol core: canonical JSON, SHA-256 sealing, the ledger and envelope enforcement. `buildEnvelope` converts untrusted raw proxy output into a valid envelope and applies the rules **server-side**, recording each violation in `protocol_flags`. For example, `stated`/`sourced` with no `ref` is downgraded to `assumed`, and citing the other side as `stated` is downgraded. Agreeing while raising a conflict, or accepting a proposal whose `depends_on` includes a claim you disputed, is withheld unless your principal answered an escalation after the dispute. Ledger hashes are computed as `sha256(prev + canonical({n,type,at,data}))`. If you change that formula or the shape of ledger entries, `verifyLedger` fails for every room already persisted.
 
@@ -110,7 +128,7 @@ Prompts:
 - **Spend hook.** `beforeCall(room, kind)` runs before every attempt. It is the spend hook, and whatever it throws passes through unchanged.
 - **Errors.** Every failure is a `ProxyError`. Its message comes only from the HTTP status and an allowlisted Claude error type. The key, the request and Claude's free-text error message never appear in an error or a log.
 
-**`lib/mcp.js`** is a stateless Streamable-HTTP MCP server at `/mcp`. It returns JSON responses only and has no server-initiated stream (GET returns 405). The seat link (`/room/ID?seat=A&t=TOKEN`) is the credential. `wait_for_turn` long-polls for at most 25s. A JSON-RPC batch is capped at `MAX_BATCH` (20): a larger batch gets HTTP 400 with `-32600`, and none of its messages are dispatched. MCP session IDs exist only to remember the client's name for the seat label.
+**`lib/mcp.js`** is a stateless Streamable-HTTP MCP server at `/mcp`. It returns JSON responses only and has no server-initiated stream (GET returns 405). The seat link (`/room/ID?seat=A&t=TOKEN`) is the credential for everything in a room. With sign-in on, `create_room` also needs the person's agent key as `Authorization: Bearer <key>` (the scheme is case-insensitive). It is resolved on every request and refused before the domain with a fixed sentence (`AGENT_KEY_MISSING` / `AGENT_KEY_REJECTED`). The `INSTRUCTIONS` and tool text depend on the mode; with sign-in off they are unchanged. `wait_for_turn` long-polls for at most 25s. A JSON-RPC batch is capped at `MAX_BATCH` (20): a larger batch gets HTTP 400 with `-32600`, and none of its messages are dispatched. MCP session IDs exist only to remember the client's name for the seat label.
 
 **`lib/demo.js`** holds the scripted "hallucination cascade" scenario. Its scripted raw outputs pass through the same `buildEnvelope` enforcement as live turns. The escalation answer chooses a branch (`dedupe` / `accept`), and that branch's script then replaces `room.script`.
 
@@ -133,6 +151,9 @@ Prompts:
 - `agreement-view.js` does the same for the agreement page.
 - `links.js` owns seat credentials and every room or brief link.
 - `markdown.js` is the safe spec renderer.
+- `account-view.js` holds the sign-in wording: the header account slot, the start prompt and the agent-key panel (`parseMe`, `slot`, `keyPanel`).
+
+`account.js` is the one stateful page module: it asks `/api/me` once (not at all with sign-in off), fills the header's account slot, and tells subscribers when the answer changes. The account slot sits after the main nav on home, connect and spec; it is empty and hidden with sign-in off.
 
 **The room page** is split into five scripts, loaded in this order:
 1. `room-core.js`: state, credentials, post/refresh and the live stream
@@ -154,7 +175,7 @@ How the room page talks to the server:
 - **`ui.css`:** tokens and components, in `@layer`s.
 - **`ui.js`** (`window.UI`):
   - safe HTML: `html`, `render`, `url`, `esc`
-  - requests: `request`, `loadConfig`
+  - requests: `request`, `loadConfig` (resolves `{ live, passcode, signin }`)
   - controls and forms: `setBusy`, `disableAll`, `byId`, `copyField`, `fieldError`, `describedBy`
   - messages and icons: `callout`, `alertBox`, `icon`, `toast` (visible feedback), `announce` (screen-reader only)
   - clipboard: `copy`
@@ -190,6 +211,20 @@ The client-facing error sentences live in `lib/rooms.js`:
 - the AI-service and generic `room.error` sentences (the `ROOM_ERRORS` set);
 - the draft 502.
 
-`hydrate()` keeps only that fixed set when it loads `room.error`. If you add a sentence, add it there too. `web/js/room-view.js` `errorMessage()` has its own sentence for each status code an action can return, and a test counts those codes in the server source.
+`hydrate()` keeps only that fixed set when it loads `room.error`. If you add a sentence, add it there too.
+
+`web/js/room-view.js` `errorMessage(action, status, code)` has its own sentence for each refusal an action can get. Refusals with a machine code are listed by hand in `test-support/refusals.js` `EXPECTED`; its census finds every code the server can send (`ApiError` third arguments, `lib/errors.js` exports and factories, `*_limit` literals), and a test fails on any code that isn't accounted for. Refusals without a code are matched by status.
+
+Sign-in has three pairs to keep together:
+- the MCP agent-key header, the mode-dependent `INSTRUCTIONS` in `lib/mcp.js`, and `spec/SPEC.md` §8;
+- the refusal sentences in `lib/errors.js` factories and `errorMessage`'s codes;
+- `SIGNIN_NEXT` in `web/js/account-view.js` and the paths `beginLogin` allows in `lib/auth.js` (a test compares them).
+
+Deploy and configuration have more places to keep together:
+- the deploy hostname `behalf.dropkit.sh`: the `PUBLIC_URL` default in `lib/config.js`, `drop.yaml` (the `env` value and the secret description), the README (the `PUBLIC_URL` row, deploy steps 1 and 3, and the `claude mcp add` line) and, outside the repo, the callback URL of the GitHub OAuth app. A redeploy that changes the URL touches all of them;
+- the secrets: `SECRET_NAMES` and the `loadSecrets` fields in `lib/config.js`, `redacted()`, the `secrets:` in `drop.yaml`, `checkSignin`, and the README rows;
+- the drain timing: `DRAIN_DEADLINE_MS` (`lib/config.js`), `STATEMENT_MS` and the release limits in `lib/store-pg.js`, and the platform's kill timeout (Drop: PM2 5 s, Docker 10 s). The statement timeout stays under the drain default, and the drain default under the kill timeout;
+- the README "Startup refusals" table and the `StoreError` and `ConfigError` codes in `lib/store-core.js`, `lib/store.js`, `lib/store-pg.js` and `lib/config.js`. The table covers the common cases, not every code;
+- the record kinds: `rowsToDoc` (`lib/store-pg.js`) and `scripts/export-rooms.js` read the kind table in `lib/store-core.js`, so a new kind goes in `KIND` and nowhere else.
 
 The shared writing guidance (`lib/writing.js`) is presentation guidance, not a protocol rule. It is interpolated into `turnSystem`, the MCP `INSTRUCTIONS` and `AUTH_SYSTEM`. Change it in that one place.
