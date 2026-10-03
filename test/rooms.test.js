@@ -488,6 +488,7 @@ test('createApp does not load an injected store, and close() closes it', T, asyn
     load() { calls.push('load'); throw new Error('must not be called'); },
     save(id) { calls.push('save:' + id); },
     resetUsage() {},
+    isSkipped() { return false; },
     close() { calls.push('close'); },
   };
   const app = createApp({ config: loadConfig({}), secrets: loadSecrets({}), log: createLog({ stream: { write() {} } }), proxy: fakeProxy([]), store });
@@ -1062,4 +1063,46 @@ test('a sourced claim whose ref is an array of primitives is not downgraded (the
   assert.equal(env.claims[0].origin, 'sourced');
   assert.equal(env.claims[0].ref, 'spec');
   assert.equal(env.claims[1].origin, 'assumed', 'an unusable ref is still an assumption');
+});
+
+test('a new room id is drawn again while the store reports it as a skipped room', T, (t) => {
+  const { app, domain } = setup(t);
+  const seen = [];
+  const SKIPPED = 3;
+  app.store.isSkipped = (kind, id) => { assert.equal(kind, 'room'); seen.push(id); return seen.length <= SKIPPED; };
+  const room = domain.createDemoRoom();
+  assert.equal(seen.length, SKIPPED + 1, 'three ids were refused, the fourth was taken');
+  assert.equal(room.id, seen[SKIPPED]);
+  assert.ok(!seen.slice(0, SKIPPED).includes(room.id));
+});
+
+// Plays the given bytes in order for the room ids (id(8)); every other randomBytes call is the real one.
+function withIdSources(sources, fn) {
+  const crypto = require('node:crypto');
+  const real = crypto.randomBytes;
+  const queue = sources.slice();
+  crypto.randomBytes = (n, ...rest) => (n === 8 && queue.length ? Buffer.alloc(8, queue.shift()) : real(n, ...rest));
+  try { return fn(); } finally { crypto.randomBytes = real; }
+}
+
+test('a new room id is drawn again when it equals the id of a room that exists', T, (t) => {
+  const { domain } = setup(t);
+  withIdSources([1, 1, 2], () => {
+    const first = domain.createDemoRoom();
+    const second = domain.createDemoRoom();
+    assert.notEqual(second.id, first.id, 'the second draw was the same id, so it was drawn again');
+    assert.equal(domain.rooms.size, 2, 'the first room was not overwritten');
+    assert.equal(domain.rooms.get(first.id), first);
+  });
+});
+
+test('a new room id is drawn again when the store says it is a skipped room, though no live room has it', T, (t) => {
+  const { app, domain } = setup(t);
+  let refused;
+  app.store.isSkipped = (kind, id) => { if (refused === undefined) { refused = id; return true; } return false; };
+  withIdSources([1, 2], () => {
+    const room = domain.createDemoRoom();
+    assert.ok(refused, 'the store was asked');
+    assert.notEqual(room.id, refused);
+  });
 });
