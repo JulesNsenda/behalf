@@ -23,6 +23,8 @@
     var touched = false;   // a region was written during this update
     var replayed = false;
     var observer = null;
+    var shownDecision = null;  // key of the last decision card shown (entrance motion runs only for a new one)
+    var shownOutcome = null;   // outcome text last shown (same rule)
 
     // True when `sig` is not what the region last rendered, and remembers it.
     function changed(name, sig) {
@@ -55,6 +57,8 @@
       seen = {};
       started = false;
       rowCount = 0;
+      shownDecision = null;
+      shownOutcome = null;
       stopWatching();
       var slot = UI.byId('details-slot');
       var text = A.text;
@@ -183,7 +187,7 @@
 
     // ---- decision ----
 
-    function decisionCard(dv) {
+    function decisionCard(dv, enter) {
       var body;
       if (dv.options) {
         body = html`<div class="cluster">${dv.options.map(function (o, i) {
@@ -197,7 +201,7 @@
           </div>
           <div class="cluster"><button class="btn btn--primary" type="button" id="decision-send">${A.text.answerButton}</button></div>`;
       }
-      return html`<section class="decision decision--party ${ui.partyClass(dv.seat)}" id="decision-card" aria-labelledby="decision-title" aria-describedby="decision-question">
+      return html`<section class="decision decision--party ${ui.partyClass(dv.seat)}${enter ? ' decision--enter' : ''}" id="decision-card" aria-labelledby="decision-title" aria-describedby="decision-question">
         <h2 class="decision__title" id="decision-title" tabindex="-1">${dv.heading}</h2>
         <p class="decision__question" id="decision-question">${dv.quote}</p>
         ${body}
@@ -269,7 +273,10 @@
         watchDecision(null);
         return false;
       }
-      ui.fill(slot, decisionCard(dv));
+      // Motion only for a card that appears during the session, never one already pending at page load.
+      var enter = started && dv.key !== shownDecision;
+      shownDecision = dv.key;
+      ui.fill(slot, decisionCard(dv, enter));
       wireDecision(dv);
       UI.byId('dock-text').textContent = dv.dock.text;
       UI.byId('dock-answer').textContent = dv.dock.action;
@@ -290,8 +297,8 @@
       return UI.callout('danger', html`<p>${pb.text}</p>${resume}<div id="resume-error" hidden></div>`);
     }
 
-    function outcomeBlock(oc, room) {
-      return html`<div class="outcome outcome--${oc.tone}"><div class="outcome__body"><h2 class="outcome__title">${oc.text}</h2></div><a class="btn btn--primary" href="${UI.url(Links.briefPath(A.roomId, room.seat))}">${oc.linkLabel}</a></div>`;
+    function outcomeBlock(oc, room, enter) {
+      return html`<div class="outcome outcome--${oc.tone}${enter ? ' outcome--enter' : ''}"><div class="outcome__body"><h2 class="outcome__title">${oc.text}</h2></div><a class="btn btn--primary" href="${UI.url(Links.briefPath(A.roomId, room.seat))}">${oc.linkLabel}</a></div>`;
     }
 
     function wireResume() {
@@ -343,7 +350,9 @@
       var replayable = Boolean(oc && oc.replayable);
       if (!changed('outcome', JSON.stringify([oc, pb, room.seat, replayable, room.status]))) return;
       var replay = replayable ? html`<div class="cluster"><button class="btn btn--secondary" type="button" id="replay-btn">${A.text.replay}</button><div id="replay-error" hidden></div></div>` : false;
-      ui.fill(UI.byId('outcome-slot'), oc || pb ? html`${oc ? outcomeBlock(oc, room) : false}${pb ? problemBlock(pb) : false}${replay}` : null);
+      var enter = Boolean(oc) && started && oc.text !== shownOutcome;
+      shownOutcome = oc ? oc.text : null;
+      ui.fill(UI.byId('outcome-slot'), oc || pb ? html`${oc ? outcomeBlock(oc, room, enter) : false}${pb ? problemBlock(pb) : false}${replay}` : null);
       wireResume();
       wireReplay();
     }

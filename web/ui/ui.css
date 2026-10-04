@@ -535,6 +535,13 @@
   .decision--party { border-color: var(--party, var(--ink)); }
   .decision__title { font-size: var(--size-22); line-height: 1.35; }
   .decision__note { font-size: var(--size-15); color: var(--ink-subtle); }
+  /* one-shot: add only to a card that has just appeared; the pulse is an outline in the seat colour */
+  .decision--enter { animation: rise .3s ease-out both, attention .9s ease-out .3s 1 both; outline: 0 solid var(--party, var(--ink)); }
+  @keyframes attention {
+    0% { outline-width: 0; outline-offset: 0; }
+    40% { outline-width: 4px; outline-offset: 4px; }
+    100% { outline-width: 0; outline-offset: 8px; }
+  }
 
   .outcome { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-5); padding: var(--space-6); border-radius: var(--radius); }
   .outcome__body { flex: 1 1 300px; display: flex; flex-direction: column; gap: var(--space-1); }
@@ -542,6 +549,8 @@
   .outcome--ok, .outcome--warn { background: var(--tone-soft, var(--surface)); color: var(--tone-ink, var(--ink)); }
   .outcome--ok { color: var(--ok-muted); }
   .outcome--ok .outcome__title, .outcome--warn .outcome__title { color: var(--tone-strong, var(--ink)); }
+  .outcome--enter { animation: outcome-in .3s ease-out both; }
+  @keyframes outcome-in { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: none; } }
 
   .points {
     list-style: none; padding: 0; overflow: hidden;
@@ -649,6 +658,13 @@
   }
   .disclosure[open] > summary::after { margin-top: 4px; transform: rotate(225deg); }
   .disclosure__body { padding: var(--space-1) var(--space-4) var(--space-4); color: var(--ink-muted); font-size: var(--size-15); }
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (interpolate-size: allow-keywords) and selector(::details-content) {
+      :root { interpolate-size: allow-keywords; }
+      .disclosure::details-content { block-size: 0; overflow: clip; overflow-clip-margin: 6px; transition: block-size .2s ease, content-visibility .2s allow-discrete; }
+      .disclosure[open]::details-content { block-size: auto; }
+    }
+  }
 
   /* mono hash rows */
   .record-list { list-style: none; padding: 0; font-family: var(--font-mono); font-size: var(--size-14); color: var(--ink-muted); }
@@ -745,3 +761,13 @@
     .page { min-height: 0; }
   }
 }
+
+/* ------------------------------------------------------------------ page transitions */
+/* Outside every layer on purpose: @view-transition is an at-rule for the document, not a component. Names
+   sit on the real header and outcome only, never on the /ui or home samples, so no name is ever doubled. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; }
+}
+.page > .site-header { view-transition-name: site-header; }
+::view-transition-group(site-header) { animation: none; }
+#outcome-slot .outcome, #brief-outcome { view-transition-name: outcome; }
