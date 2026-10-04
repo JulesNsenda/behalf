@@ -77,12 +77,14 @@
     function claimBlock(c) {
       var pillClass = c.origin === 'stated' ? 'pill pill--party ' + ui.partyClass(c.seat) : c.origin === 'sourced' ? 'pill' : 'pill pill--warn';
       var text = c.unconfirmed ? html`<p><span class="mark-unconfirmed">${c.text}</span></p>` : html`<p>${c.text}</p>`;
-      var accepted = c.accepted.map(function (n) { return html`<span>${RV.reviewLine(n)}</span>`; });
-      var meta = html`<div class="claim-meta"><span class="${pillClass}">${c.pill}</span>${accepted}</div>`;
-      var note = c.note ? html`<span class="bubble__note">${c.note}</span>` : false;
+      // The row holds the pill, the room's fixed note and, when every review accepted, those reviews.
+      // Any warning among the reviews puts all of them below, in order, as full lines.
+      var note = c.note ? html`<span>${c.note}</span>` : false;
+      var inRow = c.allAccepted ? c.reviews.map(function (n) { return html`<span>${RV.reviewLine(n)}</span>`; }) : [];
+      var meta = html`<div class="claim-meta"><span class="${pillClass}">${c.pill}</span>${note}${inRow}</div>`;
       var detail = c.detailQuote ? html`<span class="bubble__note">${c.detailQuote}</span>` : false;
-      var warnings = c.warnings.map(function (n) { return html`<span class="bubble__note">${RV.reviewLine(n)}</span>`; });
-      return html`${text}${meta}${note}${detail}${warnings}`;
+      var lines = c.allAccepted ? [] : c.reviews.map(function (n) { return html`<span class="bubble__note">${RV.reviewLine(n)}</span>`; });
+      return html`${text}${meta}${detail}${lines}`;
     }
 
     function proposalBlock(mv) {

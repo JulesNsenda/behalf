@@ -85,7 +85,9 @@
     return isPlaceholderName(n) ? '' : n;
   }
 
-  function quoted(v) { return '“' + str(v) + '”'; }
+  // Wrapped in curly quotes. A curly or angle quote inside the text becomes a straight apostrophe, so text
+  // from an AI can't close the quote early and pass the rest off as the room's own words.
+  function quoted(v) { return '“' + str(v).replace(/[“”„‟«»]/g, "'") + '”'; }
 
   function cap(v) { return v.charAt(0).toUpperCase() + v.slice(1); }
 
@@ -376,31 +378,30 @@
     return { by: review.by, verdict: verdict, sentence: reviewSentence(R, review.by, verdict), reason: str(review.reason) };
   }
 
-  // {pill, note, detail, detailQuote} for a claim's ref. pill replaces the origin pill when the ref says
-  // where a stated claim came from; note is fixed wording; detail is the ref as plain text to escape and
-  // detailQuote is the same, quoted and attributed.
-  //  - stated, clause path into the instructions: pill "From Kwame's instructions" (your, for the viewer)
-  //  - stated, clause path into an answer: pill "From Kwame's answer"
+  // {note, detailQuote} for a claim's ref. note is fixed wording (never AI text) and sits in the claim's
+  // meta row; detailQuote is the ref, quoted and attributed, for a line of its own.
+  //  - stated, clause path into the instructions: note "From Kwame's instructions" (your, for the viewer)
+  //  - stated, clause path into an answer: note "From Kwame's answer"
   //  - stated, anything else: the ref itself as a quoted detail
   //  - sourced, a ref that names something: "Source given: “ref”", never bare text
   //  - sourced, a clause-shaped ref: note "No source named"
   function refView(R, seat, origin, ref) {
-    var none = { pill: null, note: null, detail: null, detailQuote: null };
+    var none = { note: null, detailQuote: null };
     ref = str(ref);
     if (!ref) return none;
     var whose = who(R, seat, 'your');
     var parsed = parseRef(ref);
     if (origin === 'stated') {
       switch (parsed.kind) {
-        case 'instruction': return { pill: 'From ' + whose + ' instructions', note: null, detail: null, detailQuote: null };
-        case 'answer': return { pill: 'From ' + whose + ' answer', note: null, detail: null, detailQuote: null };
-        default: return { pill: null, note: null, detail: ref, detailQuote: quoted(ref) };
+        case 'instruction': return { note: 'From ' + whose + ' instructions', detailQuote: null };
+        case 'answer': return { note: 'From ' + whose + ' answer', detailQuote: null };
+        default: return { note: null, detailQuote: quoted(ref) };
       }
     }
     if (origin === 'sourced') {
       return parsed.clause
-        ? { pill: null, note: 'No source named', detail: null, detailQuote: null }
-        : { pill: null, note: null, detail: ref, detailQuote: 'Source given: ' + quoted(ref) };
+        ? { note: 'No source named', detailQuote: null }
+        : { note: null, detailQuote: 'Source given: ' + quoted(ref) };
     }
     return none;
   }
@@ -417,10 +418,7 @@
     var full = findClaim(R, claim.id);
     var rv = (full && full.reviews) || claim.reviews || [];
     var notes = rv.map(function (r) { return reviewNote(R, r); });
-    var warnings = notes.filter(function (n) { return n.verdict !== 'accept'; });
-    var accepted = notes.filter(function (n) { return n.verdict === 'accept'; });
     var ref = refView(R, seat, origin, claim.ref);
-    if (ref.pill) pill = ref.pill;
 
     return {
       id: claim.id,
@@ -431,11 +429,11 @@
       tone: origin === 'stated' ? 'party' : origin === 'sourced' ? 'neutral' : 'warn',
       unconfirmed: origin === 'assumed',
       note: ref.note,
-      detail: ref.detail,
       detailQuote: ref.detailQuote,
-      warnings: warnings,
-      accepted: accepted,
-      flagged: warnings.length > 0
+      reviews: notes,
+      // Every review accepted: they can share the meta row. Otherwise all go in order as full lines.
+      allAccepted: notes.length > 0 && notes.every(function (n) { return n.verdict === 'accept'; }),
+      flagged: notes.some(function (n) { return n.verdict !== 'accept'; })
     };
   }
 
@@ -581,9 +579,10 @@
     };
   }
 
-  // The visible line for one review: "Kwame's AI disagrees with this: the reason".
+  // The visible line for one review: "Kwame's AI disagrees with this: “the reason”". The reason is the AI's
+  // own text, so it is quoted.
   function reviewLine(note) {
-    return note.sentence + (note.reason ? ': ' + note.reason : '');
+    return note.sentence + (note.reason ? ': ' + quoted(note.reason) : '');
   }
 
   // Everything one chat message needs, so room.js holds no wording.
@@ -592,6 +591,7 @@
     var seat = envSeat(env);
     var speaker = aiName(R, seat);
     var agreed = env.status === 'agree';
+    var hideAsked = askedHidden(R, env);
     return {
       seq: env.seq,
       seat: seat,
@@ -603,7 +603,7 @@
       claims: (Array.isArray(env.claims) ? env.claims : []).map(function (c) { return claimView(R, c); }),
       proposal: proposalView(R, env),
       acceptEvent: agreed ? speaker + ' accepted the proposal' : null,
-      escalationEvents: escalationEvents(R, env).filter(function (ev) { return !(ev.kind === 'asked' && askedHidden(R, env)); }),
+      escalationEvents: escalationEvents(R, env).filter(function (ev) { return !(ev.kind === 'asked' && hideAsked); }),
       flags: (Array.isArray(env.protocol_flags) ? env.protocol_flags : []).map(function (f) { return flagView(R, seat, f); })
     };
   }
@@ -768,8 +768,9 @@
     return byId;
   }
 
-  // Changes when a message's answer or its claims' review verdicts change. byId is claimsById(R), for
-  // callers that fingerprint many messages of one room.
+  // Changes when a message's answer or its claims' review verdicts change, and when the viewer's pending
+  // question for it appears or goes (the "asked" line is hidden while it is pending). byId is claimsById(R),
+  // for callers that fingerprint many messages of one room.
   function fingerprint(R, env, byId) {
     env = env || {};
     var parts = [env.answer || '', env.answer_via || ''];
@@ -778,7 +779,7 @@
       var full = has.call(byId, c.id) ? byId[c.id] : c;
       parts.push(c.id + ':' + (full.reviews || []).map(function (r) { return r.by + '=' + r.verdict; }).join(','));
     });
-    if (askedHidden(R, env)) parts.push(true); // last, and only then: part 0 and every other fingerprint stay as they were
+    if (askedHidden(R, env)) parts.push('asked-hidden'); // last, and only then: part 0 and every other fingerprint stay as they were
     return JSON.stringify(parts);
   }
 

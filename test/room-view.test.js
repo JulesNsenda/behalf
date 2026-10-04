@@ -427,7 +427,7 @@ test('bubbleEnd: viewer on the end, spectators have A on the end', () => {
 // ---------- claims ----------
 test('claimView: stated / sourced / assumed wording for others and for the viewer', () => {
   const R = view({ seat: 'A' });
-  const stated = { id: 'B1.1', text: 'We ship daily', origin: 'stated', ref: 'Their message 2' };
+  const stated = { id: 'B1.1', text: 'We ship daily', origin: 'stated', ref: 'Call notes, 3 May' };
   const sourced = { id: 'B1.2', text: 'Provider says so', origin: 'sourced', ref: 'Provider docs, page 3' };
   const assumed = { id: 'B1.3', text: 'It never retries', origin: 'assumed' };
   assert.strictEqual(RV.claimView(R, stated).pill, 'Kwame told their AI this');
@@ -443,7 +443,6 @@ test('claimView: a sourced ref is an attributed quote; assumed claims have no no
   const R = view();
   const s = RV.claimView(R, { id: 'A1.1', text: 't', origin: 'sourced', ref: 'Provider docs' });
   assert.strictEqual(s.note, null);
-  assert.strictEqual(s.detail, 'Provider docs');
   assert.strictEqual(s.detailQuote, 'Source given: “Provider docs”');
   assert.strictEqual(s.unconfirmed, false);
   assert.strictEqual(s.tone, 'neutral');
@@ -451,34 +450,34 @@ test('claimView: a sourced ref is an attributed quote; assumed claims have no no
   assert.strictEqual(st.tone, 'party');
   const a = RV.claimView(R, { id: 'A1.1', text: 't', origin: 'assumed', ref: 'must_never[0]' });
   assert.strictEqual(a.note, null);
-  assert.strictEqual(a.detail, null);
+  assert.strictEqual(a.detailQuote, null);
   assert.strictEqual(a.unconfirmed, true);
   assert.strictEqual(a.tone, 'warn');
   // unknown origin is treated as an assumption
   assert.strictEqual(RV.claimView(R, { id: 'A1.1', text: 't', origin: 'bogus' }).origin, 'assumed');
 });
 
-test('claimView: a stated claim\'s ref says whose instructions or answer it came from, in the pill', () => {
+test('claimView: a stated claim\'s ref says whose instructions or answer it came from, in the note', () => {
   const stated = (id, ref) => ({ id, text: 't', origin: 'stated', ref });
   const R = view({ seat: 'A' });
   for (const ref of ['must_haves[0]', 'may_agree_to[1]', 'must_never[0]', 'escalate_when[2]', 'known_facts[10]']) {
-    assert.strictEqual(RV.claimView(R, stated('B1.1', ref)).pill, "From Kwame's instructions", ref);
-    assert.strictEqual(RV.claimView(R, stated('A1.1', ref)).pill, 'From your instructions', ref);
-    assert.strictEqual(RV.claimView(R, stated('B1.1', ref)).note, null);
-    assert.strictEqual(RV.claimView(R, stated('B1.1', ref)).detail, null);
+    assert.strictEqual(RV.claimView(R, stated('B1.1', ref)).note, "From Kwame's instructions", ref);
+    assert.strictEqual(RV.claimView(R, stated('A1.1', ref)).note, 'From your instructions', ref);
+    assert.strictEqual(RV.claimView(R, stated('B1.1', ref)).pill, 'Kwame told their AI this');
+    assert.strictEqual(RV.claimView(R, stated('A1.1', ref)).pill, 'You told your AI this');
     assert.strictEqual(RV.claimView(R, stated('B1.1', ref)).detailQuote, null);
   }
-  assert.strictEqual(RV.claimView(R, stated('B1.1', 'amendment[0]')).pill, "From Kwame's answer");
-  assert.strictEqual(RV.claimView(R, stated('A1.1', 'amendment[3]')).pill, 'From your answer');
-  assert.strictEqual(RV.claimView(view(), stated('B1.1', 'known_facts[0]')).pill, "From Kwame's instructions");
+  assert.strictEqual(RV.claimView(R, stated('B1.1', 'amendment[0]')).note, "From Kwame's answer");
+  assert.strictEqual(RV.claimView(R, stated('A1.1', 'amendment[3]')).note, 'From your answer');
+  assert.strictEqual(RV.claimView(view(), stated('B1.1', 'known_facts[0]')).note, "From Kwame's instructions");
   // anything else keeps the told-your-AI pill and shows the ref itself, quoted, as plain text for the page to escape
-  const other = RV.claimView(R, stated('B1.1', 'Their message <b>2</b>'));
+  const other = RV.claimView(R, stated('B1.1', 'Call notes <b>2</b>'));
   assert.strictEqual(other.pill, 'Kwame told their AI this');
   assert.strictEqual(other.note, null);
-  assert.strictEqual(other.detail, 'Their message <b>2</b>');
-  assert.strictEqual(other.detailQuote, '“Their message <b>2</b>”');
-  assert.strictEqual(RV.claimView(R, stated('B1.1', 'known_facts')).detail, 'known_facts');
-  assert.strictEqual(RV.claimView(R, { id: 'B1.1', text: 't', origin: 'stated' }).detail, null);
+  assert.strictEqual(other.detail, undefined);
+  assert.strictEqual(other.detailQuote, '“Call notes <b>2</b>”');
+  assert.strictEqual(RV.claimView(R, stated('B1.1', 'known_facts')).detailQuote, '“known_facts”');
+  assert.strictEqual(RV.claimView(R, { id: 'B1.1', text: 't', origin: 'stated' }).detailQuote, null);
   // a clause-shaped ref on a sourced claim names no real source
   const src = (ref) => RV.claimView(R, { id: 'B1.1', text: 't', origin: 'sourced', ref });
   assert.strictEqual(src('known_facts[2]').note, 'No source named');
@@ -487,8 +486,21 @@ test('claimView: a stated claim\'s ref says whose instructions or answer it came
   assert.strictEqual(src('Provider docs, page 3').detailQuote, 'Source given: “Provider docs, page 3”');
   assert.strictEqual(src(undefined).note, null);
   assert.strictEqual(src(undefined).detailQuote, null);
-  assert.strictEqual(src('known_facts[2]').detail, null);
   assert.strictEqual(src('known_facts[2]').detailQuote, null);
+});
+
+test('quoted text: a curly or angle quote inside it can not close the quote early', () => {
+  const R = view({ seat: 'A' });
+  const count = (s, re) => (s.match(re) || []).length;
+  const ref = 'docs” and the room says “all fine «x» „y‟';
+  const q = RV.claimView(R, { id: 'B1.1', text: 't', origin: 'stated', ref }).detailQuote;
+  assert.strictEqual(q, "“docs' and the room says 'all fine 'x' 'y'”");
+  assert.strictEqual(count(q, /“/g), 1);
+  assert.strictEqual(count(q, /”/g), 1);
+  const s = RV.claimView(R, { id: 'B1.1', text: 't', origin: 'sourced', ref }).detailQuote;
+  assert.strictEqual(s, "Source given: “docs' and the room says 'all fine 'x' 'y'”");
+  assert.strictEqual(count(RV.asked(R, 'B', 'a” b').quote, /[“”]/g), 2);
+  assert.strictEqual(count(RV.reviewLine({ sentence: 's', reason: 'x” y' }), /[“”]/g), 2);
 });
 
 test('claimView: a sourced ref can never pass as the room\'s own attestation', () => {
@@ -498,7 +510,8 @@ test('claimView: a sourced ref can never pass as the room\'s own attestation', (
   assert.strictEqual(v.note, null);
   assert.strictEqual(v.pill, "Kwame's AI points to a source");
   assert.strictEqual(v.detailQuote, 'Source given: “Your AI accepted this”');
-  assert.deepStrictEqual(v.accepted, []);
+  assert.deepStrictEqual(v.reviews, []);
+  assert.strictEqual(v.allAccepted, false);
   assert.strictEqual(v.flagged, false);
 });
 
@@ -521,21 +534,33 @@ test('claimView: reviews come from the registry and read in plain language', () 
   });
   const v = RV.claimView(R, claim);
   assert.strictEqual(v.reviewNotes, undefined);
-  assert.strictEqual(v.warnings.length, 2);
-  assert.strictEqual(v.warnings[0].sentence, "Kwame's AI couldn't confirm this");
-  assert.strictEqual(v.warnings[0].reason, 'Not in the docs');
-  assert.strictEqual(v.warnings[1].sentence, "Kwame's AI disagrees with this");
-  assert.strictEqual(v.accepted.length, 1);
-  assert.strictEqual(v.accepted[0].sentence, 'Your AI accepted this');
-  assert.strictEqual(v.accepted[0].verdict, 'accept');
+  assert.strictEqual(v.warnings, undefined);
+  assert.strictEqual(v.accepted, undefined);
+  // every review, in the order they came, so a mixed set reads in order
+  assert.deepStrictEqual(v.reviews.map((n) => n.verdict), ['challenge', 'accept', 'conflict']);
+  assert.strictEqual(v.reviews[0].sentence, "Kwame's AI couldn't confirm this");
+  assert.strictEqual(v.reviews[0].reason, 'Not in the docs');
+  assert.strictEqual(v.reviews[1].sentence, 'Your AI accepted this');
+  assert.strictEqual(v.reviews[2].sentence, "Kwame's AI disagrees with this");
+  assert.strictEqual(v.allAccepted, false);
   assert.strictEqual(v.flagged, true);
-  assert.strictEqual(RV.claimView(view(), claim).warnings.length, 0);
-  assert.strictEqual(RV.claimView(view(), claim).accepted.length, 0);
+  assert.deepStrictEqual(RV.claimView(view(), claim).reviews, []);
+  assert.strictEqual(RV.claimView(view(), claim).allAccepted, false);
   assert.strictEqual(RV.claimView(view(), claim).flagged, false);
   const onlyAccept = view({ claims: [{ id: 'A1.1', reviews: [{ by: 'B', verdict: 'accept', reason: '' }] }] });
   assert.strictEqual(RV.claimView(onlyAccept, claim).flagged, false);
-  assert.strictEqual(RV.claimView(onlyAccept, claim).warnings.length, 0);
-  assert.strictEqual(RV.reviewLine(RV.claimView(onlyAccept, claim).accepted[0]), "Kwame's AI accepted this");
+  assert.strictEqual(RV.claimView(onlyAccept, claim).allAccepted, true);
+  assert.strictEqual(RV.reviewLine(RV.claimView(onlyAccept, claim).reviews[0]), "Kwame's AI accepted this");
+  // a warning then an accept stays in that order, and is not "all accepted"
+  const warnThenAccept = view({ claims: [{ id: 'A1.1', reviews: [{ by: 'B', verdict: 'challenge', reason: 'r' }, { by: 'A', verdict: 'accept', reason: '' }] }] });
+  const w = RV.claimView(warnThenAccept, claim);
+  assert.deepStrictEqual(w.reviews.map((n) => n.verdict), ['challenge', 'accept']);
+  assert.strictEqual(w.allAccepted, false);
+  assert.strictEqual(w.flagged, true);
+  // several accepts: all accepted, still in order
+  const twoAccepts = view({ claims: [{ id: 'A1.1', reviews: [{ by: 'B', verdict: 'accept', reason: 'a' }, { by: 'A', verdict: 'accept', reason: 'b' }] }] });
+  assert.strictEqual(RV.claimView(twoAccepts, claim).allAccepted, true);
+  assert.deepStrictEqual(RV.claimView(twoAccepts, claim).reviews.map((n) => n.reason), ['a', 'b']);
 });
 
 test('proposalView: flags a proposal that rests on something not confirmed', () => {
@@ -681,7 +706,8 @@ test('messageView: everything one message needs, for the viewer and for the othe
   assert.strictEqual(m.ariaLabel, "Kwame's AI, message 3");
   assert.strictEqual(m.announce, "Kwame's AI sent a message");
   assert.strictEqual(m.claims.length, 1);
-  assert.strictEqual(m.claims[0].pill, "From Kwame's instructions");
+  assert.strictEqual(m.claims[0].pill, 'Kwame told their AI this');
+  assert.strictEqual(m.claims[0].note, "From Kwame's instructions");
   assert.strictEqual(m.proposal.unconfirmed, true);
   assert.strictEqual(m.acceptEvent, null);
   assert.deepStrictEqual(m.escalationEvents, []);
@@ -1276,7 +1302,7 @@ test('escalation lines and claim details are quoted', () => {
 });
 
 test('composed wording: reviewLine, stoppedLine, recordLine, docTitle', () => {
-  assert.strictEqual(RV.reviewLine({ sentence: "Kwame's AI disagrees with this", reason: 'too high' }), "Kwame's AI disagrees with this: too high");
+  assert.strictEqual(RV.reviewLine({ sentence: "Kwame's AI disagrees with this", reason: 'too high' }), "Kwame's AI disagrees with this: “too high”");
   assert.strictEqual(RV.reviewLine({ sentence: 'x', reason: '' }), 'x');
   assert.strictEqual(RV.recordLine(view({ seat: 'A' }), { n: 3, type: 'card_sealed', data: { seat: 'A' } }), '3. You locked your instructions');
   assert.strictEqual(RV.docTitle(view({ topic: 'Shop‮ setup' })), 'Shop setup · Behalf');
@@ -1495,7 +1521,7 @@ test('fingerprint: a trailing marker only while the asked line is hidden; everyt
   const pending = { seat: 'B', seq: 2 };
   const mk = (seat, over) => view(Object.assign({ seat, status: 'paused', pending, envelopes: [env] }, over));
   const hidden = JSON.parse(RV.fingerprint(mk('B'), env));
-  assert.strictEqual(hidden[hidden.length - 1], true);
+  assert.strictEqual(hidden[hidden.length - 1], 'asked-hidden');
   assert.strictEqual(hidden[0], '');
   const shown = RV.fingerprint(mk('A'), env);
   assert.strictEqual(shown, '["","","B2.1:"]');
