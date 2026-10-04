@@ -52,7 +52,7 @@
     if (!items.length) return UI.html``;
     return UI.html`<section class="stack stack--md" aria-labelledby="h-${id}">
       <h2 id="h-${id}">${heading}</h2>
-      <ul class="stack stack--sm">${items.map(renderItem)}</ul>
+      <ul class="stack stack--sm list-reset" role="list">${items.map(renderItem)}</ul>
     </section>`;
   }
 
@@ -60,13 +60,13 @@
   function reliedList(list) {
     if (!list.length) return UI.html``;
     return UI.html`<div class="stack stack--sm">${list.map(function (g) {
-      return UI.callout('warn', UI.html`<p><strong>${T.relied}</strong></p><p>${g.text}</p><p class="text-caption">${g.by}. ${g.note}</p>${reviewLines(g.reviews)}`);
+      return UI.callout('warn', UI.html`<p><strong>${T.relied}</strong></p><p>${g.text}</p><p class="text-caption">${g.note}</p>${reviewLines(g.reviews)}`);
     })}</div>`;
   }
 
   function guessesSection(list) {
     return section('guesses', T.guesses, list, function (g) {
-      return UI.html`<li class="card stack stack--sm"><p>${g.text}</p><p class="text-caption">${g.by}. ${g.note}</p>${reviewLines(g.reviews)}</li>`;
+      return UI.html`<li class="card stack stack--sm"><p>${g.text}</p><p class="text-caption">${g.note}</p>${reviewLines(g.reviews)}</li>`;
     });
   }
 

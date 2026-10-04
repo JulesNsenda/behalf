@@ -165,7 +165,7 @@ test('component-scoped properties are the expected ones', () => {
 // ---- helpers live only in the utilities layer ----
 // The utilities layer also holds class-level print rules for layout and component classes, so only
 // the single-purpose helpers are listed here. Each must be defined in the layer and appear nowhere else.
-const HELPERS = ['sr-only', 'text-muted', 'text-caption', 'text-small', 'lead', 'eyebrow-label', 'h1--xl', 'h1--display', 'h2--section', 'h2--lg', 'hide-sm', 'no-print', 'mono'];
+const HELPERS = ['sr-only', 'list-reset','text-muted', 'text-caption', 'text-small', 'lead', 'eyebrow-label', 'h1--xl', 'h1--display', 'h2--section', 'h2--lg', 'hide-sm', 'no-print', 'mono'];
 const utilitiesNode = (find((n) => n.prelude === '@layer utilities')[0] || {}).node;
 const classesIn = (selector) => Array.from(selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g), (m) => m[1]);
 

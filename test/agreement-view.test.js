@@ -210,10 +210,9 @@ test('guessesOnRecord: only unconfirmed claims the deal does not rely on', () =>
   const g = AV.guessesOnRecord(R, 'A');
   assert.strictEqual(g.length, 1);
   assert.strictEqual(g[0].text, 'Spare guess');
-  assert.strictEqual(g[0].by, "Kwame's AI");
   assert.strictEqual(g[0].note, "Not confirmed. Kwame's AI guessed this.");
   assert.deepStrictEqual(g[0].reviews, [{ sentence: 'Your AI couldn\'t confirm this', reason: 'Not sure' }]);
-  assert.strictEqual(AV.guessesOnRecord(R, 'B')[0].by, 'Your AI');
+  assert.strictEqual(AV.guessesOnRecord(R, 'B')[0].note, 'Not confirmed. Your AI guessed this.');
   assert.strictEqual(AV.guessesOnRecord(R, null)[0].reviews[0].sentence, "Lerato's AI couldn't confirm this");
 });
 
@@ -500,10 +499,10 @@ test('reliedGuesses: the guesses the agreement rests on, with who made them and 
   const dep = claim('B1.1', { text: 'It never retries', reviews: [{ by: 'A', verdict: 'challenge', reason: 'Unverified', seq: 3 }] });
   const R = roomOf(brief({ unverified_dependencies: [dep], unverified_in_record: [dep, claim('A2.1', { text: 'Spare' })] }));
   assert.deepStrictEqual(AV.reliedGuesses(R, 'A'), [{
-    text: 'It never retries', by: "Kwame's AI", note: "Not confirmed. Kwame's AI guessed this.",
+    text: 'It never retries', note: "Not confirmed. Kwame's AI guessed this.",
     reviews: [{ sentence: "Your AI couldn't confirm this", reason: 'Unverified' }],
   }]);
-  assert.strictEqual(AV.reliedGuesses(R, 'B')[0].by, 'Your AI');
+  assert.strictEqual(AV.reliedGuesses(R, 'B')[0].note, 'Not confirmed. Your AI guessed this.');
   assert.strictEqual(AV.guessesOnRecord(R, 'A').length, 1, 'the spare guess stays in the other list');
   assert.deepStrictEqual(AV.reliedGuesses(room(), 'A'), []);
   assert.deepStrictEqual(AV.reliedGuesses(null, 'A'), []);

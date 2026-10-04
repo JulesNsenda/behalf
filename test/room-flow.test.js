@@ -279,7 +279,7 @@ test('demo flow, accept branch: one unconfirmed point', async () => {
   assert.deepStrictEqual(AgreementView.points(s.agreed, 'A').terms.filter((t) => t.flagged).map((t) => t.flagLabel), ["Not covered by one person's instructions"]);
   const relied = AgreementView.reliedGuesses(s.agreed, 'A');
   assert.strictEqual(relied.length, 1);
-  assert.ok(relied[0].text && relied[0].by && relied[0].note);
+  assert.ok(relied[0].text && relied[0].note);
 
   assert.strictEqual(s.agreed.brief.unverified_dependencies.length, 1);
   assert.strictEqual(RoomView.guessCount(s.agreed), 1);

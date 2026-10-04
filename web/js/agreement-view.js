@@ -176,7 +176,6 @@
     var seat = RV.claimSeat(c);
     return {
       text: RV.str(c.text),
-      by: RV.aiName(N, seat),
       note: RV.guessNote(N, seat),
       reviews: problemReviews(N, c)
     };
