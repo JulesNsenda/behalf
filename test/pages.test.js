@@ -666,6 +666,49 @@ test('agreement.js: the address bar keeps ?seat and drops the token', () => {
   assert.ok(!/replaceState[^;]*\bt=/.test(src), 'no token goes back into the address');
 });
 
+test('agreement.js: a guess caption is the view-module note alone (it already names whose AI guessed)', () => {
+  const src = read(path.join(WEB, 'js', 'agreement.js'));
+  assert.ok(!/\$\{g\.by\}/.test(src), 'no separate "by" prefix before the note');
+  assert.strictEqual((src.match(/<p class="text-caption">\$\{g\.note\}<\/p>/g) || []).length, 2, 'the relied-on callout and the list row');
+  assert.match(src, /<ul class="stack stack--sm list-reset" role="list">/);
+});
+
+test('room-chat.js: the entrance motion is one-shot, keyed to the card or outcome, and never on the first render', () => {
+  const src = read(path.join(WEB, 'js', 'room-chat.js'));
+  assert.match(src, /var enter = started && dv\.key !== shownDecision;\s*shownDecision = dv\.key;/);
+  assert.match(src, /var enter = Boolean\(oc\) && started && oc\.text !== shownOutcome;\s*shownOutcome = oc \? oc\.text : null;/);
+  assert.match(src, /enter \? ' decision--enter' : ''/);
+  assert.match(src, /enter \? ' outcome--enter' : ''/);
+  assert.match(src, /shownDecision = null;\s*shownOutcome = null;/, 'a new step starts the keys over');
+  assert.match(src, /busy: busy,\s*disable: disable,/);
+  assert.match(src, /sendAnswer\(dv, \{ option: [^;]*, b, buttons\.filter\(function \(o\) \{ return o !== b; \}\)\);/, 'the clicked option is busy, the others only disabled');
+});
+
+test('ui.css: every new motion is behind prefers-reduced-motion: no-preference or is a one-shot class', () => {
+  const css = read(path.join(UI_DIR, 'ui.css'));
+  const inside = (needle) => {
+    const at = css.indexOf(needle);
+    assert.ok(at > 0, needle);
+    const open = css.lastIndexOf('@media (prefers-reduced-motion: no-preference) {', at);
+    if (open < 0) return false;
+    let depth = 0;
+    for (let i = css.indexOf('{', open); i < at; i++) {
+      if (css[i] === '{') depth++;
+      else if (css[i] === '}') depth--;
+    }
+    return depth > 0;
+  };
+  assert.ok(inside('@view-transition { navigation: auto; }'), 'cross-page transition');
+  assert.ok(inside('.disclosure::details-content {'), 'disclosure height');
+  assert.ok(inside('interpolate-size: allow-keywords;'), 'interpolate-size');
+  assert.match(css, /\.page > \.site-header \{ view-transition-name: site-header; \}/);
+  assert.match(css, /::view-transition-group\(site-header\) \{ animation: none; \}/);
+  assert.match(css, /\.decision--enter \{[^}]*animation: [^}]*attention/);
+  assert.match(css, /\.outcome--enter \{ animation: outcome-in/);
+  assert.match(css, /\.claim-meta > \* \{ min-width: 0; overflow-wrap: anywhere; \}/);
+  assert.match(css, /html \{[^}]*scrollbar-gutter: stable;/);
+});
+
 // ---- sign-in in the page scripts (static pins; what they do is run in test/page-scripts.test.js) ----
 test('start.js: a create refusal is told apart by its code: only a code-less 403 is the passcode, a 401 shows the sign-in and takes the focus', () => {
   const src = read(path.join(WEB, 'js', 'start.js'));
