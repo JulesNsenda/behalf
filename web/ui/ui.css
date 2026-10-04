@@ -363,13 +363,15 @@
     .container, .site-header__inner, .footer__inner, .dock__inner { padding-inline: var(--space-4); }
     .footer__cols { grid-template-columns: minmax(0, 1fr); padding: var(--space-10) var(--space-4) 0; gap: var(--space-6); }
     .page__main { padding-block: var(--space-8) var(--space-16); }
-    .site-header__nav { margin-inline-start: 0; width: 100%; flex-wrap: nowrap; justify-content: space-between; gap: var(--space-3); }
+    .site-header__nav { margin-inline-start: auto; flex-wrap: nowrap; gap: var(--space-3); }
     .site-header__inner { row-gap: var(--space-2); padding-block: var(--space-2); }
+    .site-header__inner { column-gap: var(--space-3); }
     .site-header__nav a:not(.btn) { min-width: 0; }
     .site-header__nav .btn { flex: none; }
-    /* the slot (first in the page, so first to tab to) sits beside the logo and the nav takes the row below: the end box stops being a box, so its two children join the header's own row */
+    /* one row: the logo, the slot (first in the page, so first to tab to) beside it, and the nav's "Start a room" at the far end; the end box stops being a box, so its two children join the header's own row, and the nav's other links are hidden at this width */
     .site-header__end:has(.site-header__nav) { display: contents; }
     .site-header__account { order: 0; }
+    .site-header__account { margin-inline-start: 0; }
     /* the login stays for screen readers ("Signed in as octocat") but only "Sign out" shows, so the row reads logo, Sign out */
     .site-header__account-login { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .site-header__account-long { display: none; }
@@ -401,6 +403,8 @@
   .btn--ghost-on-inverse { background: transparent; color: var(--on-inverse); border-color: var(--on-inverse); }
   .btn--ghost-on-inverse:hover { background: var(--on-inverse); color: var(--inverse); }
   .btn--small { min-height: var(--target-min); padding: 0 var(--space-4); font-size: var(--size-15); }
+  /* in the header at phone width the small buttons give up some padding, so the logo, the sign-in button and Start a room fit one row at 360px */
+  @media (max-width: 640px) { .site-header .btn--small { padding-inline: var(--space-3); } }
   .btn--link {
     min-height: var(--target-min); padding: 0 var(--space-2); border-color: transparent; background: transparent;
     color: var(--accent); font-size: var(--size-15); text-decoration: underline; text-underline-offset: .18em;
