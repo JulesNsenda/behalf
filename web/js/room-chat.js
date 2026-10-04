@@ -211,7 +211,7 @@
     }
 
     // dv is the decision as it was rendered, so the answer goes to the question the person read.
-    function sendAnswer(dv, body, controls) {
+    function sendAnswer(dv, body, busy, disable) {
       var room = A.room;
       if (!room || !room.pending || room.pending.seq !== dv.seq) { ui.showError('decision-error', RV.errorMessage('answer', 409)); return; }
       if (typeof body.answer === 'string' && A.cred.containsToken(body.answer)) {
@@ -219,7 +219,8 @@
         return;
       }
       ui.act({
-        busy: controls,
+        busy: busy,
+        disable: disable,
         error: 'decision-error',
         kind: 'answer',
         focus: { kind: 'answer', seq: dv.seq },
@@ -232,7 +233,7 @@
       var buttons = Array.prototype.slice.call(card.querySelectorAll('[data-index]'));
       buttons.forEach(function (b) {
         b.addEventListener('click', function () {
-          sendAnswer(dv, { option: dv.options[Number(b.getAttribute('data-index'))].key }, buttons);
+          sendAnswer(dv, { option: dv.options[Number(b.getAttribute('data-index'))].key }, b, buttons.filter(function (o) { return o !== b; }));
         });
       });
       var send = UI.byId('decision-send');
@@ -240,7 +241,7 @@
         send.addEventListener('click', function () {
           var answer = UI.byId('decision-answer').value.trim();
           if (!answer) { ui.showError('decision-error', RV.errorMessage('answer', 400)); return; }
-          sendAnswer(dv, { answer: answer }, [send]);
+          sendAnswer(dv, { answer: answer }, [send], UI.byId('decision-answer'));
         });
       }
     }

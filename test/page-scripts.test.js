@@ -3,7 +3,7 @@
 // the command show after each kind of answer, where the focus goes, and which requests were made. (Static pins live in pages.test.js.)
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { loadPage, loadRoomKit, ok, refused, ME } = require('../test-support/fake-page');
+const { loadPage, loadRoomKit, makeEl, ok, refused, ME } = require('../test-support/fake-page');
 
 const KEY = 'bh_' + 'k'.repeat(43);
 
@@ -426,6 +426,40 @@ test('room page: a refused seat action passes its machine code on, so a draft re
   assert.match(await refuse({ error: 'x', code: 'shutting_down' }), /Behalf is restarting\. Try again in a moment\. You can fill in the fields yourself\./);
   assert.match(await refuse({ error: 'x' }), /This server can't write drafts/);
   assert.match(await refuse(undefined), /write drafts/, 'no body at all is no code');
+});
+
+test('room page: act() switches off only the enabled `disable` elements while out, and on failure switches back on only those, then refocuses the busy control', async () => {
+  const kit = loadRoomKit();
+  const ctl = (id, over) => Object.assign(makeEl({ focused: null }, id), { localName: 'button', isConnected: true }, over);
+  const busy = ctl('opt-a');
+  const other = ctl('opt-b');
+  const already = ctl('opt-c', { disabled: true });
+  let seen;
+  const focused = [];
+  busy.focus = () => focused.push('busy');
+  const res = kit.A.ui.act({
+    busy, disable: [other, already], error: 'e', kind: 'answer',
+    send: () => { seen = [other.disabled, already.disabled]; return Promise.resolve({ ok: false, status: 500, data: {} }); },
+  });
+  await res;
+  assert.deepStrictEqual(seen, [true, true], 'off while the request is out');
+  assert.equal(other.disabled, false, 'the one act switched off is back on');
+  assert.equal(already.disabled, true, 'the one that was already off stays off');
+  assert.deepStrictEqual(focused, ['busy']);
+
+  // a single element works, and a busy control that left the page is not focused
+  const gone = ctl('opt-d', { isConnected: false });
+  const lone = ctl('ta');
+  focused.length = 0;
+  gone.focus = () => focused.push('gone');
+  await kit.A.ui.act({ busy: gone, disable: lone, error: 'e', kind: 'answer', send: () => Promise.resolve({ ok: false, status: 500, data: {} }) });
+  assert.equal(lone.disabled, false);
+  assert.deepStrictEqual(focused, []);
+
+  // success leaves them off: the refresh redraws the step
+  const keep = ctl('opt-e');
+  await kit.A.ui.act({ busy: null, disable: keep, error: 'e', kind: 'answer', send: () => Promise.resolve({ ok: true, status: 200, data: {} }) });
+  assert.equal(keep.disabled, true);
 });
 
 test('a key the server has since lost (deleted elsewhere) is dropped on the next answer', async () => {

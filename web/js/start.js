@@ -88,6 +88,7 @@
     `);
     signinView.hidden = false;
     form.hidden = true;
+    UI.byId('step-label').hidden = true; // "Step 1 of 3" means nothing when step 1 is signing in
     if (focus) UI.byId('signin-link').focus();
   }
 
@@ -111,6 +112,7 @@
       return;
     }
     form.hidden = false;
+    UI.byId('step-label').hidden = false;
     if (signinFailed) showError(AccountView.SIGNIN_FAILED);
   }
 
@@ -228,6 +230,7 @@
     UI.byId('invite-view').hidden = false;
     UI.byId('invite-footer').hidden = false;
     UI.byId('step-label').textContent = RoomView.stepLabel(2);
+    UI.byId('step-label').hidden = false;
     document.title = 'Invite ' + otherName + ' · Behalf';
     try { history.replaceState(null, '', '/start#invite'); } catch (e) { /* not fatal */ }
     UI.byId('invite-title').focus();
@@ -275,6 +278,7 @@
         UI.byId('invite-footer').hidden = true;
         UI.byId('start-view').hidden = false;
         UI.byId('step-label').textContent = RoomView.stepLabel(1);
+        UI.byId('step-label').hidden = false;
         lockForm();
         showError(LINKS_MESSAGE);
         return;

@@ -98,6 +98,25 @@ test('signed out with sign-in on: the form is replaced by the sign-in link back 
   assert.equal(page.meRequests(), 1);
 });
 
+test('"Step 1 of 3" is hidden while step 1 is the sign-in, and shown on every path that reveals the form', async () => {
+  const label = (p) => p.el('step-label').hidden;
+  const signedOut = loadStart({ config: ON, me: ME({ user: null }) });
+  await signedOut.flush();
+  assert.equal(label(signedOut), true);
+  const signedIn = loadStart({ config: ON, me: ME() });
+  await signedIn.flush();
+  assert.equal(label(signedIn), false);
+  const off = loadStart({ config: null, me: ME() });
+  await off.flush();
+  assert.equal(label(off), false);
+  // the session ended after the form was up: the sign-in takes over and the label goes
+  const late = loadStart({ config: ON, me: ME(), create: () => refused(401, 'signin_required') });
+  await late.flush();
+  assert.equal(label(late), false);
+  await late.submit();
+  assert.equal(label(late), true);
+});
+
 test('the sign-in prompt: the button carries the GitHub mark before its words, and the demo link is flush so it lines up with the button', async () => {
   const page = loadStart({ config: ON, me: ME({ user: null }) });
   await page.flush();

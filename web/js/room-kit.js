@@ -109,6 +109,9 @@
   // The flow every seat action shares: set the controls busy, clear the error slot, note what the action
   // expects, send, and either carry on or put everything back and say what went wrong.
   //   busy   the element or elements to set busy
+  //   disable  optional element or elements to switch off while the action is out, without marking them busy.
+  //          Only the ones that were enabled are switched off, and on failure only those are switched back on;
+  //          the focus then returns to the first busy element, if it is a control still on the page
   //   error  the id of the error slot, which is cleared first and holds the failure message
   //   kind   the RoomView.errorMessage kind for a failure
   //   send   () -> a promise of {ok, status, data}
@@ -118,6 +121,10 @@
   //          false) means the refresh got no new view: the controls are put back and the network message shown
   //   fail   optional () -> called after a failure, once the controls are back
   function act(o) {
+    var busyEls = (Array.isArray(o.busy) ? o.busy : [o.busy]).filter(Boolean);
+    // Only what act switches off itself is switched back on.
+    var offEls = (Array.isArray(o.disable) ? o.disable : [o.disable]).filter(function (el) { return el && !el.disabled; });
+    offEls.forEach(function (el) { el.disabled = true; });
     UI.setBusy(o.busy, true);
     fill(UI.byId(o.error), null);
     if (o.focus) A.pendingFocus = o.focus;
@@ -125,6 +132,9 @@
     function fail(status, code) {
       A.pendingFocus = null;
       UI.setBusy(o.busy, false);
+      offEls.forEach(function (el) { el.disabled = false; });
+      var first = busyEls[0];
+      if (first && first.isConnected && /^(button|input|textarea|select)$/.test(first.localName || '')) first.focus();
       showError(o.error, RV.errorMessage(status === A.BLOCKED ? '' : o.kind, status, code));
       if (o.fail) o.fail();
     }
