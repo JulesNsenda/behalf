@@ -135,7 +135,15 @@ function loadRoomKit() {
   const slots = {};
   const page = { focused: null };
   const document = { activeElement: null, body: { id: 'body' } };
-  const UI = Object.assign({}, realUI, { byId: (id) => slots[id] || (slots[id] = makeEl(page, id)), setBusy() {} });
+  // setBusy is the real one's effect on the fake elements: aria-busy on, and a control disabled while busy.
+  const setBusy = (target, on) => {
+    for (const el of Array.isArray(target) ? target : [target]) {
+      if (!el) continue;
+      el.busy = Boolean(on);
+      if (el.localName === 'button' || el.localName === 'input') el.disabled = Boolean(on);
+    }
+  };
+  const UI = Object.assign({}, realUI, { byId: (id) => slots[id] || (slots[id] = makeEl(page, id)), setBusy });
   const A = { BLOCKED: -1, pendingFocus: null, refresh: () => Promise.resolve(true) };
   const win = { UI, RoomView, RoomApp: A };
   win.window = win;

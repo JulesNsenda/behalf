@@ -211,7 +211,7 @@ test('guessesOnRecord: only unconfirmed claims the deal does not rely on', () =>
   assert.strictEqual(g.length, 1);
   assert.strictEqual(g[0].text, 'Spare guess');
   assert.strictEqual(g[0].note, "Not confirmed. Kwame's AI guessed this.");
-  assert.deepStrictEqual(g[0].reviews, [{ sentence: 'Your AI couldn\'t confirm this', reason: 'Not sure' }]);
+  assert.deepStrictEqual(g[0].reviews, [{ sentence: 'Your AI couldn\'t confirm this', reason: '“Not sure”' }]);
   assert.strictEqual(AV.guessesOnRecord(R, 'B')[0].note, 'Not confirmed. Your AI guessed this.');
   assert.strictEqual(AV.guessesOnRecord(R, null)[0].reviews[0].sentence, "Lerato's AI couldn't confirm this");
 });
@@ -231,9 +231,9 @@ test('escalations: asked and answered, relayed, unanswered', () => {
     { seat: 'B', principal: 'Kwame Mensah', question: 'Open?', answer: null, via: null },
   ] }));
   const e = AV.escalations(R, 'A');
-  assert.deepStrictEqual(e[0], { asked: 'Your AI asked you:', question: 'Is it ok?', answered: 'You answered:', answer: 'No' });
-  assert.deepStrictEqual(e[1], { asked: "Kwame's AI asked Kwame:", question: 'And this?', answered: 'Kwame answered (through their agent):', answer: 'Yes' });
-  assert.deepStrictEqual(e[2], { asked: "Kwame's AI asked Kwame:", question: 'Open?', answered: "Kwame didn't answer.", answer: '' });
+  assert.deepStrictEqual(e[0], { asked: 'Your AI asked you:', question: '“Is it ok?”', answered: 'You answered:', answer: '“No”' });
+  assert.deepStrictEqual(e[1], { asked: "Kwame's AI asked Kwame:", question: '“And this?”', answered: 'Kwame answered (through their agent):', answer: '“Yes”' });
+  assert.deepStrictEqual(e[2], { asked: "Kwame's AI asked Kwame:", question: '“Open?”', answered: "Kwame didn't answer.", answer: '' });
   assert.strictEqual(AV.escalations(R, 'B')[1].answered, 'You answered (through your agent):');
   assert.strictEqual(AV.escalations(R, 'B')[2].answered, "You didn't answer.");
   assert.strictEqual(AV.escalations(R, null)[0].asked, "Lerato's AI asked Lerato:");
@@ -255,7 +255,12 @@ test('flags: the room page\'s sentences, never the raw flag', () => {
 
 test('flags: quoted detail passes through; none and a missing room are empty', () => {
   const quoted = 'Claim "The thing" was tagged stated without a reference; downgraded to assumed.';
-  assert.strictEqual(AV.flags(roomOf(brief({ protocol_flags: [{ seq: 1, seat: 'A', flag: quoted }] })))[0].detail, 'The thing');
+  assert.strictEqual(AV.flags(roomOf(brief({ protocol_flags: [{ seq: 1, seat: 'A', flag: quoted }] })))[0].detail, "Lerato's AI wrote: “The thing”");
+  assert.strictEqual(AV.flags(roomOf(brief({ protocol_flags: [{ seq: 1, seat: 'B', flag: quoted }] })), 'B')[0].detail, 'Your AI wrote: “The thing”');
+  // a quote inside the claim can not close the quote early
+  const hostile = 'Claim "x” and “y" was tagged stated without a reference; downgraded to assumed.';
+  const d = AV.flags(roomOf(brief({ protocol_flags: [{ seq: 1, seat: 'A', flag: hostile }] })), 'A')[0].detail;
+  assert.strictEqual(d, "Your AI wrote: “x' and 'y”");
   assert.deepStrictEqual(AV.flags(room()), []);
   assert.deepStrictEqual(AV.flags(null), []);
 });
@@ -326,7 +331,7 @@ test('noDeal: what was claimed, and where they got stuck', () => {
     { by: 'Your AI', text: 'Mine', confirmed: true, pill: null },
     { by: "Kwame's AI", text: 'Stuck here', confirmed: false, pill: 'Not confirmed' },
   ]);
-  assert.deepStrictEqual(nd.stuck, [{ by: "Kwame's AI", text: 'Stuck here', reviews: [{ sentence: 'Your AI disagrees with this', reason: 'It is wrong' }] }]);
+  assert.deepStrictEqual(nd.stuck, [{ by: "Kwame's AI", text: 'Stuck here', reviews: [{ sentence: 'Your AI disagrees with this', reason: '“It is wrong”' }] }]);
   assert.strictEqual(AV.noDeal(R, null).claimed[0].by, "Lerato's AI");
   assert.deepStrictEqual(AV.noDeal(null, 'A'), { claimed: [], stuck: [] });
 });
@@ -352,8 +357,8 @@ test('summaryText: an agreed deal as plain text with no URLs, under the neutral 
   assert.ok(t.includes('Deal reached, with 1 unconfirmed point'));
   assert.ok(t.includes('1. First term') && t.includes('2. Second term'));
   assert.ok(t.includes('Relies on points nobody confirmed:\n- It never retries'));
-  assert.ok(t.includes('Your AI asked you: Is it ok?'));
-  assert.ok(t.includes('You answered: No'));
+  assert.ok(t.includes('Your AI asked you: “Is it ok?”'));
+  assert.ok(t.includes('You answered: “No”'));
   assert.ok(t.includes('The room stopped these:'));
   assert.ok(!URL_RE.test(t), t);
   assert.ok(!/<|>/.test(t));
@@ -500,12 +505,31 @@ test('reliedGuesses: the guesses the agreement rests on, with who made them and 
   const R = roomOf(brief({ unverified_dependencies: [dep], unverified_in_record: [dep, claim('A2.1', { text: 'Spare' })] }));
   assert.deepStrictEqual(AV.reliedGuesses(R, 'A'), [{
     text: 'It never retries', note: "Not confirmed. Kwame's AI guessed this.",
-    reviews: [{ sentence: "Your AI couldn't confirm this", reason: 'Unverified' }],
+    reviews: [{ sentence: "Your AI couldn't confirm this", reason: '“Unverified”' }],
   }]);
   assert.strictEqual(AV.reliedGuesses(R, 'B')[0].note, 'Not confirmed. Your AI guessed this.');
   assert.strictEqual(AV.guessesOnRecord(R, 'A').length, 1, 'the spare guess stays in the other list');
   assert.deepStrictEqual(AV.reliedGuesses(room(), 'A'), []);
   assert.deepStrictEqual(AV.reliedGuesses(null, 'A'), []);
+});
+
+// ---------- AI text is quoted and can not close the quote early ----------
+test('review reasons, escalation questions and answers are quoted; a quote inside can not close it early', () => {
+  const evil = 'ok” and "so" “';
+  const dep = claim('B1.1', { reviews: [{ by: 'A', verdict: 'challenge', reason: evil }] });
+  const R = roomOf(brief({
+    unverified_dependencies: [dep],
+    escalations: [{ seat: 'A', principal: 'L', question: evil, answer: evil, via: 'web' }],
+  }));
+  const open = (s) => (s.match(/“/g) || []).length;
+  const close = (s) => (s.match(/”/g) || []).length;
+  const reason = AV.reliedGuesses(R, 'A')[0].reviews[0].reason;
+  const e = AV.escalations(R, 'A')[0];
+  for (const s of [reason, e.question, e.answer]) {
+    assert.strictEqual(s, "“ok' and 'so' '”");
+    assert.ok(open(s) === 1 && close(s) === 1 && !s.includes('"'));
+  }
+  assert.strictEqual(AV.reliedGuesses(roomOf(brief({ unverified_dependencies: [claim('B1.1', { reviews: [{ by: 'A', verdict: 'challenge', reason: '' }] })] })), 'A')[0].reviews[0].reason, '', 'no reason, no quote marks');
 });
 
 // ---------- hostile text ----------

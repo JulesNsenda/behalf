@@ -85,9 +85,9 @@
     return isPlaceholderName(n) ? '' : n;
   }
 
-  // Wrapped in curly quotes. A curly or angle quote inside the text becomes a straight apostrophe, so text
-  // from an AI can't close the quote early and pass the rest off as the room's own words.
-  function quoted(v) { return '“' + str(v).replace(/[“”„‟«»]/g, "'") + '”'; }
+  // Wrapped in curly quotes. A straight, curly, angle or look-alike quote inside the text becomes a straight
+  // apostrophe, so text from an AI can't close the quote early and pass the rest off as the room's own words.
+  function quoted(v) { return '“' + str(v).replace(/["“”„‟«»‹›＂″‶〝〞〟❝❞ʺ˝]/g, "'") + '”'; }
 
   function cap(v) { return v.charAt(0).toUpperCase() + v.slice(1); }
 
@@ -1008,6 +1008,8 @@
     reviewSentence: reviewSentence,
     reviewNote: reviewNote,
     reviewLine: reviewLine,
+    quoted: quoted,
+    flagView: flagView,
     flagSentence: flagSentence,
     stoppedLine: stoppedLine,
     asked: asked,

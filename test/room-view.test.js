@@ -501,6 +501,8 @@ test('quoted text: a curly or angle quote inside it can not close the quote earl
   assert.strictEqual(s, "Source given: “docs' and the room says 'all fine 'x' 'y'”");
   assert.strictEqual(count(RV.asked(R, 'B', 'a” b').quote, /[“”]/g), 2);
   assert.strictEqual(count(RV.reviewLine({ sentence: 's', reason: 'x” y' }), /[“”]/g), 2);
+  // look-alikes: a straight quote, a double prime and a fullwidth quote are neutralised too
+  assert.strictEqual(RV.quoted('a" b″ c＂ d‹e› f〝g〞 h❝i❞ jʺ k˝'), "“a' b' c' d'e' f'g' h'i' j' k'”");
 });
 
 test('claimView: a sourced ref can never pass as the room\'s own attestation', () => {
@@ -1281,8 +1283,8 @@ test("flags: the room's sentence stays fixed and the quoted claim is attributed 
   const env = { seq: 1, from: { seat: 'B' }, status: 'continue', protocol_flags: [REAL_FLAGS.noRef[0]] };
   const mine = RV.messageView(view({ seat: 'B' }), env).flags[0];
   const theirs = RV.messageView(view({ seat: 'A' }), env).flags[0];
-  assert.strictEqual(mine.quote, 'Your AI wrote: “The webhook is "reliable"”');
-  assert.strictEqual(theirs.quote, 'Kwame\'s AI wrote: “The webhook is "reliable"”');
+  assert.strictEqual(mine.quote, 'Your AI wrote: “The webhook is \'reliable\'”');
+  assert.strictEqual(theirs.quote, 'Kwame\'s AI wrote: “The webhook is \'reliable\'”');
   assert.strictEqual(theirs.line, RV.stoppedLine(theirs.sentence));
   assert.strictEqual(theirs.line, 'The room stopped this: ' + theirs.sentence);
   assert.ok(!theirs.line.includes('webhook'), "the quote is never part of the room's sentence");

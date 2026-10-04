@@ -491,11 +491,14 @@ test('room page: act() on success switches the controls back on only when the st
   const offA = ctl('o1');
   await kit.A.ui.act({ busy: still, disable: offA, error: 'e', kind: 'answer', send: () => Promise.resolve(good) });
   assert.equal(offA.disabled, false, 'busy control still on the page: switched back on');
+  assert.equal(still.busy, false, 'and the busy control itself is no longer busy');
+  assert.equal(still.disabled, false);
   const redrawn = ctl('b2');
   const offB = ctl('o2');
   kit.A.refresh = () => { redrawn.isConnected = false; return Promise.resolve(true); };
   await kit.A.ui.act({ busy: redrawn, disable: offB, error: 'e', kind: 'answer', send: () => Promise.resolve(good) });
   assert.equal(offB.disabled, true, 'busy control gone: the redraw owns them, left alone');
+  assert.equal(redrawn.busy, true, 'a busy control that left the page is left alone too');
 });
 
 test('a key the server has since lost (deleted elsewhere) is dropped on the next answer', async () => {

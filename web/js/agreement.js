@@ -143,7 +143,7 @@
       ${note}
       ${guessesSection(AV.guessesOnRecord(R, seat))}
       ${escalationsSection(AV.escalations(R, seat))}
-      ${flagsSection(AV.flags(R))}
+      ${flagsSection(AV.flags(R, seat))}
       ${actions()}
       ${detailsSection(AV.detailRows(R, seat))}
     </div>`, h);
@@ -155,7 +155,7 @@
     var h = AV.heading(R, seat);
     var nd = AV.noDeal(R, seat);
     var esc = AV.escalations(R, seat);
-    var fl = AV.flags(R);
+    var fl = AV.flags(R, seat);
     // With nothing to list the page is just the heading, the actions and the record, so it keeps a tight gap.
     var bare = !nd.claimed.length && !nd.stuck.length && !esc.length && !fl.length;
     show(UI.html`<div class="stack ${bare ? 'stack--md' : 'stack--xl'}">

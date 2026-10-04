@@ -149,9 +149,12 @@
       return Promise.resolve(o.done ? o.done(res) : A.refresh()).then(function (applied) {
         if (applied === false) { fail(0); return; }
         // The refresh redraws the step, which drops the switched-off controls. If the busy control is still on the
-        // page nothing was redrawn, so they would stay dead: switch them back on.
+        // page nothing was redrawn, so they would stay dead: switch them back on, and the busy ones with them.
         var first = busyEls[0];
-        if (first && first.isConnected) offEls.forEach(function (el) { el.disabled = false; });
+        if (first && first.isConnected) {
+          UI.setBusy(o.busy, false);
+          offEls.forEach(function (el) { el.disabled = false; });
+        }
       });
     });
   }

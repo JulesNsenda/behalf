@@ -405,7 +405,8 @@
   .btn--on-inverse:hover { background: var(--on-inverse-hover); border-color: var(--on-inverse-hover); color: var(--inverse); }
   .btn--ghost-on-inverse { background: transparent; color: var(--on-inverse); border-color: var(--on-inverse); }
   .btn--ghost-on-inverse:hover { background: var(--on-inverse); color: var(--inverse); }
-  /* --btn-small-pad: the header sets it smaller at phone width, so the logo, the sign-in button and Start a room fit one row at 360px */
+  /* --btn-small-pad is a component knob, not a theme token: a container may set it to tighten every small button inside it
+     (default var(--space-4)). The header sets it smaller at phone width, so the logo, the sign-in button and Start a room fit one row at 360px */
   .btn--small { min-height: var(--target-min); padding: 0 var(--btn-small-pad, var(--space-4)); font-size: var(--size-15); }
   .btn--link {
     min-height: var(--target-min); padding: 0 var(--space-2); border-color: transparent; background: transparent;

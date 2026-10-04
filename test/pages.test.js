@@ -777,13 +777,6 @@ test('the header account slot: a small secondary sign-in button with the GitHub 
   assert.match(css, /\.site-header__account-short \{ display: none; \}/, 'the short label is for narrow screens only');
   const phone = css.slice(css.indexOf('@media (max-width: 640px) {\n    .container, .site-header__inner'));
   assert.match(phone, /\.site-header__end:has\(\.site-header__nav\) \{ display: contents; \}/, 'the end box dissolves so the slot sits beside the logo');
-  assert.match(phone, /\.site-header__account \{[^}]*order: 0;/, 'the slot follows page order again: first, beside the logo');
-  assert.match(phone, /\.site-header__account-login \{ position: absolute;[^}]*clip-path: inset\(50%\);/, 'the login is hidden from sight but still read out');
-  assert.match(css, /\.site-header__account \{[^}]*order: 1; \}/, 'wide: the slot goes after the nav');
-  assert.match(phone, /\.site-header__account-long \{ display: none; \}\s*\.site-header__account-short \{ display: inline; \}/);
-  const guide = read(path.join(UI_DIR, 'guide.css'));
-  assert.ok(guide.includes('.guide-narrow .site-header__end:has(.site-header__nav) { display: contents; }'));
-  assert.match(guide, /\.guide-narrow \.site-header__account \{[^}]*order: 0;/);
   // The 640px block's own range only: from its opening line to the brace that closes it.
   const open = css.indexOf('@media (max-width: 640px) {\n    .container, .site-header__inner');
   let depth = 0, end = open;
@@ -792,6 +785,13 @@ test('the header account slot: a small secondary sign-in button with the GitHub 
     else if (css[i] === '}' && --depth === 0) { end = i; break; }
   }
   const block = css.slice(open, end);
+  assert.match(block, /\.site-header__account \{[^}]*order: 0;/, 'the slot follows page order again: first, beside the logo');
+  assert.match(phone, /\.site-header__account-login \{ position: absolute;[^}]*clip-path: inset\(50%\);/, 'the login is hidden from sight but still read out');
+  assert.match(css, /\.site-header__account \{[^}]*order: 1; \}/, 'wide: the slot goes after the nav');
+  assert.match(phone, /\.site-header__account-long \{ display: none; \}\s*\.site-header__account-short \{ display: inline; \}/);
+  const guide = read(path.join(UI_DIR, 'guide.css'));
+  assert.ok(guide.includes('.guide-narrow .site-header__end:has(.site-header__nav) { display: contents; }'));
+  assert.match(guide, /\.guide-narrow \.site-header__account \{[^}]*order: 0;/);
   // selector -> set of declarations, one single-line rule per line; a grouped selector gives its declarations to each member.
   const pairs = (text, strip) => {
     const map = new Map();
@@ -807,12 +807,19 @@ test('the header account slot: a small secondary sign-in button with the GitHub 
     return map;
   };
   const real = pairs(block, /^$/);
-  const copies = pairs(guide.split('\n').filter((l) => l.startsWith('.guide-narrow .')).join('\n'), /^\.guide-narrow /);
+  const copyLines = guide.split('\n').filter((l) => l.startsWith('.guide-narrow .'));
+  // A copy the single-line reader can't parse would be skipped silently, so it fails instead.
+  for (const l of copyLines) assert.match(l.trim(), /^(.+?) \{ (.*?);? \}$/, 'a .guide-narrow line the check can not parse (one rule per line): ' + l);
+  const copies = pairs(copyLines.join('\n'), /^\.guide-narrow /);
   copies.delete('.hide-sm'); // a utility in ui.css's own layer, not part of the 640px block
   assert.ok(copies.size >= 5, 'the guide copies the slot rules');
   for (const [sel, decls] of copies) {
     assert.ok(real.has(sel), 'not in the 640px block: ' + sel);
     assert.deepStrictEqual([...decls].sort(), [...real.get(sel)].sort(), 'the guide copy of ' + sel + ' drifted from the 640px block');
+  }
+  // And the other way: every header rule in the 640px block has a copy.
+  for (const sel of real.keys()) {
+    if (sel.startsWith('.site-header')) assert.ok(copies.has(sel), 'the 640px block has no .guide-narrow copy of ' + sel);
   }
   assert.match(read(path.join(UI_DIR, 'index.html')), /<div class="guide-narrow">\s*<header class="site-header">[\s\S]*?site-header__account-short/, 'the /ui guide shows the narrow header');
 });

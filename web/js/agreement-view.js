@@ -168,7 +168,8 @@
     return (c.reviews || []).map(function (r) {
       return RV.reviewNote(N, { by: RV.isSeat(r.by) ? r.by : 'A', verdict: r.verdict, reason: r.reason });
     }).filter(function (n) { return n.verdict !== 'accept'; }).map(function (n) {
-      return { sentence: n.sentence, reason: RV.str(n.reason) };
+      // The reason is the AI's own text: quoted, after the sentence that names the AI.
+      return { sentence: n.sentence, reason: n.reason ? RV.quoted(n.reason) : '' };
     });
   }
 
@@ -211,19 +212,21 @@
       var a = e.answer ? RV.answered(N, seat, e.answer, e.via) : null;
       return {
         asked: q.lead,
-        question: RV.str(q.body),
+        question: q.quote,
         answered: a ? a.lead : RV.who(N, seat, 'You') + " didn't answer.",
-        answer: a ? RV.str(a.body) : ''
+        answer: a ? a.quote : ''
       };
     });
   }
 
-  // "The room stopped these": fixed sentences from RoomView, never the raw flag.
-  function flags(R) {
+  // "The room stopped these": fixed sentences from RoomView, never the raw flag. The detail is the claim
+  // text, quoted and attributed to the AI that wrote it ("Kwame's AI wrote: “...”"), or null.
+  function flags(R, viewerSeat) {
     var b = R && R.brief;
+    var N = namesView(R, viewerSeat);
     return (b && Array.isArray(b.protocol_flags) ? b.protocol_flags : []).map(function (f) {
-      var s = RV.flagSentence(f);
-      return { sentence: s.sentence, detail: s.detail === null ? null : RV.str(s.detail) };
+      var s = RV.flagView(N, RV.isSeat(f && f.seat) ? f.seat : 'A', f);
+      return { sentence: s.sentence, detail: s.quote };
     });
   }
 
