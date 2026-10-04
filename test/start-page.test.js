@@ -11,7 +11,7 @@ const RoomView = require('../web/js/room-view.js');
 // The start page: account.js and start.js against a scripted server (me: the /api/me answer, create: what POST /api/rooms answers).
 function loadStart({ config, me, meFails, create, search, request, setTimeout }) {
   const page = loadPage({
-    config, search, setTimeout, hidden: ['start-form', 'signin-view'], // both start hidden, as in start.html
+    config, search, setTimeout, hidden: ['start-form', 'signin-view', 'step-label'], // all start hidden, as in start.html
     pathname: '/start', lazy: true, scripts: ['account.js', 'start.js'],
     request: request || ((method, url, body) => {
       if (url === '/api/me') return meFails ? refused(500) : ok(200, JSON.parse(JSON.stringify(me)));
@@ -115,6 +115,19 @@ test('"Step 1 of 3" is hidden while step 1 is the sign-in, and shown on every pa
   assert.equal(label(late), false);
   await late.submit();
   assert.equal(label(late), true);
+});
+
+test('"Step 1 of 3" starts hidden in start.html and stays hidden until the page has decided; the form path then shows it', async () => {
+  const markup = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'start.html'), 'utf8');
+  assert.match(markup, /<span[^>]*id="step-label"[^>]*\shidden[\s>]/, 'hidden in the markup');
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const page = loadStart({ config: ON, request: async (method, url) => { if (url === '/api/me') { await gate; return ok(200, ME()); } return refused(404); } });
+  await page.flush();
+  assert.equal(page.el('step-label').hidden, true, 'hidden while /api/me is out');
+  release();
+  await page.flush();
+  assert.equal(page.el('step-label').hidden, false, 'shown on the form path');
 });
 
 test('the sign-in prompt: the button carries the GitHub mark before its words, and the demo link is flush so it lines up with the button', async () => {

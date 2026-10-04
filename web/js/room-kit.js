@@ -111,7 +111,10 @@
   //   busy   the element or elements to set busy
   //   disable  optional element or elements to switch off while the action is out, without marking them busy.
   //          Only the ones that were enabled are switched off, and on failure only those are switched back on;
-  //          the focus then returns to the first busy element, if it is a control still on the page
+  //          the focus then returns to the first busy element, if it is still on the page and the focus was lost
+  //          (on nothing, the page, the busy element or a switched-off one); focus the person moved elsewhere stays.
+  //          On success they stay off when the refresh redrew the step (the first busy element has left the page),
+  //          and are switched back on when it didn't (the first busy element is still there)
   //   error  the id of the error slot, which is cleared first and holds the failure message
   //   kind   the RoomView.errorMessage kind for a failure
   //   send   () -> a promise of {ok, status, data}
@@ -134,14 +137,21 @@
       UI.setBusy(o.busy, false);
       offEls.forEach(function (el) { el.disabled = false; });
       var first = busyEls[0];
-      if (first && first.isConnected && /^(button|input|textarea|select)$/.test(first.localName || '')) first.focus();
+      // A disabled control that had the focus drops it to the page, so the focus goes back only when it was lost.
+      var active = document.activeElement;
+      var lost = !active || active === document.body || active === first || offEls.indexOf(active) !== -1;
+      if (lost && first && first.isConnected && typeof first.focus === 'function') first.focus();
       showError(o.error, RV.errorMessage(status === A.BLOCKED ? '' : o.kind, status, code));
       if (o.fail) o.fail();
     }
     return o.send().then(function (res) {
       if (!(o.ok ? o.ok(res) : res.ok)) { fail(res.status, (res.data || {}).code); return; }
       return Promise.resolve(o.done ? o.done(res) : A.refresh()).then(function (applied) {
-        if (applied === false) fail(0);
+        if (applied === false) { fail(0); return; }
+        // The refresh redraws the step, which drops the switched-off controls. If the busy control is still on the
+        // page nothing was redrawn, so they would stay dead: switch them back on.
+        var first = busyEls[0];
+        if (first && first.isConnected) offEls.forEach(function (el) { el.disabled = false; });
       });
     });
   }

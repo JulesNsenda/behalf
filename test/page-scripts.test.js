@@ -456,10 +456,46 @@ test('room page: act() switches off only the enabled `disable` elements while ou
   assert.equal(lone.disabled, false);
   assert.deepStrictEqual(focused, []);
 
-  // success leaves them off: the refresh redraws the step
+  // success with no busy element leaves them off
   const keep = ctl('opt-e');
   await kit.A.ui.act({ busy: null, disable: keep, error: 'e', kind: 'answer', send: () => Promise.resolve({ ok: true, status: 200, data: {} }) });
   assert.equal(keep.disabled, true);
+});
+
+test('room page: act() on failure refocuses only when the focus was lost', async () => {
+  const kit = loadRoomKit();
+  const ctl = (id, over) => Object.assign(makeEl({ focused: null }, id), { localName: 'button', isConnected: true }, over);
+  const fail = { ok: false, status: 500, data: {} };
+  const run = async (activeOf) => {
+    const busy = ctl('b');
+    const off = ctl('o');
+    const elsewhere = ctl('x');
+    const got = [];
+    busy.focus = () => got.push('busy');
+    kit.document.activeElement = activeOf({ busy, off, elsewhere, body: kit.document.body });
+    await kit.A.ui.act({ busy, disable: off, error: 'e', kind: 'answer', send: () => Promise.resolve(fail) });
+    return got;
+  };
+  assert.deepStrictEqual(await run(({ elsewhere }) => elsewhere), [], 'focus the person moved elsewhere stays');
+  assert.deepStrictEqual(await run(() => null), ['busy']);
+  assert.deepStrictEqual(await run(({ body }) => body), ['busy']);
+  assert.deepStrictEqual(await run(({ busy }) => busy), ['busy']);
+  assert.deepStrictEqual(await run(({ off }) => off), ['busy'], 'a switched-off control that had the focus lost it');
+});
+
+test('room page: act() on success switches the controls back on only when the step was not redrawn', async () => {
+  const kit = loadRoomKit();
+  const ctl = (id, over) => Object.assign(makeEl({ focused: null }, id), { localName: 'button', isConnected: true }, over);
+  const good = { ok: true, status: 200, data: {} };
+  const still = ctl('b1');
+  const offA = ctl('o1');
+  await kit.A.ui.act({ busy: still, disable: offA, error: 'e', kind: 'answer', send: () => Promise.resolve(good) });
+  assert.equal(offA.disabled, false, 'busy control still on the page: switched back on');
+  const redrawn = ctl('b2');
+  const offB = ctl('o2');
+  kit.A.refresh = () => { redrawn.isConnected = false; return Promise.resolve(true); };
+  await kit.A.ui.act({ busy: redrawn, disable: offB, error: 'e', kind: 'answer', send: () => Promise.resolve(good) });
+  assert.equal(offB.disabled, true, 'busy control gone: the redraw owns them, left alone');
 });
 
 test('a key the server has since lost (deleted elsewhere) is dropped on the next answer', async () => {

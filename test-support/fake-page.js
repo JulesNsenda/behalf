@@ -134,12 +134,13 @@ function loadPage(opts) {
 function loadRoomKit() {
   const slots = {};
   const page = { focused: null };
+  const document = { activeElement: null, body: { id: 'body' } };
   const UI = Object.assign({}, realUI, { byId: (id) => slots[id] || (slots[id] = makeEl(page, id)), setBusy() {} });
   const A = { BLOCKED: -1, pendingFocus: null, refresh: () => Promise.resolve(true) };
   const win = { UI, RoomView, RoomApp: A };
   win.window = win;
-  runScripts({ window: win }, ['room-kit.js']);
-  return { A, slots, html: (id) => plain(slots[id].innerHTML), reset: (id) => { slots[id] = undefined; } };
+  runScripts({ window: win, document }, ['room-kit.js']);
+  return { A, slots, document, html: (id) => plain(slots[id].innerHTML), reset: (id) => { slots[id] = undefined; } };
 }
 
 module.exports = { loadPage, loadRoomKit, makeEl, container, runScripts, flush, ok, refused, ME };
