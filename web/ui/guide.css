@@ -6,7 +6,10 @@
 /* A header at phone width, whatever the window: the same rules the 640px media query gives the real one */
 .guide-narrow { max-width: 390px; }
 .guide-narrow .site-header__inner { padding-inline: var(--space-4); }
-.guide-narrow .site-header__nav { margin-inline-start: 0; width: 100%; }
+.guide-narrow .site-header__nav { margin-inline-start: 0; width: 100%; flex-wrap: nowrap; justify-content: space-between; gap: var(--space-3); }
+.guide-narrow .site-header__inner { row-gap: var(--space-2); padding-block: var(--space-2); }
+.guide-narrow .site-header__nav a:not(.btn) { min-width: 0; }
+.guide-narrow .site-header__nav .btn { flex: none; }
 .guide-narrow .site-header__end:has(.site-header__nav) { display: contents; }
 .guide-narrow .site-header__account { order: 0; }
 .guide-narrow .site-header__account-login { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

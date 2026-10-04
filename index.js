@@ -3,7 +3,7 @@
 // Node 18+. The only dependency is pg, loaded only when DATABASE_URL is set.
 const { createLog } = require('./lib/log');
 const { bootApp } = require('./lib/app');
-const { loadConfig } = require('./lib/config');
+const { loadConfig, ConfigError } = require('./lib/config');
 const http = require('node:http');
 const { StoreError, safeCode } = require('./lib/store-core');
 
@@ -80,6 +80,9 @@ async function main() {
   process.on('SIGINT', onSignal(130));
   try {
     config = loadConfig();
+    // Drop sometimes starts the app without DATABASE_URL. Leave before binding anything, so the readiness probe sees the process die
+    // and the old version keeps serving, instead of an empty file store taking over. (index.js runs before createApp clears the env.)
+    if (config.requireDatabase && !process.env.DATABASE_URL) throw new ConfigError('REQUIRE_DATABASE');
     try { placeholder = await startPlaceholder(config.port, config.bindHost); } catch (e) { return listenFailed(config, e); }
     const port = placeholder.address().port; // PORT=0: the real server takes the placeholder's port, not another
     // onFatal: the store was lost (its connection or lock). It has closed itself and can no longer write, so leave and let the

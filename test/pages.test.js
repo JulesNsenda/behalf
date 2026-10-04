@@ -439,8 +439,8 @@ function pageProblems(html, want) {
   return problems;
 }
 // The slot is a sibling right before the nav, the first thing in the end slot (so a phone's tab order and its row follow the screen,
-// and CSS order puts it last on a wide one), empty and hidden until a script fills it.
-const SLOT_BEFORE_NAV = /<div class="site-header__end"><div class="site-header__account" id="account-slot" hidden><\/div><nav\b/;
+// and CSS order puts it last on a wide one). It holds the signed-out sign-in link in the page's own markup, so it shows with the page.
+const SLOT_BEFORE_NAV = /<div class="site-header__end"><div class="site-header__account" id="account-slot"><a [^>]*\bid="account-signin"[^>]*>[\s\S]*?<\/a><\/div><nav\b/;
 const slotBeforeNav = (html) => [...html.matchAll(HEADER)].some((m) => SLOT_BEFORE_NAV.test(norm(m[0])) && !fragments(m[0]).nav.some((n) => n.includes('account-slot')));
 
 test('site header and footers are identical on every page that links /ui/ui.css', () => {
@@ -534,7 +534,7 @@ test('the page manifest check requires the main nav where the page has one and f
   const css = '<link rel="stylesheet" href="/ui/ui.css">';
   const head = (end) => '<header class="site-header"><div class="site-header__inner"><div class="site-header__end">' + end + '</div></div></header>';
   const navOnly = '<nav class="site-header__nav" aria-label="Main"><a href="/">x</a></nav>';
-  const slot = '<div class="site-header__account" id="account-slot" hidden></div>';
+  const slot = '<div class="site-header__account" id="account-slot"><a id="account-signin" href="/auth/github">Sign in</a></div>';
   const nav = slot + navOnly;
   const none = { full: false, slim: false };
   assert.deepStrictEqual(pageProblems(css + head(nav), { ...none, nav: true }), []);
@@ -550,10 +550,10 @@ test('the page manifest check wants the account slot right before the nav, never
   const head = (end) => '<header class="site-header"><div class="site-header__inner"><div class="site-header__end">' + end + '</div></div></header>';
   const links = '<a href="/">x</a>';
   const nav = (inside) => '<nav class="site-header__nav" aria-label="Main">' + links + inside + '</nav>';
-  const slot = '<div class="site-header__account" id="account-slot" hidden></div>';
+  const slot = '<div class="site-header__account" id="account-slot"><a id="account-signin" href="/auth/github">Sign in</a></div>';
   const want = { full: false, slim: false, nav: true };
   assert.deepStrictEqual(pageProblems(css + head(slot + nav('')), want), []);
-  assert.deepStrictEqual(pageProblems(css + head(slot.replace(' hidden', '') + nav('')), want), ['account slot: must come right before the main nav, not sit inside it'], 'it starts hidden');
+  assert.deepStrictEqual(pageProblems(css + head(slot.replace(/<a[\s\S]*<\/a>/, '') + nav('')), want), ['account slot: must come right before the main nav, not sit inside it'], 'it holds the sign-in link');
   assert.deepStrictEqual(pageProblems(css + head(nav(slot)), want), ['account slot: must come right before the main nav, not sit inside it'], 'inside the nav');
   assert.deepStrictEqual(pageProblems(css + head(nav('') + slot), want), ['account slot: must come right before the main nav, not sit inside it'], 'after the nav');
   assert.deepStrictEqual(pageProblems(css + head(slot + slot + nav('')), want), ['account slot: expected one, found 2']);
@@ -562,7 +562,7 @@ test('the page manifest check wants the account slot right before the nav, never
   const page = (s) => ['p', css + head(nav('') + s)];
   assert.deepStrictEqual(fragmentDrift([page(slot), page(slot)]), []);
   assert.deepStrictEqual(fragmentDrift([page(slot), page(slot.replace('account', 'acct'))]), ['account']);
-  assert.deepStrictEqual(fragmentDrift([page(slot), page(slot.replace('></div>', '>Sign in</div>'))]), ['account']);
+  assert.deepStrictEqual(fragmentDrift([page(slot), page(slot.replace('Sign in<', 'Log in<'))]), ['account']);
   assert.deepStrictEqual(fragmentDrift([page(slot), ['q', css + head('<span>Step 1 of 3</span>')]]), [], 'a page with no slot at all is for the page manifest to catch, not drift');
 });
 
@@ -572,7 +572,14 @@ test('every page with the main nav carries the same account slot, and no other p
   const slots = withNav.map(([, h]) => fragments(h).account);
   assert.ok(slots.every((s) => s.length === 1), JSON.stringify(slots));
   assert.strictEqual(new Set(slots.flat()).size, 1);
-  assert.strictEqual(slots[0][0], '<div class="site-header__account" id="account-slot" hidden></div>');
+  assert.ok(!/^<div[^>]*\shidden\b/.test(slots[0][0]), 'the slot shows with the page');
+  // The static link is exactly what account-view.js renders for a signed-out person (the words, and a href that works with no script).
+  const AccountView = require('../web/js/account-view.js');
+  const d = AccountView.slot({ signin: 'github', user: null, agentKey: null }, '/spec');
+  const m = /^<div class="site-header__account" id="account-slot"><a class="btn btn--secondary btn--small" id="account-signin" href="([^"]*)"><svg[\s\S]*?<\/svg><span class="site-header__account-long">([^<]*)<\/span><span class="site-header__account-short">([^<]*)<\/span><\/a><\/div>$/.exec(slots[0][0]);
+  assert.ok(m, slots[0][0]);
+  assert.deepStrictEqual([m[1], m[2], m[3]], [d.href, d.text, d.short], 'static sign-in link drifted from account-view.js');
+  assert.strictEqual(m[1], '/auth/github');
   for (const [n, h] of fragmentPages.filter(([, h]) => fragments(h).nav.length === 0)) assert.deepStrictEqual(fragments(h).account, [], n);
   for (const [n, h] of withNav) assert.ok(slotBeforeNav(h), n);
 });

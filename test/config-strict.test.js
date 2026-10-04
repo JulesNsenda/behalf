@@ -154,3 +154,14 @@ test('the GitHub secrets are redacted, kept out of the config, and removed from 
   assert.deepEqual(env, { KEEP: '1' });
   for (const text of [JSON.stringify(s), util.inspect(s, { showHidden: true }), util.format('%o', s)]) assert.ok(!text.includes('VALUE'), text);
 });
+
+test('REQUIRE_DATABASE is strict, 1 or 0, and defaults to 0', () => {
+  for (const blank of [undefined, '', '  ']) assert.equal(loadConfig({ REQUIRE_DATABASE: blank }).requireDatabase, false);
+  assert.equal(loadConfig({}).requireDatabase, false);
+  assert.equal(loadConfig({ REQUIRE_DATABASE: '0' }).requireDatabase, false);
+  assert.equal(loadConfig({ REQUIRE_DATABASE: '1' }).requireDatabase, true);
+  assert.equal(loadConfig({ REQUIRE_DATABASE: ' 1 ' }).requireDatabase, true);
+  for (const bad of ['true', 'yes', '2', '-1', '01', 'on', MARKER]) {
+    assert.throws(() => loadConfig({ REQUIRE_DATABASE: bad }), (e) => e instanceof ConfigError && e.code === 'BAD_REQUIRE_DATABASE' && !e.message.includes(MARKER), bad);
+  }
+});

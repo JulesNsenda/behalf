@@ -26,6 +26,8 @@ PG_TEST_URL=postgres://behalf:behalf@localhost:55432/behalf_test npm test
 
 Without `ANTHROPIC_API_KEY`, the scripted demo and rooms where both seats are "bring your own agent" (MCP) still work. Built-in Claude proxies, card drafting and the authority audit need the key. The other env vars are in the README table. State persists to `$DROP_DATA_DIR/rooms.json`, or `./.data/rooms.json` when that variable isn't set. Delete that file to reset. With `DATABASE_URL`, state lives in the `behalf_records` table: drop it to reset. `SIGNIN` defaults to `off` locally, but must be set when `DROP_DATA_DIR` or `DATABASE_URL` is.
 
+`REQUIRE_DATABASE=1` (strict, default `0`; set in `drop.yaml`) makes `index.js` exit 1 with `BAD_REQUIRE_DATABASE` before binding the placeholder when `DATABASE_URL` is missing, so a Drop start without the database fails the readiness probe instead of serving an empty file store.
+
 Deployment: `drop.yaml` targets the Drop platform: `type: nodejs`, health check `/health`, `database: postgres` (Drop sets `DATABASE_URL`), `env:` with `SIGNIN: github` and `PUBLIC_URL`, and the two GitHub secrets declared `required` (Drop holds the app in `needs-config` until they are set). `drop.yaml` `env:` is Drop's base layer: a value set in the dashboard overrides it. The `/health` `build` fingerprint of a Drop deploy won't match a local run: Drop runs `npm install` (the detector's choice, so the resolved `package-lock.json` can differ) and its build changes the app directory. Confirm a deploy by `/health` `store` and `storeOk` (`postgres`, true) and `/api/config` `signin`. The README has the deploy steps, including the rollback export (`scripts/export-rooms.js`).
 
 ## Architecture

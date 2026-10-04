@@ -7,6 +7,9 @@ database: postgres
 # The base layer: anything set in the Drop dashboard overrides these.
 env:
   SIGNIN: github
+  # Drop sometimes starts the app without DATABASE_URL (a Drop quota bug). With this the process exits at once instead of serving an
+  # empty file store, so Drop's readiness probe fails and the old version keeps serving.
+  REQUIRE_DATABASE: "1"
   PUBLIC_URL: https://behalf.dropkit.sh
 # Set in the dashboard, never here. Drop holds the app in needs-config until both are set.
 secrets:

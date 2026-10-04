@@ -220,7 +220,7 @@ test('the /ui guide shows the words this module returns: its header slot and key
   const shown = AV.keyPanel(ME_IN, { key: 'bh_' + 'x'.repeat(30), createdAt: 1 }, '/connect');
   const none = AV.keyPanel(ME_IN, null, '/connect');
   const strings = [
-    AV.slot(ME_OUT, '/').text, AV.slot(ME_OUT, '/').short, AV.slot(ME_OUT, '/').href, AV.slot(ME_IN, '/').who, AV.slot(ME_IN, '/').hint, AV.slot(ME_IN, '/').signOut,
+    AV.slot(ME_OUT, '/').text, AV.slot(ME_OUT, '/').short, AV.slot(ME_OUT, '/spec').href, AV.slot(ME_IN, '/').who, AV.slot(ME_IN, '/').hint, AV.slot(ME_IN, '/').signOut,
     none.title, none.lead, none.create,
     shown.lead, shown.field.label, shown.field.note, shown.field.button, shown.warning, shown.create, shown.revoke,
   ];

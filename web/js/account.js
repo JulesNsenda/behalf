@@ -6,8 +6,8 @@
  * before the first one; current() is that answer, without waiting; refresh() asks again and, when it got an answer, tells every onChange listener (a failed
  * refresh tells nobody and keeps the last answer, so a page never goes back to "unknown"); onChange(fn) adds a listener.
  * The connect page subscribes, to follow a sign-out and the key panel. The start page has no slot and no listener:
- * it only reads load() once. The slot is a sibling of the main nav: empty and hidden with sign-in off, a sign-in link
- * when signed out, and "Signed in as ..." with a Sign out button when signed in. Wording comes from account-view.js.
+ * it only reads load() once. The slot is a sibling of the main nav: it holds the signed-out sign-in link in the page's own markup (so it shows at once, and a test
+ * holds that markup to account-view.js), is emptied and hidden with sign-in off, keeps the link when signed out, and "Signed in as ..." with a Sign out button when signed in. Wording comes from account-view.js.
  */
 (function () {
   'use strict';
@@ -92,6 +92,13 @@
       return;
     }
     if (d.kind === 'signed-out') {
+      // The page already holds this button (static markup, so it shows with the page): keep it, and only point it back at this page.
+      var present = UI.byId('account-signin');
+      if (present) {
+        present.setAttribute('href', UI.url(d.href));
+        el.hidden = false;
+        return;
+      }
       // One of the two labels is display:none at any width, so a screen reader hears only the one on screen.
       UI.render(el, html`<a class="btn btn--secondary btn--small" id="account-signin" href="${UI.url(d.href)}">${UI.icon('github')}<span class="site-header__account-long">${d.text}</span><span class="site-header__account-short">${d.short}</span></a>`);
     } else {
