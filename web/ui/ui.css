@@ -4,10 +4,12 @@
  * Layers, lowest to highest priority. Page-local CSS outside any layer always wins.
  *   tokens     every design value as a custom property: light on :root, dark in two mirrored blocks
  *   base       reset, element defaults, focus ring, [hidden], reduced motion, element-level print
- *   layout     page, container, stack, cluster, grid, site header and footers
+ *   layout     page, container, stack, cluster, grid, site header and footers, the header's view-transition name
  *   components buttons, forms, pills, conversation, decision, cards and the rest
  *   domain     reserved for app-specific patterns that don't belong in a shared component
  *   utilities  single-purpose helpers: sr-only, text and heading sizes, no-print, hide-sm, class-level print rules
+ *
+ * The one rule outside every layer is the @view-transition at-rule at the end: it is for the document, not a component.
  *
  * Colours are written only inside the token blocks. Components read them through var().
  */
@@ -304,6 +306,9 @@
   .brand--small .brand__logo { width: 22px; height: 22px; }
 
   .site-header { background: var(--surface); border-bottom: 1px solid var(--line); }
+  /* named on the real header only (.page > ...), never on the /ui or home samples, so the name is never doubled */
+  .page > .site-header { view-transition-name: site-header; }
+  ::view-transition-group(site-header) { animation: none; }
   .site-header__inner {
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-6); min-height: var(--header-min);
   }
@@ -364,14 +369,12 @@
     .footer__cols { grid-template-columns: minmax(0, 1fr); padding: var(--space-10) var(--space-4) 0; gap: var(--space-6); }
     .page__main { padding-block: var(--space-8) var(--space-16); }
     .site-header__nav { margin-inline-start: auto; flex-wrap: nowrap; gap: var(--space-3); }
-    .site-header__inner { row-gap: var(--space-2); padding-block: var(--space-2); }
-    .site-header__inner { column-gap: var(--space-3); }
+    .site-header__inner { row-gap: var(--space-2); column-gap: var(--space-3); padding-block: var(--space-2); --btn-small-pad: var(--space-3); }
     .site-header__nav a:not(.btn) { min-width: 0; }
     .site-header__nav .btn { flex: none; }
     /* one row: the logo, the slot (first in the page, so first to tab to) beside it, and the nav's "Start a room" at the far end; the end box stops being a box, so its two children join the header's own row, and the nav's other links are hidden at this width */
     .site-header__end:has(.site-header__nav) { display: contents; }
-    .site-header__account { order: 0; }
-    .site-header__account { margin-inline-start: 0; }
+    .site-header__account { order: 0; margin-inline-start: 0; }
     /* the login stays for screen readers ("Signed in as octocat") but only "Sign out" shows, so the row reads logo, Sign out */
     .site-header__account-login { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .site-header__account-long { display: none; }
@@ -402,9 +405,8 @@
   .btn--on-inverse:hover { background: var(--on-inverse-hover); border-color: var(--on-inverse-hover); color: var(--inverse); }
   .btn--ghost-on-inverse { background: transparent; color: var(--on-inverse); border-color: var(--on-inverse); }
   .btn--ghost-on-inverse:hover { background: var(--on-inverse); color: var(--inverse); }
-  .btn--small { min-height: var(--target-min); padding: 0 var(--space-4); font-size: var(--size-15); }
-  /* in the header at phone width the small buttons give up some padding, so the logo, the sign-in button and Start a room fit one row at 360px */
-  @media (max-width: 640px) { .site-header .btn--small { padding-inline: var(--space-3); } }
+  /* --btn-small-pad: the header sets it smaller at phone width, so the logo, the sign-in button and Start a room fit one row at 360px */
+  .btn--small { min-height: var(--target-min); padding: 0 var(--btn-small-pad, var(--space-4)); font-size: var(--size-15); }
   .btn--link {
     min-height: var(--target-min); padding: 0 var(--space-2); border-color: transparent; background: transparent;
     color: var(--accent); font-size: var(--size-15); text-decoration: underline; text-underline-offset: .18em;
@@ -660,7 +662,7 @@
   .disclosure__body { padding: var(--space-1) var(--space-4) var(--space-4); color: var(--ink-muted); font-size: var(--size-15); }
   @media (prefers-reduced-motion: no-preference) {
     @supports (interpolate-size: allow-keywords) and selector(::details-content) {
-      :root { interpolate-size: allow-keywords; }
+      .disclosure { interpolate-size: allow-keywords; }
       .disclosure::details-content { block-size: 0; overflow: clip; overflow-clip-margin: 6px; transition: block-size .2s ease, content-visibility .2s allow-discrete; }
       .disclosure[open]::details-content { block-size: auto; }
     }
@@ -710,7 +712,8 @@
     border: 1px solid var(--inverse-edge);
     border-radius: var(--radius-sm); background: var(--inverse); color: var(--on-inverse); font-size: var(--size-15); box-shadow: var(--shadow);
   }
-  .toast--info, .toast--ok, .toast--warn, .toast--danger { background: var(--tone-soft, var(--inverse)); color: var(--tone-strong, var(--on-inverse)); }
+  /* the plain toast's light edge is for the dark fill; a tone toast takes its own soft colour, so no visible edge */
+  .toast--info, .toast--ok, .toast--warn, .toast--danger { background: var(--tone-soft, var(--inverse)); border-color: var(--tone-soft, var(--inverse-edge)); color: var(--tone-strong, var(--on-inverse)); }
 
   /* empty and error states */
   .state {
@@ -763,11 +766,7 @@
 }
 
 /* ------------------------------------------------------------------ page transitions */
-/* Outside every layer on purpose: @view-transition is an at-rule for the document, not a component. Names
-   sit on the real header and outcome only, never on the /ui or home samples, so no name is ever doubled. */
+/* The one thing outside every layer, on purpose: @view-transition is an at-rule for the document, not a component. */
 @media (prefers-reduced-motion: no-preference) {
   @view-transition { navigation: auto; }
 }
-.page > .site-header { view-transition-name: site-header; }
-::view-transition-group(site-header) { animation: none; }
-#outcome-slot .outcome, #brief-outcome { view-transition-name: outcome; }

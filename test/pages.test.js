@@ -734,17 +734,43 @@ test('the header account slot: a small secondary sign-in button with the GitHub 
   assert.match(css, /\.site-header__account-short \{ display: none; \}/, 'the short label is for narrow screens only');
   const phone = css.slice(css.indexOf('@media (max-width: 640px) {\n    .container, .site-header__inner'));
   assert.match(phone, /\.site-header__end:has\(\.site-header__nav\) \{ display: contents; \}/, 'the end box dissolves so the slot sits beside the logo');
-  assert.match(phone, /\.site-header__account \{ order: 0; \}/, 'the slot follows page order again: first, beside the logo');
+  assert.match(phone, /\.site-header__account \{[^}]*order: 0;/, 'the slot follows page order again: first, beside the logo');
   assert.match(phone, /\.site-header__account-login \{ position: absolute;[^}]*clip-path: inset\(50%\);/, 'the login is hidden from sight but still read out');
   assert.match(css, /\.site-header__account \{[^}]*order: 1; \}/, 'wide: the slot goes after the nav');
   assert.match(phone, /\.site-header__account-long \{ display: none; \}\s*\.site-header__account-short \{ display: inline; \}/);
   const guide = read(path.join(UI_DIR, 'guide.css'));
-  for (const rule of ['.guide-narrow .site-header__end:has(.site-header__nav) { display: contents; }', '.guide-narrow .site-header__account { order: 0; }']) assert.ok(guide.includes(rule), rule);
-  // Each phone-width rule the guide copies for its narrow example is in the real 640px block too, written the same way.
-  const rules = (text) => text.split('\n').map((l) => l.trim()).filter((l) => /^\.guide-narrow|^\.site-header/.test(l) && l.endsWith('}'));
-  const copies = rules(guide).filter((l) => l.startsWith('.guide-narrow ') && !/max-width|padding-inline|margin-inline-start/.test(l));
-  assert.ok(copies.length >= 4, 'the guide copies the slot rules');
-  for (const copy of copies) assert.ok(phone.includes(copy.replace('.guide-narrow ', '')), 'not in the 640px block: ' + copy);
+  assert.ok(guide.includes('.guide-narrow .site-header__end:has(.site-header__nav) { display: contents; }'));
+  assert.match(guide, /\.guide-narrow \.site-header__account \{[^}]*order: 0;/);
+  // The 640px block's own range only: from its opening line to the brace that closes it.
+  const open = css.indexOf('@media (max-width: 640px) {\n    .container, .site-header__inner');
+  let depth = 0, end = open;
+  for (let i = css.indexOf('{', open); i < css.length; i++) {
+    if (css[i] === '{') depth++;
+    else if (css[i] === '}' && --depth === 0) { end = i; break; }
+  }
+  const block = css.slice(open, end);
+  // selector -> set of declarations, one single-line rule per line; a grouped selector gives its declarations to each member.
+  const pairs = (text, strip) => {
+    const map = new Map();
+    for (const line of text.split('\n').map((l) => l.trim())) {
+      const m = /^(.+?) \{ (.*?);? \}$/.exec(line);
+      if (!m || line.startsWith('/*') || line.startsWith('@')) continue;
+      for (const sel of m[1].split(',').map((s) => s.trim().replace(strip, ''))) {
+        const set = map.get(sel) || new Set();
+        for (const d of m[2].split(';').map((x) => x.trim()).filter(Boolean)) set.add(d);
+        map.set(sel, set);
+      }
+    }
+    return map;
+  };
+  const real = pairs(block, /^$/);
+  const copies = pairs(guide.split('\n').filter((l) => l.startsWith('.guide-narrow .')).join('\n'), /^\.guide-narrow /);
+  copies.delete('.hide-sm'); // a utility in ui.css's own layer, not part of the 640px block
+  assert.ok(copies.size >= 5, 'the guide copies the slot rules');
+  for (const [sel, decls] of copies) {
+    assert.ok(real.has(sel), 'not in the 640px block: ' + sel);
+    assert.deepStrictEqual([...decls].sort(), [...real.get(sel)].sort(), 'the guide copy of ' + sel + ' drifted from the 640px block');
+  }
   assert.match(read(path.join(UI_DIR, 'index.html')), /<div class="guide-narrow">\s*<header class="site-header">[\s\S]*?site-header__account-short/, 'the /ui guide shows the narrow header');
 });
 

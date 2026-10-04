@@ -276,7 +276,7 @@
         watchDecision(null);
         return false;
       }
-      // Motion only for a card that appears during the session, never one already pending at page load.
+      // Motion only for a card that appears after the step's first render, never one already pending at page load.
       var enter = started && dv.key !== shownDecision;
       shownDecision = dv.key;
       ui.fill(slot, decisionCard(dv, enter));

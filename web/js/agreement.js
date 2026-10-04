@@ -29,7 +29,7 @@
 
   function outcomePanel(o) {
     if (!o) return UI.html``;
-    return UI.html`<div class="outcome outcome--${o.tone === 'ok' ? 'ok' : 'warn'}" id="brief-outcome"><div class="outcome__body"><h2 class="outcome__title">${o.text}</h2></div></div>`;
+    return UI.html`<div class="outcome outcome--${o.tone === 'ok' ? 'ok' : 'warn'}"><div class="outcome__body"><h2 class="outcome__title">${o.text}</h2></div></div>`;
   }
 
   function pointsList(pts) {
