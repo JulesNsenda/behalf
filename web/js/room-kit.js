@@ -110,11 +110,8 @@
   // expects, send, and either carry on or put everything back and say what went wrong.
   //   busy   the element or elements to set busy
   //   disable  optional element or elements to switch off while the action is out, without marking them busy.
-  //          Only the ones that were enabled are switched off, and on failure only those are switched back on;
-  //          the focus then returns to the first busy element, if it is still on the page and the focus was lost
-  //          (on nothing, the page, the busy element or a switched-off one); focus the person moved elsewhere stays.
-  //          On success they stay off when the refresh redrew the step (the first busy element has left the page),
-  //          and are switched back on when it didn't (the first busy element is still there)
+  //          Only the enabled ones are switched off, and only those come back on: on failure (the focus then returns
+  //          to the first busy element if it was lost), or on success when the refresh left that element on the page.
   //   error  the id of the error slot, which is cleared first and holds the failure message
   //   kind   the RoomView.errorMessage kind for a failure
   //   send   () -> a promise of {ok, status, data}
@@ -124,19 +121,21 @@
   //          false) means the refresh got no new view: the controls are put back and the network message shown
   //   fail   optional () -> called after a failure, once the controls are back
   function act(o) {
-    var busyEls = (Array.isArray(o.busy) ? o.busy : [o.busy]).filter(Boolean);
+    var first = (Array.isArray(o.busy) ? o.busy : [o.busy]).filter(Boolean)[0];
     // Only what act switches off itself is switched back on.
     var offEls = (Array.isArray(o.disable) ? o.disable : [o.disable]).filter(function (el) { return el && !el.disabled; });
     offEls.forEach(function (el) { el.disabled = true; });
     UI.setBusy(o.busy, true);
     fill(UI.byId(o.error), null);
     if (o.focus) A.pendingFocus = o.focus;
+    function restore() {
+      UI.setBusy(o.busy, false);
+      offEls.forEach(function (el) { el.disabled = false; });
+    }
     // code is the machine code a refusal carries, if any: it picks a more exact sentence than the status does.
     function fail(status, code) {
       A.pendingFocus = null;
-      UI.setBusy(o.busy, false);
-      offEls.forEach(function (el) { el.disabled = false; });
-      var first = busyEls[0];
+      restore();
       // A disabled control that had the focus drops it to the page, so the focus goes back only when it was lost.
       var active = document.activeElement;
       var lost = !active || active === document.body || active === first || offEls.indexOf(active) !== -1;
@@ -150,13 +149,23 @@
         if (applied === false) { fail(0); return; }
         // The refresh redraws the step, which drops the switched-off controls. If the busy control is still on the
         // page nothing was redrawn, so they would stay dead: switch them back on, and the busy ones with them.
-        var first = busyEls[0];
-        if (first && first.isConnected) {
-          UI.setBusy(o.busy, false);
-          offEls.forEach(function (el) { el.disabled = false; });
-        }
+        if (first && first.isConnected) restore();
       });
     });
+  }
+
+  // Entrance motion runs once per new thing: enter(name, key, ready) is true when ready and the key differs from
+  // the last one seen under that name, and it remembers the key either way.
+  function oneShot() {
+    var last = {};
+    return {
+      enter: function (name, key, ready) {
+        var fresh = Boolean(ready) && key != null && last[name] !== key;
+        last[name] = key;
+        return fresh;
+      },
+      reset: function () { last = {}; }
+    };
   }
 
   A.ui = {
@@ -172,6 +181,7 @@
     renderConnectSlot: renderConnectSlot,
     instructionsCard: instructionsCard,
     act: act,
+    oneShot: oneShot,
     defineStep: defineStep
   };
 })();

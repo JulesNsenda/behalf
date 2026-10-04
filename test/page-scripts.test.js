@@ -7,6 +7,9 @@ const { loadPage, loadRoomKit, makeEl, ok, refused, ME } = require('../test-supp
 
 const KEY = 'bh_' + 'k'.repeat(43);
 
+// A button on the page, for the room-kit act() tests.
+const ctl = (id, over) => Object.assign(makeEl({ focused: null }, id), { localName: 'button', isConnected: true }, over);
+
 // A server that keeps who is signed in and whether they have a key, and answers the page's requests the way the real one does.
 function scripted(initial) {
   const s = { me: initial, meFails: false, replies: {}, log: [] };
@@ -430,7 +433,6 @@ test('room page: a refused seat action passes its machine code on, so a draft re
 
 test('room page: act() switches off only the enabled `disable` elements while out, and on failure switches back on only those, then refocuses the busy control', async () => {
   const kit = loadRoomKit();
-  const ctl = (id, over) => Object.assign(makeEl({ focused: null }, id), { localName: 'button', isConnected: true }, over);
   const busy = ctl('opt-a');
   const other = ctl('opt-b');
   const already = ctl('opt-c', { disabled: true });
@@ -462,9 +464,21 @@ test('room page: act() switches off only the enabled `disable` elements while ou
   assert.equal(keep.disabled, true);
 });
 
+test('room page: oneShot().enter is true once per new key, only when ready, and records the key either way', () => {
+  const shot = loadRoomKit().A.ui.oneShot();
+  assert.equal(shot.enter('decision', 'k1', false), false, 'not ready: no motion');
+  assert.equal(shot.enter('decision', 'k1', true), false, 'the key was recorded while not ready, so it is not new');
+  assert.equal(shot.enter('decision', 'k2', true), true, 'a new key');
+  assert.equal(shot.enter('decision', 'k2', true), false, 'the same key again');
+  assert.equal(shot.enter('outcome', 'k2', true), true, 'each name keeps its own key');
+  assert.equal(shot.enter('outcome', null, false), false, 'nothing there records null');
+  assert.equal(shot.enter('outcome', 'k2', true), true, 'the same outcome after it went away is new again');
+  shot.reset();
+  assert.equal(shot.enter('decision', 'k2', true), true, 'reset starts the keys over');
+});
+
 test('room page: act() on failure refocuses only when the focus was lost', async () => {
   const kit = loadRoomKit();
-  const ctl = (id, over) => Object.assign(makeEl({ focused: null }, id), { localName: 'button', isConnected: true }, over);
   const fail = { ok: false, status: 500, data: {} };
   const run = async (activeOf) => {
     const busy = ctl('b');
@@ -485,20 +499,19 @@ test('room page: act() on failure refocuses only when the focus was lost', async
 
 test('room page: act() on success switches the controls back on only when the step was not redrawn', async () => {
   const kit = loadRoomKit();
-  const ctl = (id, over) => Object.assign(makeEl({ focused: null }, id), { localName: 'button', isConnected: true }, over);
   const good = { ok: true, status: 200, data: {} };
   const still = ctl('b1');
   const offA = ctl('o1');
   await kit.A.ui.act({ busy: still, disable: offA, error: 'e', kind: 'answer', send: () => Promise.resolve(good) });
   assert.equal(offA.disabled, false, 'busy control still on the page: switched back on');
-  assert.equal(still.busy, false, 'and the busy control itself is no longer busy');
+  assert.equal(still.getAttribute('aria-busy'), null, 'and the busy control itself is no longer busy');
   assert.equal(still.disabled, false);
   const redrawn = ctl('b2');
   const offB = ctl('o2');
   kit.A.refresh = () => { redrawn.isConnected = false; return Promise.resolve(true); };
   await kit.A.ui.act({ busy: redrawn, disable: offB, error: 'e', kind: 'answer', send: () => Promise.resolve(good) });
   assert.equal(offB.disabled, true, 'busy control gone: the redraw owns them, left alone');
-  assert.equal(redrawn.busy, true, 'a busy control that left the page is left alone too');
+  assert.equal(redrawn.getAttribute('aria-busy'), 'true', 'a busy control that left the page is left alone too');
 });
 
 test('a key the server has since lost (deleted elsewhere) is dropped on the next answer', async () => {

@@ -500,9 +500,9 @@ test('quoted text: a curly or angle quote inside it can not close the quote earl
   const s = RV.claimView(R, { id: 'B1.1', text: 't', origin: 'sourced', ref }).detailQuote;
   assert.strictEqual(s, "Source given: “docs' and the room says 'all fine 'x' 'y'”");
   assert.strictEqual(count(RV.asked(R, 'B', 'a” b').quote, /[“”]/g), 2);
-  assert.strictEqual(count(RV.reviewLine({ sentence: 's', reason: 'x” y' }), /[“”]/g), 2);
+  assert.strictEqual(count(RV.reviewLine(RV.reviewNote(R, { by: 'B', verdict: 'conflict', reason: 'x” y' })), /[“”]/g), 2);
   // look-alikes: a straight quote, a double prime and a fullwidth quote are neutralised too
-  assert.strictEqual(RV.quoted('a" b″ c＂ d‹e› f〝g〞 h❝i❞ jʺ k˝'), "“a' b' c' d'e' f'g' h'i' j' k'”");
+  assert.strictEqual(RV.asked(R, 'B', 'a" b″ c＂ d‹e› f〝g〞 h❝i❞ jʺ k˝').quote, "“a' b' c' d'e' f'g' h'i' j' k'”");
 });
 
 test('claimView: a sourced ref can never pass as the room\'s own attestation', () => {
@@ -666,8 +666,8 @@ test('escalationEvents: asked and answered, for another person and for the viewe
   const env = { from: { seat: 'A' }, escalation: { question: 'Is a duplicate ok?', reason: 'r' }, answer: 'No', answer_via: 'web' };
   const them = RV.escalationEvents(view({ seat: 'B' }), env);
   assert.deepStrictEqual(them, [
-    { kind: 'asked', lead: "Lerato's AI asked Lerato:", body: 'Is a duplicate ok?', quote: '“Is a duplicate ok?”' },
-    { kind: 'answered', lead: 'Lerato answered:', body: 'No', quote: '“No”' },
+    { kind: 'asked', lead: "Lerato's AI asked Lerato:", quote: '“Is a duplicate ok?”' },
+    { kind: 'answered', lead: 'Lerato answered:', quote: '“No”' },
   ]);
   const me = RV.escalationEvents(view({ seat: 'A' }), env);
   assert.strictEqual(me[0].lead, 'Your AI asked you:');
@@ -1304,8 +1304,9 @@ test('escalation lines and claim details are quoted', () => {
 });
 
 test('composed wording: reviewLine, stoppedLine, recordLine, docTitle', () => {
-  assert.strictEqual(RV.reviewLine({ sentence: "Kwame's AI disagrees with this", reason: 'too high' }), "Kwame's AI disagrees with this: “too high”");
-  assert.strictEqual(RV.reviewLine({ sentence: 'x', reason: '' }), 'x');
+  const note = (reason) => RV.reviewNote(view({ seat: 'A' }), { by: 'B', verdict: 'conflict', reason });
+  assert.strictEqual(RV.reviewLine(note('too high')), "Kwame's AI disagrees with this: “too high”");
+  assert.strictEqual(RV.reviewLine(note('')), "Kwame's AI disagrees with this");
   assert.strictEqual(RV.recordLine(view({ seat: 'A' }), { n: 3, type: 'card_sealed', data: { seat: 'A' } }), '3. You locked your instructions');
   assert.strictEqual(RV.docTitle(view({ topic: 'Shop‮ setup' })), 'Shop setup · Behalf');
   assert.strictEqual(RV.docTitle(null), 'Room · Behalf');

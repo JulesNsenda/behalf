@@ -67,6 +67,13 @@
 
   var configLoaded = loadConfig();
 
+  // The header's "Step n of 3"; no step (0) hides it.
+  function showStep(n) {
+    var label = UI.byId('step-label');
+    if (n) label.textContent = RoomView.stepLabel(n);
+    label.hidden = !n;
+  }
+
   // ---------- sign in ----------
 
   var signinView = UI.byId('signin-view');
@@ -88,7 +95,7 @@
     `);
     signinView.hidden = false;
     form.hidden = true;
-    UI.byId('step-label').hidden = true; // "Step 1 of 3" means nothing when step 1 is signing in
+    showStep(0); // "Step 1 of 3" means nothing when step 1 is signing in
     if (focus) UI.byId('signin-link').focus();
   }
 
@@ -112,7 +119,7 @@
       return;
     }
     form.hidden = false;
-    UI.byId('step-label').hidden = false;
+    showStep(1);
     if (signinFailed) showError(AccountView.SIGNIN_FAILED);
   }
 
@@ -229,8 +236,7 @@
     UI.byId('start-view').hidden = true;
     UI.byId('invite-view').hidden = false;
     UI.byId('invite-footer').hidden = false;
-    UI.byId('step-label').textContent = RoomView.stepLabel(2);
-    UI.byId('step-label').hidden = false;
+    showStep(2);
     document.title = 'Invite ' + otherName + ' · Behalf';
     try { history.replaceState(null, '', '/start#invite'); } catch (e) { /* not fatal */ }
     UI.byId('invite-title').focus();
@@ -277,8 +283,7 @@
         UI.byId('invite-view').hidden = true;
         UI.byId('invite-footer').hidden = true;
         UI.byId('start-view').hidden = false;
-        UI.byId('step-label').textContent = RoomView.stepLabel(1);
-        UI.byId('step-label').hidden = false;
+        showStep(1);
         lockForm();
         showError(LINKS_MESSAGE);
         return;

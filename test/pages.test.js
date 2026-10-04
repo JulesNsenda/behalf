@@ -4,6 +4,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { WEB, UI_DIR } = require('../test-support/paths');
+const { stripComments, parseBlocks } = require('../test-support/css');
 
 function htmlFiles(dir) {
   const out = [];
@@ -675,28 +676,26 @@ test('agreement.js: a guess caption is the view-module note alone (it already na
 
 test('room-chat.js: the entrance motion is one-shot, keyed to the card or outcome, and never on the first render', () => {
   const src = read(path.join(WEB, 'js', 'room-chat.js'));
-  assert.match(src, /var enter = started && dv\.key !== shownDecision;\s*shownDecision = dv\.key;/);
-  assert.match(src, /var enter = Boolean\(oc\) && started && oc\.text !== shownOutcome;\s*shownOutcome = oc \? oc\.text : null;/);
+  assert.match(src, /entrances\.enter\('decision', dv\.key, started\)/);
+  assert.match(src, /entrances\.enter\('outcome', oc \? oc\.text : null, started && Boolean\(oc\)\)/);
   assert.match(src, /enter \? ' decision--enter' : ''/);
   assert.match(src, /enter \? ' outcome--enter' : ''/);
-  assert.match(src, /shownDecision = null;\s*shownOutcome = null;/, 'a new step starts the keys over');
+  assert.match(src, /entrances\.reset\(\);/, 'a new step starts the keys over');
   assert.match(src, /busy: busy,\s*disable: disable,/);
   assert.match(src, /sendAnswer\(dv, \{ option: [^;]*, b, buttons\.filter\(function \(o\) \{ return o !== b; \}\)\);/, 'the clicked option is busy, the others only disabled');
 });
 
 test('ui.css: every new motion is behind prefers-reduced-motion: no-preference or is a one-shot class', () => {
   const css = read(path.join(UI_DIR, 'ui.css'));
+  const clean = stripComments(css);
+  const tree = parseBlocks(clean, 0, clean.length);
+  // True when the needle sits inside a prefers-reduced-motion: no-preference block, at any depth.
+  const within = (nodes, at) => nodes.some((n) => at > n.open && at < n.close
+    && (n.prelude === '@media (prefers-reduced-motion: no-preference)' || within(n.children, at)));
   const inside = (needle) => {
-    const at = css.indexOf(needle);
+    const at = clean.indexOf(needle);
     assert.ok(at > 0, needle);
-    const open = css.lastIndexOf('@media (prefers-reduced-motion: no-preference) {', at);
-    if (open < 0) return false;
-    let depth = 0;
-    for (let i = css.indexOf('{', open); i < at; i++) {
-      if (css[i] === '{') depth++;
-      else if (css[i] === '}') depth--;
-    }
-    return depth > 0;
+    return within(tree, at);
   };
   assert.ok(inside('@view-transition { navigation: auto; }'), 'cross-page transition');
   assert.ok(inside('.disclosure::details-content {'), 'disclosure height');
@@ -775,20 +774,24 @@ test('the header account slot: a small secondary sign-in button with the GitHub 
   assert.match(js, /UI\.icon\('github'\)/);
   assert.match(js, /site-header__account-long">\$\{d\.text\}<\/span><span class="site-header__account-short">\$\{d\.short\}/);
   assert.match(css, /\.site-header__account-short \{ display: none; \}/, 'the short label is for narrow screens only');
-  const phone = css.slice(css.indexOf('@media (max-width: 640px) {\n    .container, .site-header__inner'));
-  assert.match(phone, /\.site-header__end:has\(\.site-header__nav\) \{ display: contents; \}/, 'the end box dissolves so the slot sits beside the logo');
-  // The 640px block's own range only: from its opening line to the brace that closes it.
-  const open = css.indexOf('@media (max-width: 640px) {\n    .container, .site-header__inner');
-  let depth = 0, end = open;
-  for (let i = css.indexOf('{', open); i < css.length; i++) {
-    if (css[i] === '{') depth++;
-    else if (css[i] === '}' && --depth === 0) { end = i; break; }
-  }
-  const block = css.slice(open, end);
+  // The 640px block's own range only: the media block that opens with the container rule, to the brace that closes it.
+  const clean = stripComments(css);
+  const findPhone = (nodes) => {
+    for (const n of nodes) {
+      if (n.prelude === '@media (max-width: 640px)' && n.children.length && n.children[0].prelude.startsWith('.container, .site-header__inner')) return n;
+      const deeper = findPhone(n.children);
+      if (deeper) return deeper;
+    }
+    return null;
+  };
+  const phoneAt = findPhone(parseBlocks(clean, 0, clean.length));
+  assert.ok(phoneAt, 'the 640px block');
+  const block = clean.slice(phoneAt.open, phoneAt.close);
+  assert.match(block, /\.site-header__end:has\(\.site-header__nav\) \{ display: contents; \}/, 'the end box dissolves so the slot sits beside the logo');
   assert.match(block, /\.site-header__account \{[^}]*order: 0;/, 'the slot follows page order again: first, beside the logo');
-  assert.match(phone, /\.site-header__account-login \{ position: absolute;[^}]*clip-path: inset\(50%\);/, 'the login is hidden from sight but still read out');
+  assert.match(block, /\.site-header__account-login \{ position: absolute;[^}]*clip-path: inset\(50%\);/, 'the login is hidden from sight but still read out');
   assert.match(css, /\.site-header__account \{[^}]*order: 1; \}/, 'wide: the slot goes after the nav');
-  assert.match(phone, /\.site-header__account-long \{ display: none; \}\s*\.site-header__account-short \{ display: inline; \}/);
+  assert.match(block, /\.site-header__account-long \{ display: none; \}\s*\.site-header__account-short \{ display: inline; \}/);
   const guide = read(path.join(UI_DIR, 'guide.css'));
   assert.ok(guide.includes('.guide-narrow .site-header__end:has(.site-header__nav) { display: contents; }'));
   assert.match(guide, /\.guide-narrow \.site-header__account \{[^}]*order: 0;/);

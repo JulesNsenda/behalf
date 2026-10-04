@@ -460,8 +460,8 @@
 
   /* the value is set through the .value property, never the markup attribute */
   .copy-field { display: flex; flex-wrap: wrap; gap: var(--space-2-5); }
-  .copy-field .input { flex: 1 1 260px; min-width: 0; width: auto; font-family: var(--font-mono); font-size: var(--size-15); background: var(--bg); }
-  .copy-field .code-block { flex: 1 1 260px; min-width: 0; }
+  .copy-field .input, .copy-field .code-block { flex: 1 1 260px; min-width: 0; }
+  .copy-field .input { width: auto; font-family: var(--font-mono); font-size: var(--size-15); background: var(--bg); }
   .copy-field .btn { flex: none; }
 
   /* Colour kinds. Each kind sets its soft background, ink and strong ink once; the components
@@ -767,7 +767,6 @@
 }
 
 /* ------------------------------------------------------------------ page transitions */
-/* The one thing outside every layer, on purpose: @view-transition is an at-rule for the document, not a component. */
 @media (prefers-reduced-motion: no-preference) {
   @view-transition { navigation: auto; }
 }

@@ -23,8 +23,7 @@
     var touched = false;   // a region was written during this update
     var replayed = false;
     var observer = null;
-    var shownDecision = null;  // key of the last decision card shown (entrance motion runs only for a new one)
-    var shownOutcome = null;   // outcome text last shown (same rule)
+    var entrances = ui.oneShot(); // entrance motion runs once per new decision card or outcome, never on the first render
 
     // True when `sig` is not what the region last rendered, and remembers it.
     function changed(name, sig) {
@@ -57,8 +56,7 @@
       seen = {};
       started = false;
       rowCount = 0;
-      shownDecision = null;
-      shownOutcome = null;
+      entrances.reset();
       stopWatching();
       var slot = UI.byId('details-slot');
       var text = A.text;
@@ -80,11 +78,12 @@
       // The row holds the pill, the room's fixed note and, when every review accepted, those reviews.
       // Any warning among the reviews puts all of them below, in order, as full lines.
       var note = c.note ? html`<span>${c.note}</span>` : false;
-      var inRow = c.allAccepted ? c.reviews.map(function (n) { return html`<span>${RV.reviewLine(n)}</span>`; }) : [];
+      var lines = c.reviews.map(RV.reviewLine);
+      var inRow = c.allAccepted ? lines.map(function (l) { return html`<span>${l}</span>`; }) : [];
       var meta = html`<div class="claim-meta"><span class="${pillClass}">${c.pill}</span>${note}${inRow}</div>`;
       var detail = c.detailQuote ? html`<span class="bubble__note">${c.detailQuote}</span>` : false;
-      var lines = c.allAccepted ? [] : c.reviews.map(function (n) { return html`<span class="bubble__note">${RV.reviewLine(n)}</span>`; });
-      return html`${text}${meta}${detail}${lines}`;
+      var below = c.allAccepted ? [] : lines.map(function (l) { return html`<span class="bubble__note">${l}</span>`; });
+      return html`${text}${meta}${detail}${below}`;
     }
 
     function proposalBlock(mv) {
@@ -277,8 +276,7 @@
         return false;
       }
       // Motion only for a card that appears after the step's first render, never one already pending at page load.
-      var enter = started && dv.key !== shownDecision;
-      shownDecision = dv.key;
+      var enter = entrances.enter('decision', dv.key, started);
       ui.fill(slot, decisionCard(dv, enter));
       wireDecision(dv);
       UI.byId('dock-text').textContent = dv.dock.text;
@@ -353,8 +351,7 @@
       var replayable = Boolean(oc && oc.replayable);
       if (!changed('outcome', JSON.stringify([oc, pb, room.seat, replayable, room.status]))) return;
       var replay = replayable ? html`<div class="cluster"><button class="btn btn--secondary" type="button" id="replay-btn">${A.text.replay}</button><div id="replay-error" hidden></div></div>` : false;
-      var enter = Boolean(oc) && started && oc.text !== shownOutcome;
-      shownOutcome = oc ? oc.text : null;
+      var enter = entrances.enter('outcome', oc ? oc.text : null, started && Boolean(oc));
       ui.fill(UI.byId('outcome-slot'), oc || pb ? html`${oc ? outcomeBlock(oc, room, enter) : false}${pb ? problemBlock(pb) : false}${replay}` : null);
       wireResume();
       wireReplay();

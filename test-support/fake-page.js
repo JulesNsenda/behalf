@@ -27,7 +27,7 @@ function makeEl(page, id) {
   const listeners = {};
   const attrs = {};
   return {
-    id, hidden: false, textContent: '', innerHTML: '', value: '', checked: false, disabled: false, busy: false, localName: 'div',
+    id, hidden: false, textContent: '', innerHTML: '', value: '', checked: false, disabled: false, localName: 'div',
     setAttribute(k, v) { attrs[k] = String(v); },
     getAttribute(k) { return k in attrs ? attrs[k] : null; },
     removeAttribute(k) { delete attrs[k]; },
@@ -135,15 +135,8 @@ function loadRoomKit() {
   const slots = {};
   const page = { focused: null };
   const document = { activeElement: null, body: { id: 'body' } };
-  // setBusy is the real one's effect on the fake elements: aria-busy on, and a control disabled while busy.
-  const setBusy = (target, on) => {
-    for (const el of Array.isArray(target) ? target : [target]) {
-      if (!el) continue;
-      el.busy = Boolean(on);
-      if (el.localName === 'button' || el.localName === 'input') el.disabled = Boolean(on);
-    }
-  };
-  const UI = Object.assign({}, realUI, { byId: (id) => slots[id] || (slots[id] = makeEl(page, id)), setBusy });
+  // The real UI.setBusy runs on the fake elements (aria-busy, and a control disabled while busy).
+  const UI = Object.assign({}, realUI, { byId: (id) => slots[id] || (slots[id] = makeEl(page, id)) });
   const A = { BLOCKED: -1, pendingFocus: null, refresh: () => Promise.resolve(true) };
   const win = { UI, RoomView, RoomApp: A };
   win.window = win;

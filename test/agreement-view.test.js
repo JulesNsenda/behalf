@@ -246,7 +246,7 @@ test('flags: the room page\'s sentences, never the raw flag', () => {
   const R = roomOf(brief({ protocol_flags: [{ seq: 4, seat: 'A', flag: raw }, { seq: 5, seat: 'B', flag: 'Some new unmatched rule text' }] }));
   const out = AV.flags(R);
   assert.strictEqual(out.length, 2);
-  assert.deepStrictEqual(out[0], RV.flagSentence(raw));
+  assert.deepStrictEqual(out[0], { sentence: RV.flagSentence(raw).sentence, quote: null });
   assert.strictEqual(out[1].sentence, RV.FLAG_FALLBACK);
   assert.ok(!JSON.stringify(out).includes(raw));
   assert.ok(!JSON.stringify(out).includes('unmatched'));
@@ -255,11 +255,11 @@ test('flags: the room page\'s sentences, never the raw flag', () => {
 
 test('flags: quoted detail passes through; none and a missing room are empty', () => {
   const quoted = 'Claim "The thing" was tagged stated without a reference; downgraded to assumed.';
-  assert.strictEqual(AV.flags(roomOf(brief({ protocol_flags: [{ seq: 1, seat: 'A', flag: quoted }] })))[0].detail, "Lerato's AI wrote: “The thing”");
-  assert.strictEqual(AV.flags(roomOf(brief({ protocol_flags: [{ seq: 1, seat: 'B', flag: quoted }] })), 'B')[0].detail, 'Your AI wrote: “The thing”');
+  assert.strictEqual(AV.flags(roomOf(brief({ protocol_flags: [{ seq: 1, seat: 'A', flag: quoted }] })))[0].quote, "Lerato's AI wrote: “The thing”");
+  assert.strictEqual(AV.flags(roomOf(brief({ protocol_flags: [{ seq: 1, seat: 'B', flag: quoted }] })), 'B')[0].quote, 'Your AI wrote: “The thing”');
   // a quote inside the claim can not close the quote early
   const hostile = 'Claim "x” and “y" was tagged stated without a reference; downgraded to assumed.';
-  const d = AV.flags(roomOf(brief({ protocol_flags: [{ seq: 1, seat: 'A', flag: hostile }] })), 'A')[0].detail;
+  const d = AV.flags(roomOf(brief({ protocol_flags: [{ seq: 1, seat: 'A', flag: hostile }] })), 'A')[0].quote;
   assert.strictEqual(d, "Your AI wrote: “x' and 'y”");
   assert.deepStrictEqual(AV.flags(room()), []);
   assert.deepStrictEqual(AV.flags(null), []);

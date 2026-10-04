@@ -169,7 +169,7 @@
       return RV.reviewNote(N, { by: RV.isSeat(r.by) ? r.by : 'A', verdict: r.verdict, reason: r.reason });
     }).filter(function (n) { return n.verdict !== 'accept'; }).map(function (n) {
       // The reason is the AI's own text: quoted, after the sentence that names the AI.
-      return { sentence: n.sentence, reason: n.reason ? RV.quoted(n.reason) : '' };
+      return { sentence: n.sentence, reason: n.quote };
     });
   }
 
@@ -219,14 +219,14 @@
     });
   }
 
-  // "The room stopped these": fixed sentences from RoomView, never the raw flag. The detail is the claim
+  // "The room stopped these": fixed sentences from RoomView, never the raw flag. The quote is the claim
   // text, quoted and attributed to the AI that wrote it ("Kwame's AI wrote: “...”"), or null.
   function flags(R, viewerSeat) {
     var b = R && R.brief;
     var N = namesView(R, viewerSeat);
     return (b && Array.isArray(b.protocol_flags) ? b.protocol_flags : []).map(function (f) {
       var s = RV.flagView(N, RV.isSeat(f && f.seat) ? f.seat : 'A', f);
-      return { sentence: s.sentence, detail: s.quote };
+      return { sentence: s.sentence, quote: s.quote };
     });
   }
 

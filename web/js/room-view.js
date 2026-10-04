@@ -372,10 +372,12 @@
     return ai + " couldn't confirm this";
   }
 
-  // One review as {by, verdict, sentence, reason}. Anything that isn't accept or conflict is a challenge.
+  // One review as {by, verdict, sentence, reason, quote}. quote is the reason quoted (the AI's own text), or ''.
+  // Anything that isn't accept or conflict is a challenge.
   function reviewNote(R, review) {
     var verdict = review.verdict === 'accept' || review.verdict === 'conflict' ? review.verdict : 'challenge';
-    return { by: review.by, verdict: verdict, sentence: reviewSentence(R, review.by, verdict), reason: str(review.reason) };
+    var reason = str(review.reason);
+    return { by: review.by, verdict: verdict, sentence: reviewSentence(R, review.by, verdict), reason: reason, quote: reason ? quoted(reason) : '' };
   }
 
   // {note, detailQuote} for a claim's ref. note is fixed wording (never AI text) and sits in the claim's
@@ -419,6 +421,7 @@
     var rv = (full && full.reviews) || claim.reviews || [];
     var notes = rv.map(function (r) { return reviewNote(R, r); });
     var ref = refView(R, seat, origin, claim.ref);
+    var flagged = notes.some(function (n) { return n.verdict !== 'accept'; });
 
     return {
       id: claim.id,
@@ -432,8 +435,8 @@
       detailQuote: ref.detailQuote,
       reviews: notes,
       // Every review accepted: they can share the meta row. Otherwise all go in order as full lines.
-      allAccepted: notes.length > 0 && notes.every(function (n) { return n.verdict === 'accept'; }),
-      flagged: notes.some(function (n) { return n.verdict !== 'accept'; })
+      allAccepted: notes.length > 0 && !flagged,
+      flagged: flagged
     };
   }
 
@@ -488,7 +491,7 @@
 
   // What a seat's AI asked its person.
   function asked(R, seat, question) {
-    return { kind: 'asked', lead: aiName(R, seat) + ' asked ' + who(R, seat, 'you') + ':', body: str(question), quote: quoted(question) };
+    return { kind: 'asked', lead: aiName(R, seat) + ' asked ' + who(R, seat, 'you') + ':', quote: quoted(question) };
   }
 
   // What the person answered; via is 'mcp' when it went through their own agent.
@@ -496,7 +499,6 @@
     return {
       kind: 'answered',
       lead: who(R, seat, 'You') + ' answered' + (via === 'mcp' ? who(R, seat, 'via') : '') + ':',
-      body: str(answer),
       quote: quoted(answer)
     };
   }
@@ -573,7 +575,6 @@
     var f = flagSentence(flag);
     return {
       sentence: f.sentence,
-      detail: f.detail,
       line: stoppedLine(f.sentence),
       quote: f.detail ? aiName(R, seat) + ' wrote: ' + quoted(f.detail) : null
     };
@@ -582,7 +583,7 @@
   // The visible line for one review: "Kwame's AI disagrees with this: “the reason”". The reason is the AI's
   // own text, so it is quoted.
   function reviewLine(note) {
-    return note.sentence + (note.reason ? ': ' + quoted(note.reason) : '');
+    return note.sentence + (note.quote ? ': ' + note.quote : '');
   }
 
   // Everything one chat message needs, so room.js holds no wording.
@@ -1008,7 +1009,6 @@
     reviewSentence: reviewSentence,
     reviewNote: reviewNote,
     reviewLine: reviewLine,
-    quoted: quoted,
     flagView: flagView,
     flagSentence: flagSentence,
     stoppedLine: stoppedLine,

@@ -82,8 +82,8 @@
     return UI.html`<section class="stack stack--md" aria-labelledby="h-stopped">
       <h2 id="h-stopped">${T.stopped}</h2>
       <div class="stack stack--sm">${list.map(function (f) {
-        var detail = f.detail ? UI.html`<p class="text-caption">${f.detail}</p>` : false;
-        return UI.callout('warn', UI.html`<p>${f.sentence}</p>${detail}`);
+        var quote = f.quote ? UI.html`<p class="text-caption">${f.quote}</p>` : false;
+        return UI.callout('warn', UI.html`<p>${f.sentence}</p>${quote}`);
       })}</div>
     </section>`;
   }

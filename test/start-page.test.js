@@ -5,6 +5,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { loadPage, flush, ok, refused, ME } = require('../test-support/fake-page');
+const { readRepo } = require('../test-support/paths');
 const AccountView = require('../web/js/account-view.js');
 const RoomView = require('../web/js/room-view.js');
 
@@ -118,8 +119,7 @@ test('"Step 1 of 3" is hidden while step 1 is the sign-in, and shown on every pa
 });
 
 test('"Step 1 of 3" starts hidden in start.html and stays hidden until the page has decided; the form path then shows it', async () => {
-  const markup = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'start.html'), 'utf8');
-  assert.match(markup, /<span[^>]*id="step-label"[^>]*\shidden[\s>]/, 'hidden in the markup');
+  assert.match(readRepo('web/start.html'), /<span[^>]*id="step-label"[^>]*\shidden[\s>]/, 'hidden in the markup');
   let release;
   const gate = new Promise((r) => { release = r; });
   const page = loadStart({ config: ON, request: async (method, url) => { if (url === '/api/me') { await gate; return ok(200, ME()); } return refused(404); } });
@@ -128,6 +128,7 @@ test('"Step 1 of 3" starts hidden in start.html and stays hidden until the page 
   release();
   await page.flush();
   assert.equal(page.el('step-label').hidden, false, 'shown on the form path');
+  assert.equal(page.el('step-label').textContent, RoomView.stepLabel(1));
 });
 
 test('the sign-in prompt: the button carries the GitHub mark before its words, and the demo link is flush so it lines up with the button', async () => {
