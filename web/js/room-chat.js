@@ -73,10 +73,12 @@
     function claimBlock(c) {
       var pillClass = c.origin === 'stated' ? 'pill pill--party ' + ui.partyClass(c.seat) : c.origin === 'sourced' ? 'pill' : 'pill pill--warn';
       var text = c.unconfirmed ? html`<p><span class="mark-unconfirmed">${c.text}</span></p>` : html`<p>${c.text}</p>`;
+      var accepted = c.accepted.map(function (n) { return html`<span>${RV.reviewLine(n)}</span>`; });
+      var meta = html`<div class="claim-meta"><span class="${pillClass}">${c.pill}</span>${accepted}</div>`;
       var note = c.note ? html`<span class="bubble__note">${c.note}</span>` : false;
       var detail = c.detailQuote ? html`<span class="bubble__note">${c.detailQuote}</span>` : false;
-      var reviews = c.reviewNotes.map(function (n) { return html`<span class="bubble__note">${RV.reviewLine(n)}</span>`; });
-      return html`${text}<span class="${pillClass}">${c.pill}</span>${note}${detail}${reviews}`;
+      var warnings = c.warnings.map(function (n) { return html`<span class="bubble__note">${RV.reviewLine(n)}</span>`; });
+      return html`${text}${meta}${note}${detail}${warnings}`;
     }
 
     function proposalBlock(mv) {

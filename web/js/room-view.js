@@ -376,27 +376,31 @@
     return { by: review.by, verdict: verdict, sentence: reviewSentence(R, review.by, verdict), reason: str(review.reason) };
   }
 
-  // {note, detail} for a claim's ref. note is fixed wording, detail is the ref as plain text to escape.
-  //  - stated, clause path into the instructions: "From Kwame's instructions" (your, for the viewer)
-  //  - stated, clause path into an answer: "From Kwame's answer"
-  //  - stated, anything else: the ref itself as detail
-  //  - sourced, a ref that names something: the ref as note
-  //  - sourced, a clause-shaped ref: "No source named"
+  // {pill, note, detail, detailQuote} for a claim's ref. pill replaces the origin pill when the ref says
+  // where a stated claim came from; note is fixed wording; detail is the ref as plain text to escape and
+  // detailQuote is the same, quoted and attributed.
+  //  - stated, clause path into the instructions: pill "From Kwame's instructions" (your, for the viewer)
+  //  - stated, clause path into an answer: pill "From Kwame's answer"
+  //  - stated, anything else: the ref itself as a quoted detail
+  //  - sourced, a ref that names something: "Source given: “ref”", never bare text
+  //  - sourced, a clause-shaped ref: note "No source named"
   function refView(R, seat, origin, ref) {
-    var none = { note: null, detail: null };
+    var none = { pill: null, note: null, detail: null, detailQuote: null };
     ref = str(ref);
     if (!ref) return none;
     var whose = who(R, seat, 'your');
     var parsed = parseRef(ref);
     if (origin === 'stated') {
       switch (parsed.kind) {
-        case 'instruction': return { note: 'From ' + whose + ' instructions', detail: null };
-        case 'answer': return { note: 'From ' + whose + ' answer', detail: null };
-        default: return { note: null, detail: ref };
+        case 'instruction': return { pill: 'From ' + whose + ' instructions', note: null, detail: null, detailQuote: null };
+        case 'answer': return { pill: 'From ' + whose + ' answer', note: null, detail: null, detailQuote: null };
+        default: return { pill: null, note: null, detail: ref, detailQuote: quoted(ref) };
       }
     }
     if (origin === 'sourced') {
-      return parsed.clause ? { note: 'No source named', detail: null } : { note: ref, detail: null };
+      return parsed.clause
+        ? { pill: null, note: 'No source named', detail: null, detailQuote: null }
+        : { pill: null, note: null, detail: ref, detailQuote: 'Source given: ' + quoted(ref) };
     }
     return none;
   }
@@ -412,8 +416,11 @@
 
     var full = findClaim(R, claim.id);
     var rv = (full && full.reviews) || claim.reviews || [];
-    var reviewNotes = rv.map(function (r) { return reviewNote(R, r); });
+    var notes = rv.map(function (r) { return reviewNote(R, r); });
+    var warnings = notes.filter(function (n) { return n.verdict !== 'accept'; });
+    var accepted = notes.filter(function (n) { return n.verdict === 'accept'; });
     var ref = refView(R, seat, origin, claim.ref);
+    if (ref.pill) pill = ref.pill;
 
     return {
       id: claim.id,
@@ -425,9 +432,10 @@
       unconfirmed: origin === 'assumed',
       note: ref.note,
       detail: ref.detail,
-      detailQuote: ref.detail ? quoted(ref.detail) : null,
-      reviewNotes: reviewNotes,
-      flagged: reviewNotes.some(function (n) { return n.verdict !== 'accept'; })
+      detailQuote: ref.detailQuote,
+      warnings: warnings,
+      accepted: accepted,
+      flagged: warnings.length > 0
     };
   }
 
@@ -545,6 +553,12 @@
 
   // ---------- messages ----------
 
+  // The "asked" line is left out while the decision card shows the same question to the person who can
+  // answer it. Others see it, and so does the answering seat once the answer lands.
+  function askedHidden(R, env) {
+    return Boolean(canAnswer(R) && R.pending && env && R.pending.seq === env.seq && !env.answer);
+  }
+
   function envSeat(env) { return env.from && isSeat(env.from.seat) ? env.from.seat : 'A'; }
 
   // The record line for a message: "Kwame's AI sent a message".
@@ -589,7 +603,7 @@
       claims: (Array.isArray(env.claims) ? env.claims : []).map(function (c) { return claimView(R, c); }),
       proposal: proposalView(R, env),
       acceptEvent: agreed ? speaker + ' accepted the proposal' : null,
-      escalationEvents: escalationEvents(R, env),
+      escalationEvents: escalationEvents(R, env).filter(function (ev) { return !(ev.kind === 'asked' && askedHidden(R, env)); }),
       flags: (Array.isArray(env.protocol_flags) ? env.protocol_flags : []).map(function (f) { return flagView(R, seat, f); })
     };
   }
@@ -764,6 +778,7 @@
       var full = has.call(byId, c.id) ? byId[c.id] : c;
       parts.push(c.id + ':' + (full.reviews || []).map(function (r) { return r.by + '=' + r.verdict; }).join(','));
     });
+    if (askedHidden(R, env)) parts.push(true); // last, and only then: part 0 and every other fingerprint stay as they were
     return JSON.stringify(parts);
   }
 
