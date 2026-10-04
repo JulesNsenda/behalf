@@ -35,6 +35,10 @@
     --focus: var(--accent);
     --focus-inverse: #9DB4F2;
     --on-inverse-muted: #C9CED6;
+    --inverse: #16191E;
+    --on-inverse: #FFFFFF;
+    --on-inverse-hover: #EEF0F4;
+    --inverse-edge: #16191E;
 
     /* seats are fixed by seat, never by viewer */
     --seat-a: #2448B8;
@@ -136,8 +140,12 @@
       --line: #2A303B;
       --line-strong: #6B7383;
       --accent: #7C9CF2;
-      --focus-inverse: #2448B8;
-      --on-inverse-muted: #4A505C;
+      --focus-inverse: #9DB4F2;
+      --on-inverse-muted: #B4BAC6;
+      --inverse: #323947;
+      --on-inverse: #E8EAEE;
+      --on-inverse-hover: #D0D4DB;
+      --inverse-edge: #6B7383;
       --seat-a: #7C9CF2;
       --seat-a-soft: #1B2744;
       --seat-a-ink: #B5C7F7;
@@ -175,8 +183,12 @@
       --line: #2A303B;
       --line-strong: #6B7383;
       --accent: #7C9CF2;
-      --focus-inverse: #2448B8;
-      --on-inverse-muted: #4A505C;
+      --focus-inverse: #9DB4F2;
+      --on-inverse-muted: #B4BAC6;
+      --inverse: #323947;
+      --on-inverse: #E8EAEE;
+      --on-inverse-hover: #D0D4DB;
+      --inverse-edge: #6B7383;
       --seat-a: #7C9CF2;
       --seat-a-soft: #1B2744;
       --seat-a-ink: #B5C7F7;
@@ -384,10 +396,10 @@
   .btn--primary { background: var(--ink); color: var(--surface); }
   .btn--primary:hover { background: var(--accent); border-color: var(--accent); color: var(--surface); }
   .btn--secondary:hover { background: var(--surface-hover); color: var(--ink); }
-  .btn--on-inverse { background: var(--surface); color: var(--ink); border-color: var(--surface); }
-  .btn--on-inverse:hover { background: var(--surface-hover); border-color: var(--surface-hover); color: var(--ink); }
-  .btn--ghost-on-inverse { background: transparent; color: var(--surface); border-color: var(--surface); }
-  .btn--ghost-on-inverse:hover { background: var(--surface); color: var(--ink); }
+  .btn--on-inverse { background: var(--on-inverse); color: var(--inverse); border-color: var(--on-inverse); }
+  .btn--on-inverse:hover { background: var(--on-inverse-hover); border-color: var(--on-inverse-hover); color: var(--inverse); }
+  .btn--ghost-on-inverse { background: transparent; color: var(--on-inverse); border-color: var(--on-inverse); }
+  .btn--ghost-on-inverse:hover { background: var(--on-inverse); color: var(--inverse); }
   .btn--small { min-height: var(--target-min); padding: 0 var(--space-4); font-size: var(--size-15); }
   .btn--link {
     min-height: var(--target-min); padding: 0 var(--space-2); border-color: transparent; background: transparent;
@@ -476,8 +488,8 @@
   /* conversation */
   .chat { display: flex; flex-direction: column; gap: var(--space-4-5); }
   .chat__event {
-    align-self: center; padding: var(--space-2) var(--space-4-5); border-radius: var(--radius-pill);
-    background: var(--ink); color: var(--surface); font-size: var(--size-15); text-align: center;
+    align-self: center; padding: var(--space-2) var(--space-4-5); border-radius: var(--radius-lg);
+    background: var(--inverse); color: var(--on-inverse); font-size: var(--size-15); text-align: center;
   }
   /* the corner nearest the speaker is squarer; --end flips it */
   .bubble, .thinking { --tail-radius: var(--radius) var(--radius) var(--radius) var(--space-1); }
@@ -582,10 +594,11 @@
   .quote__text { font-size: var(--size-16); font-style: italic; color: var(--ink); }
   .quote cite { font-style: normal; font-size: var(--size-14); color: var(--ink-muted); }
 
-  /* inverse band: ink and surface swap in dark, so it stays a high-contrast block */
+  /* inverse band: stays a dark block in both themes (--inverse), with an edge so it reads against the dark page */
   .cta-band {
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-6); padding: var(--space-10);
-    border-radius: var(--radius-lg); background: var(--ink); color: var(--surface);
+    border: 1px solid var(--inverse-edge);
+    border-radius: var(--radius-lg); background: var(--inverse); color: var(--on-inverse);
     --focus: var(--focus-inverse);
   }
   .cta-band__body { flex: 1 1 420px; display: flex; flex-direction: column; gap: var(--space-1-5); }
@@ -671,9 +684,10 @@
   }
   .toast {
     pointer-events: none; max-width: min(100%, 420px); padding: var(--space-3) var(--space-4-5);
-    border-radius: var(--radius-sm); background: var(--ink); color: var(--surface); font-size: var(--size-15); box-shadow: var(--shadow);
+    border: 1px solid var(--inverse-edge);
+    border-radius: var(--radius-sm); background: var(--inverse); color: var(--on-inverse); font-size: var(--size-15); box-shadow: var(--shadow);
   }
-  .toast--info, .toast--ok, .toast--warn, .toast--danger { background: var(--tone-soft, var(--ink)); color: var(--tone-strong, var(--surface)); }
+  .toast--info, .toast--ok, .toast--warn, .toast--danger { background: var(--tone-soft, var(--inverse)); color: var(--tone-strong, var(--on-inverse)); }
 
   /* empty and error states */
   .state {

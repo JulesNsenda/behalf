@@ -14,7 +14,10 @@
     ["--accent", "--surface"],
     ["--surface", "--ink"],
     ["--surface", "--accent"],
-    ["--on-inverse-muted", "--ink"],
+    ["--on-inverse-muted", "--inverse"],
+    ["--on-inverse", "--inverse"],
+    ["--inverse", "--on-inverse"],
+    ["--inverse", "--on-inverse-hover"],
     ["--seat-a", "--bg"],
     ["--seat-a", "--surface"],
     ["--seat-a-ink", "--seat-a-soft"],
@@ -34,7 +37,7 @@
     ["--danger-ink", "--danger-soft"],
     ["--danger-ink", "--bg"],
     ["--danger-ink", "--surface"],
-    ["--focus-inverse", "--ink"]
+    ["--focus-inverse", "--inverse"]
   ],
   "ui": [
     ["--line-strong", "--bg"],
@@ -44,6 +47,7 @@
     ["--ok-dot", "--surface"],
     ["--ok-dot", "--bg"],
     ["--danger-ink", "--surface"],
-    ["--focus-inverse", "--ink"]
+    ["--focus-inverse", "--inverse"],
+    ["--inverse-edge", "--bg"]
   ]
 }
