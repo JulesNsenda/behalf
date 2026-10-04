@@ -191,11 +191,12 @@ test('the key does not outlive the page: pagehide empties it, and coming back fr
   assert.ok(server);
 });
 
-test('sign-in off: no /api/me request on the pages that fill the header or the panel, no panel and no slot, and the old sentence stays', async () => {
-  const server = scripted(ME());
+test('sign-in off: the settings decide on the pages that fill the header or the panel, whatever /api/me says: no panel and no slot, and the old sentence stays', async () => {
+  const server = scripted(ME()); // /api/me claims signin 'github' with a user
   const page = loadPage({ request: server.request, config: { live: true, passcode: false, signin: 'off' } });
   await page.flush();
-  assert.deepStrictEqual(page.requests, []);
+  assert.equal(page.requests.length, 1, 'exactly the one question, asked with the settings, and no other request');
+  assert.equal(page.meRequests(), 1);
   assert.equal(page.byId('account-slot').hidden, true);
   assert.equal(page.byId('key-panel').hidden, true);
   assert.equal(page.byId('no-signin-note').hidden, false);
@@ -203,7 +204,24 @@ test('sign-in off: no /api/me request on the pages that fill the header or the p
   // the same on a page with only the header
   const home = loadPage({ request: server.request, scripts: ['account.js'], pathname: '/', config: { live: true, passcode: false, signin: 'off' } });
   await home.flush();
-  assert.deepStrictEqual(home.requests, []);
+  assert.equal(home.requests.length, 1, 'exactly one /api/me, and no other request');
+  assert.equal(home.meRequests(), 1);
+  assert.equal(home.byId('account-slot').hidden, true);
+});
+
+test('sign-in off: the header and the panel settle as soon as the settings say so, without waiting for /api/me', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const request = async (method, url) => { if (url === '/api/me') { await gate; return ok(200, ME()); } return refused(404); };
+  const page = loadPage({ request, config: { live: true, passcode: false, signin: 'off' } });
+  await page.flush();
+  assert.equal(page.meRequests(), 1, '/api/me is out, unanswered');
+  assert.equal(page.byId('account-slot').hidden, true);
+  assert.equal(page.byId('key-panel').hidden, true);
+  assert.equal(page.byId('no-signin-note').hidden, false);
+  release();
+  await page.flush();
+  assert.equal(page.byId('account-slot').hidden, true, 'its late answer changes nothing');
 });
 
 test('signed out with sign-in on: the header holds a sign-in link back to this page, the panel a link too, and "no sign-in" is hidden', async () => {

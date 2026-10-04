@@ -80,11 +80,44 @@ test('while /api/me is still being answered the page shows neither, and the form
   assert.equal(formWasShown, false, 'the form was never shown');
 });
 
-test('sign-in off: the form is shown as soon as the settings say so, without asking /api/me', async () => {
-  const page = loadStart({ config: { live: true, passcode: false, signin: 'off' }, me: ME({ user: null }), request: () => refused(404) });
+test('sign-in off: the settings decide. The form shows even when /api/me claims sign-in is on, and its answer never turns the prompt on', async () => {
+  const off = { live: true, passcode: false, signin: 'off' };
+  const plain = loadStart({ config: off, me: ME({ user: null }), request: () => refused(404) });
+  await plain.flush();
+  exactlyOne(plain, 'form');
+  assert.equal(plain.requests.length, 1, 'exactly one request, and no other');
+  const lying = loadStart({ config: off, me: ME({ user: null }) }); // /api/me says signin 'github', user null
+  await lying.flush();
+  assert.equal(lying.meRequests(), 1, '/api/me is asked together with the settings');
+  assert.equal(lying.requests.length, 1, 'exactly one request, and no other');
+  exactlyOne(lying, 'form');
+  assert.equal(lying.signinHtml(), '');
+  assert.equal(lying.el('step-label').hidden, false);
+});
+
+test('sign-in off: the form is shown as soon as the settings say so, without waiting for /api/me', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const page = loadStart({ config: { live: true, passcode: false, signin: 'off' }, request: async (method, url) => { if (url === '/api/me') { await gate; return ok(200, ME({ user: null })); } return refused(404); } });
+  await page.flush();
+  assert.equal(page.meRequests(), 1, '/api/me is out, unanswered');
+  exactlyOne(page, 'form');
+  release();
   await page.flush();
   exactlyOne(page, 'form');
-  assert.deepStrictEqual(page.requests, []);
+});
+
+test('sign-in on: /api/me is requested together with the settings, before they have answered', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const page = loadStart({ config: gate, me: ME({ user: null }) });
+  await page.flush();
+  assert.equal(page.meRequests(), 1, '/api/me was asked while the settings were still out');
+  assert.equal(formShown(page), false);
+  assert.equal(page.el('signin-view').hidden, true);
+  release(ON);
+  await page.flush();
+  exactlyOne(page, 'prompt');
 });
 
 test('signed out with sign-in on: the form is replaced by the sign-in link back to /start and a way to watch the demo, with no notice and no focus grab', async () => {
@@ -175,16 +208,20 @@ test('only exactly signin=failed counts', async () => {
   }
 });
 
-test('sign-in off: no /api/me request, the form shows, and ?signin=failed is still said in the banner', async () => {
+test('sign-in off: the form shows whatever /api/me says, and ?signin=failed is still said in the banner', async () => {
   const off = { live: true, passcode: false, signin: 'off' };
   const page = loadStart({ config: off, me: ME({ user: null }) });
   await page.flush();
   assert.equal(formShown(page), true);
   assert.equal(page.signinHtml(), '');
-  assert.deepStrictEqual(page.requests, []);
+  assert.equal(page.requests.length, 1, 'exactly one /api/me, and no other request');
+  assert.equal(page.meRequests(), 1);
   const failed = loadStart({ config: off, me: ME({ user: null }), search: '?signin=failed' });
   await failed.flush();
-  assert.deepStrictEqual(failed.requests, []);
+  assert.equal(failed.requests.length, 1);
+  assert.equal(failed.meRequests(), 1);
+  assert.equal(formShown(failed), true);
+  assert.equal(failed.signinHtml(), '');
   assert.ok(failed.errorHtml().includes(AccountView.SIGNIN_FAILED));
 });
 

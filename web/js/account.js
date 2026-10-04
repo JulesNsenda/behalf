@@ -1,5 +1,5 @@
 /*
- * Who is signed in. Asks /api/me once (and not at all when the server's settings say sign-in is off), fills the
+ * Who is signed in. Asks /api/me once, in parallel with the server's settings (with sign-in off the settings decide and its answer is ignored), fills the
  * header's account slot when the page has one, and tells the page scripts that subscribed when the answer changes.
  *
  * window.Account: load() resolves the last answer that could be read ({signin, user, agentKey}), or null only
@@ -22,10 +22,14 @@
   var OFF = { signin: 'off', user: null, agentKey: null };
 
   // The answer from the server, or null when it couldn't be read. With sign-in off there is nobody to ask about.
+  // /api/me is asked at once, in parallel with the settings: asking one after the other doubled the wait before the start page
+  // could show its sign-in prompt. The settings decide: with sign-in off the answer is OFF as soon as they say so, without
+  // waiting for /api/me, whose reply is then ignored.
   function fetchMe() {
+    var me = UI.request('GET', '/api/me');
     return UI.loadConfig().then(function (config) {
       if (config && config.signin === 'off') return OFF;
-      return UI.request('GET', '/api/me').then(function (res) { return res.ok ? AccountView.parseMe(res.data) : null; });
+      return me.then(function (res) { return res.ok ? AccountView.parseMe(res.data) : null; });
     });
   }
 

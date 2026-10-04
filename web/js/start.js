@@ -123,6 +123,8 @@
     if (signinFailed) showError(AccountView.SIGNIN_FAILED);
   }
 
+  // account.js started /api/me when it ran, in parallel with the settings (see there), so Account.load() here only joins that
+  // question: the sign-in prompt waits for one round trip, and with sign-in off the form shows as soon as the settings say so.
   configLoaded.then(function (c) { return c && c.signin === 'github' ? Account.load() : null; }).then(decided, function () { decided(null); });
   setTimeout(function () { decided(null); }, DECIDE_MS);
 

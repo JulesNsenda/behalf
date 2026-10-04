@@ -721,16 +721,16 @@ test('start.js: a create refusal is told apart by its code: only a code-less 403
   assert.match(src, /if \(focus\) UI\.byId\('signin-link'\)\.focus\(\);/);
 });
 
-test('start.js: the form is replaced, not just covered; sign-in on comes from the settings, and /api/me is only the user', () => {
+test('start.js: the form is replaced, not just covered; sign-in on comes from the settings, and /api/me (already asked by account.js) is only the user', () => {
   const src = read(path.join(WEB, 'js', 'start.js'));
   assert.match(src, /signinView\.hidden = false;\s*form\.hidden = true;/);
   assert.match(src, /me && me\.signin === 'github' && !me\.user/);
-  assert.match(src, /configLoaded\.then\(function \(c\) \{ return c && c\.signin === 'github' \? Account\.load\(\) : null; \}\)/);
-  assert.ok(!/UI\.request\([^)]*api\/me/.test(src),'start.js never asks /api/me itself: Account does, and only with sign-in on');
+  assert.match(src, /configLoaded\.then\(function \(c\) \{ return c && c\.signin === 'github' \? Account\.load\(\) : null; \}\)/, 'sign-in on comes from the settings only');
+  assert.ok(!/UI\.request\([^)]*api\/me/.test(src),'start.js never asks /api/me itself: Account does');
   assert.match(read(path.join(WEB, 'start.html')), /<div class="stack stack--md" id="signin-view" hidden><\/div>/);
 });
 
-test('start page: the form and the sign-in both start hidden, and only the decision (settings, then /api/me) shows one, so the form never flashes before the sign-in', () => {
+test('start page: the form and the sign-in both start hidden, and only the decision (the settings, with /api/me already in flight) shows one, so the form never flashes before the sign-in', () => {
   const html = read(path.join(WEB, 'start.html'));
   assert.match(html, /<form class="stack stack--md" id="start-form" novalidate hidden>/);
   assert.match(html, /<div class="stack stack--md" id="signin-view" hidden><\/div>/);
