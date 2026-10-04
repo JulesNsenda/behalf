@@ -340,7 +340,8 @@ test('static routes serve the same files as before', T, async (t) => {
     assert.equal(res.status, 200, route);
     assert.equal(res.headers.get('content-type'), type, route);
     assert.equal(res.headers.get('cache-control'), 'no-cache', route);
-    assert.equal(await res.text(), fs.readFileSync(path.join(ROOT, file), 'utf8'), route);
+    // the local asset URLs in HTML and CSS carry ?v= (see the caching tests below); without it the bytes are the file's
+    assert.equal((await res.text()).replace(/\?v=[0-9a-f]{12}/g, ''), fs.readFileSync(path.join(ROOT, file), 'utf8'), route);
   }
   for (const route of ['/nope', '/spec/', '/spec/nope.md', '/ui/nope', '/roomx']) {
     const res = await fetch(base + route);
@@ -358,6 +359,195 @@ test('resolveStatic: raw paths that leave the web directory resolve to null', ()
   assert.equal(resolveStatic(pub, '/ui/ui.css'), path.join(pub, 'ui', 'ui.css'));
   assert.equal(resolveStatic(pub, '/'), path.join(pub, 'index.html'));
   assert.equal(resolveStatic(pub, '/a/../ui/ui.css'), path.join(pub, 'ui', 'ui.css'), 'dot segments that stay inside are fine');
+});
+
+// ---- static caching: content hashes, ?v= stamps, gzip ----
+// A request with exact headers and the raw (still compressed) body: fetch would add its own Accept-Encoding and decode.
+function rawGet(base, route, headers = {}, method = 'GET') {
+  return new Promise((resolve, reject) => {
+    const req = http.request(base + route, { method, headers }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+const sha12 = (buf) => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 12);
+const IMMUTABLE = 'private, max-age=31536000, immutable';
+const IDENTITY = { 'accept-encoding': 'identity' };
+
+// A root with a tiny web/: a page, a script, a stylesheet that names a font, the font, a logo and a text file.
+function staticRoot(t) {
+  const root = mkTmp('http-static-');
+  t.after(() => rmTmp(root));
+  const w = (rel, data) => { fs.mkdirSync(path.dirname(path.join(root, 'web', rel)), { recursive: true }); fs.writeFileSync(path.join(root, 'web', rel), data); };
+  w('start.html', '<link rel="stylesheet" href="/ui/ui.css"><script src="/js/a.js" defer></script><img src="/ui/logo.svg">' +
+    '<script src="https://cdn.example/x.js"></script><script src="//cdn.example/y.js"></script><script src="/js/a.js?v=old"></script><script src="/js/missing.js"></script>' +
+    '<a href="/connect">c</a> <a href="/js/a.js">link text</a> <p>src=&quot;/js/a.js&quot; and <code>src="/js/a.js"</code></p>');
+  w('js/a.js', 'console.log("a");\n'.repeat(50));
+  w('ui/ui.css', "@font-face{src:url('/ui/f.woff2') format('woff2');}\nbody{background:url(\"/ui/logo.svg\")}\n");
+  w('ui/f.woff2', Buffer.from([1, 2, 3, 4]));
+  w('ui/logo.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+  const clock = { t: 1e12, now: () => clock.t }; // the static cache's clock: advance it past the recheck window instead of sleeping
+  return { root, w, clock, over: { http: { root, staticNow: clock.now } } };
+}
+const later = (file) => { const when = new Date(Date.now() + 5000); fs.utimesSync(file, when, when); };
+
+test('static files: a strong ETag on every response, and If-None-Match gets a 304 with no body', T, async (t) => {
+  const { base } = await boot(t);
+  for (const route of ['/start', '/ui/ui.css', '/js/start.js', '/ui/logo.svg', '/ui/fonts/hanken-grotesk-latin.woff2', '/spec/SPEC.md']) {
+    const first = await rawGet(base, route);
+    assert.equal(first.status, 200, route);
+    const etag = first.headers.etag;
+    assert.match(etag, /^"[0-9a-f]{12}"$/, route);
+    assert.equal(first.headers.vary, 'accept-encoding', route);
+    const again = await rawGet(base, route, { 'if-none-match': etag });
+    assert.equal(again.status, 304, route);
+    assert.equal(again.body.length, 0, route);
+    assert.equal(again.headers.etag, etag, route);
+    assert.equal(again.headers['cache-control'], first.headers['cache-control'], route);
+    assert.equal((await rawGet(base, route, { 'if-none-match': '"000000000000"' })).status, 200, route + ': another tag');
+    assert.equal((await rawGet(base, route, { 'if-none-match': '"000000000000", W/' + etag })).status, 304, route + ': a list');
+  }
+});
+
+test('static files: the ETag is the hash of the bytes sent, so the HTML\'s is of its stamped bytes', T, async (t) => {
+  const { root } = staticRoot(t);
+  const { base } = await boot(t, { overrides: { http: { root } } });
+  const js = fs.readFileSync(path.join(root, 'web', 'js', 'a.js'));
+  assert.equal((await rawGet(base, '/js/a.js')).headers.etag, '"' + sha12(js) + '"');
+  const page = await rawGet(base, '/start', IDENTITY);
+  assert.equal(page.headers.etag, '"' + sha12(page.body) + '"');
+  assert.notEqual(page.body.toString(), fs.readFileSync(path.join(root, 'web', 'start.html'), 'utf8'));
+});
+
+test('static HTML: local script, link and img URLs get ?v= with the asset\'s own ETag, and nothing else is touched', T, async (t) => {
+  const { root } = staticRoot(t);
+  const { base } = await boot(t, { overrides: { http: { root } } });
+  const etagOf = async (route) => JSON.parse((await rawGet(base, route)).headers.etag);
+  const page = await rawGet(base, '/start', IDENTITY);
+  assert.equal(page.headers['cache-control'], 'no-cache', 'the page itself is never cached');
+  const html = page.body.toString();
+  const css = await etagOf('/ui/ui.css');
+  assert.ok(html.includes('<link rel="stylesheet" href="/ui/ui.css?v=' + css + '">'), html);
+  assert.ok(html.includes('<script src="/js/a.js?v=' + await etagOf('/js/a.js') + '" defer></script>'));
+  assert.ok(html.includes('<img src="/ui/logo.svg?v=' + await etagOf('/ui/logo.svg') + '">'));
+  assert.ok(html.includes('<script src="https://cdn.example/x.js"></script>'), 'an absolute URL is left alone');
+  assert.ok(html.includes('<script src="//cdn.example/y.js"></script>'), 'a protocol-relative URL is left alone');
+  assert.ok(html.includes('<script src="/js/a.js?v=old"></script>'), 'an existing query is left alone');
+  assert.ok(html.includes('<script src="/js/missing.js"></script>'), 'a file that does not exist is left alone');
+  assert.ok(html.includes('<a href="/connect">c</a>'), 'a page link is left alone');
+  assert.ok(html.includes('<a href="/js/a.js">link text</a>'), 'only link, script, img and source tags are stamped');
+  assert.ok(html.includes('src=&quot;/js/a.js&quot; and <code>src="/js/a.js"</code>'), 'text is left alone');
+});
+
+test('static CSS: the font URL is stamped, the CSS hash covers the stamp, and a changed font re-stamps the CSS and the page', T, async (t) => {
+  const { root, w, clock, over } = staticRoot(t);
+  const { base } = await boot(t, { overrides: over });
+  const font = JSON.parse((await rawGet(base, '/ui/f.woff2')).headers.etag);
+  const logo = JSON.parse((await rawGet(base, '/ui/logo.svg')).headers.etag);
+  const css = await rawGet(base, '/ui/ui.css', IDENTITY);
+  assert.ok(css.body.toString().includes("url('/ui/f.woff2?v=" + font + "')"), css.body.toString());
+  assert.ok(css.body.toString().includes('url("/ui/logo.svg?v=' + logo + '")'));
+  assert.equal(css.headers.etag, '"' + sha12(css.body) + '"', 'the hash is of the rewritten bytes');
+  assert.notEqual(css.headers.etag, '"' + sha12(fs.readFileSync(path.join(root, 'web', 'ui', 'ui.css'))) + '"');
+  const page1 = (await rawGet(base, '/start', IDENTITY)).body.toString();
+  assert.ok(page1.includes('/ui/ui.css?v=' + JSON.parse(css.headers.etag)));
+  // the font changes, the CSS file does not
+  w('ui/f.woff2', Buffer.from([9, 9, 9, 9, 9]));
+  later(path.join(root, 'web', 'ui', 'f.woff2'));
+  clock.t += 1500;
+  const css2 = await rawGet(base, '/ui/ui.css', IDENTITY);
+  const font2 = JSON.parse((await rawGet(base, '/ui/f.woff2')).headers.etag);
+  assert.notEqual(font2, font);
+  assert.ok(css2.body.toString().includes("url('/ui/f.woff2?v=" + font2 + "')"), 'the CSS names the new font');
+  assert.notEqual(css2.headers.etag, css.headers.etag);
+  const page2 = (await rawGet(base, '/start', IDENTITY)).body.toString();
+  assert.ok(page2.includes('/ui/ui.css?v=' + JSON.parse(css2.headers.etag)), 'and the page names the new CSS');
+  assert.notEqual(page2, page1);
+});
+
+test('static assets: a current ?v= is cached for a year as immutable; a stale, empty or missing one is no-cache; HTML never is', T, async (t) => {
+  const { base } = await boot(t);
+  const tag = JSON.parse((await rawGet(base, '/js/start.js')).headers.etag);
+  assert.equal((await rawGet(base, '/js/start.js')).headers['cache-control'], 'no-cache');
+  assert.equal((await rawGet(base, '/js/start.js?v=' + tag)).headers['cache-control'], IMMUTABLE);
+  for (const q of ['?v=000000000000', '?v=', '?x=' + tag, '?V=' + tag]) assert.equal((await rawGet(base, '/js/start.js' + q)).headers['cache-control'], 'no-cache', q);
+  assert.equal((await rawGet(base, '/js/start.js?x=1&v=' + tag)).headers['cache-control'], IMMUTABLE, 'other parameters are ignored');
+  assert.equal((await rawGet(base, '/js/start.js?v=' + tag, { 'if-none-match': '"' + tag + '"' })).headers['cache-control'], IMMUTABLE, 'also on a 304');
+  const htmlTag = JSON.parse((await rawGet(base, '/start')).headers.etag);
+  assert.equal((await rawGet(base, '/start?v=' + htmlTag)).headers['cache-control'], 'no-cache');
+});
+
+test('static assets: every local asset URL the real pages carry resolves to a file and is stamped with its current hash', T, async (t) => {
+  const { base } = await boot(t);
+  for (const route of ['/', '/start', '/connect', '/spec', '/ui', '/room/x', '/brief/x']) {
+    const html = (await rawGet(base, route, IDENTITY)).body.toString();
+    const urls = [...html.matchAll(/<(?:link|script|img)\b[^>]*?\s(?:src|href)=(["'])(\/[^"'?]*\.(?:js|css|svg))(\?[^"']*)?\1/g)].map((m) => [m[0], m[2], m[3]]);
+    assert.ok(urls.length >= 3, route);
+    for (const [, url, query] of urls) {
+      const asset = await rawGet(base, url);
+      assert.equal(asset.status, 200, route + ' ' + url);
+      assert.equal(query, '?v=' + JSON.parse(asset.headers.etag), route + ' ' + url);
+    }
+  }
+});
+
+test('static files: gzip when it is accepted (same bytes once decoded), identity when it is not, and never for fonts', T, async (t) => {
+  const { base } = await boot(t);
+  for (const route of ['/start', '/ui/ui.css', '/js/start.js', '/ui/logo.svg', '/spec/SPEC.md']) {
+    const plain = await rawGet(base, route, IDENTITY);
+    assert.equal(plain.headers['content-encoding'], undefined, route);
+    assert.equal(plain.headers['content-length'], String(plain.body.length), route);
+    assert.equal((await rawGet(base, route)).headers['content-encoding'], undefined, route + ': no header, no gzip');
+    const zipped = await rawGet(base, route, { 'accept-encoding': 'br, GZIP;q=0.8' });
+    assert.equal(zipped.headers['content-encoding'], 'gzip', route);
+    assert.equal(zipped.headers.vary, 'accept-encoding', route);
+    assert.equal(zipped.headers['content-length'], String(zipped.body.length), route);
+    assert.ok(zipped.body.length < plain.body.length, route + ': smaller');
+    assert.deepEqual(require('node:zlib').gunzipSync(zipped.body), plain.body, route);
+    assert.equal(zipped.headers.etag, plain.headers.etag.replace(/"$/, '-gz"'), route + ': one ETag per coding');
+    // A 304 only vouches for the coding that would be sent: the identity ETag on a gzip request gets the bytes again.
+    assert.equal((await rawGet(base, route, { 'accept-encoding': 'gzip', 'if-none-match': plain.headers.etag })).status, 200, route + ': the other coding\'s ETag does not match');
+    assert.equal((await rawGet(base, route, { ...IDENTITY, 'if-none-match': plain.headers.etag })).status, 304, route + ': its own coding matches');
+    assert.equal((await rawGet(base, route, { 'accept-encoding': 'gzip', 'if-none-match': zipped.headers.etag })).status, 304, route);
+    assert.equal((await rawGet(base, route, { 'accept-encoding': 'gzip', 'if-none-match': 'W/' + zipped.headers.etag })).status, 304, route + ': weak');
+    assert.equal(zipped.headers['content-type'], plain.headers['content-type'], route);
+    assert.equal((await rawGet(base, route, { 'accept-encoding': 'gzip;q=0' })).headers['content-encoding'], undefined, route + ': q=0 refuses it');
+  }
+  const font = await rawGet(base, '/ui/fonts/hanken-grotesk-latin.woff2', { 'accept-encoding': 'gzip' });
+  assert.equal(font.headers['content-encoding'], undefined);
+  assert.equal(font.headers.vary, 'accept-encoding');
+  assert.deepEqual(font.body, fs.readFileSync(path.join(ROOT, 'web', 'ui', 'fonts', 'hanken-grotesk-latin.woff2')));
+});
+
+test('static files: the security headers stay on 200 and 304, and a file that changes is served anew', T, async (t) => {
+  const { root, w, clock, over } = staticRoot(t);
+  const { base } = await boot(t, { overrides: over });
+  const tag = (await rawGet(base, '/js/a.js')).headers.etag;
+  for (const route of ['/start', '/js/a.js', '/js/a.js?v=whatever']) {
+    for (const res of [await rawGet(base, route), await rawGet(base, route, { 'if-none-match': tag })]) {
+      assert.equal(res.headers['content-security-policy'], CSP, route);
+      assert.equal(res.headers['x-content-type-options'], 'nosniff', route);
+      assert.equal(res.headers['referrer-policy'], 'no-referrer', route);
+    }
+  }
+  assert.equal((await rawGet(base, '/js/a.js')).headers['content-type'], 'text/javascript');
+  w('js/a.js', 'changed\n');
+  later(path.join(root, 'web', 'js', 'a.js'));
+  assert.equal((await rawGet(base, '/js/a.js')).headers.etag, tag, 'inside the recheck window the entry is not even looked at');
+  clock.t += 1500;
+  const after = await rawGet(base, '/js/a.js', { 'if-none-match': tag });
+  assert.equal(after.status, 200);
+  assert.notEqual(after.headers.etag, tag);
+  assert.ok((await rawGet(base, '/start', IDENTITY)).body.toString().includes('/js/a.js?v=' + JSON.parse(after.headers.etag)), 'the page stamps the new hash');
+  for (const route of ['/nope', '/js/', '/js']) {
+    const res = await rawGet(base, route);
+    assert.equal(res.status, 404, route);
+    assert.equal(res.headers.etag, undefined, route);
+  }
 });
 
 // ---- drain ----

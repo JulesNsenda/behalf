@@ -36,6 +36,7 @@ for (const r of ROUTES) {
     assert.match(res.headers.get('content-security-policy'), /frame-ancestors 'none'/);
     const body = await res.text();
     assert.match(body, r.title);
-    assert.ok(body.includes(`src="${r.script}"`), 'loads ' + r.script);
+    const m = /<script src="([^"?]+)\?v=[0-9a-f]{12}"/g;
+    assert.ok([...body.matchAll(m)].some((x) => x[1] === r.script), 'loads ' + r.script + ' (stamped with ?v=)');
   });
 }

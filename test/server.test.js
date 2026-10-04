@@ -168,8 +168,8 @@ test('traversal via raw un-normalised request does not serve index.js source', a
 // The same checks against a source copy whose own .data/ sits under its root, with DROP_DATA_DIR unset, so a store file
 // is really one directory above the served web/. The positive controls show that a leak would be seen.
 test('a positive control leaks, and the store under the root is not served', async () => {
-  const ok = await fetchGet('/ui/ui.css');
-  assert.strictEqual(leaks(ok, 'web/ui/ui.css'), true, 'the leak check can see a served file');
+  const ok = await fetchGet('/ui/ui.js'); // not ui.css: HTML and CSS are served with ?v= stamps, so their bytes differ from the file's
+  assert.strictEqual(leaks(ok, 'web/ui/ui.js'), true, 'the leak check can see a served file');
 
   const MARK = 'PLANTED-STORE-MARKER';
   const src = makeSrc({ '.data/rooms.json': JSON.stringify({ schemaVersion: 1, rooms: {}, usage: {}, note: MARK }), 'web/index.html': '<p>served</p>' });

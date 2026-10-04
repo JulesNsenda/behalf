@@ -97,10 +97,12 @@ Secrets are never in the config object.
 - `view(room, seat, token)` is the only thing sent to clients (REST, SSE and MCP). It must never leak the other seat's card, draft or token. Demo rooms are the deliberate exception: both seats share one token, so a single person drives both sides.
 - `authSeat` accepts only an own-property seat `A` or `B`, and compares SHA-256 digests with `timingSafeEqual`.
 
+**`lib/static.js`** serves the static files for `lib/http.js`: content-hash ETags (one per coding, 304 on a match), HTML and CSS have their local asset URLs stamped `?v=<hash of the served bytes>`, an asset requested with its current hash is cached `private, immutable` (HTML stays `no-cache`), text types are gzipped, and freshness is checked at most once a second (mtime and size).
+
 **`lib/http.js`** is the HTTP layer:
 - security headers and the CSP;
 - routing and the REST API;
-- static pages, served from one data table;
+- static pages, served from one data table, by `lib/static.js`;
 - the SSE hub, which hears `onChange` and caps connections per room;
 - the `/health` build fingerprint.
 
@@ -156,7 +158,7 @@ Prompts:
 - `markdown.js` is the safe spec renderer.
 - `account-view.js` holds the sign-in wording: the header account slot, the start prompt and the agent-key panel (`parseMe`, `slot`, `keyPanel`).
 
-`account.js` is the one stateful page module: it asks `/api/me` once (not at all with sign-in off), fills the header's account slot, and tells subscribers when the answer changes. The account slot sits after the main nav on home, connect and spec; it is empty and hidden with sign-in off.
+`account.js` is the one stateful page module: it asks `/api/me` once, in parallel with the settings (with sign-in off the settings decide and its answer is ignored), fills the header's account slot, and tells subscribers when the answer changes. The account slot sits after the main nav on home, connect and spec; it is empty and hidden with sign-in off.
 
 **The room page** is split into five scripts, loaded in this order:
 1. `room-core.js`: state, credentials, post/refresh and the live stream
