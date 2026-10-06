@@ -212,7 +212,7 @@ Every page links `/ui/ui.css`. The old `style.css` is gone.
 ## Keep in sync
 
 The protocol rules are written out in several places. A rule change has to touch all of them:
-- `spec/SPEC.md` and `spec/*.schema.json`
+- `spec/SPEC.md` and `spec/*.schema.json`. These are a copy of the canonical `v0/` in the `JulesNsenda/pxp` repo (published at https://julesnsenda.github.io/pxp/). Change the spec there first, then copy it here byte for byte, because the schemas' `$id`s point at the published URLs. `/spec` serves this local copy, since the CSP forbids fetching it from elsewhere
 - the enforcement in `lib/pxp.js` (`buildEnvelope`)
 - the built-in proxy prompt (`turnSystem` in `lib/proxy.js`)
 - the MCP `INSTRUCTIONS` and the tool schemas in `lib/mcp.js`

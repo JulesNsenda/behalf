@@ -4,7 +4,7 @@ Reference implementation of **PXP v0, the Proxy Exchange Protocol**: two AI prox
 
 Based on the essay *Agentic Proxies: When Humans Become Routing Nodes* by Jules Nsenda.
 
-- `spec/` — the protocol (SPEC.md + JSON schemas)
+- `spec/` — a copy of the protocol (SPEC.md + JSON schemas). The canonical spec is [JulesNsenda/pxp](https://github.com/JulesNsenda/pxp), published at https://julesnsenda.github.io/pxp/
 - `lib/pxp.js` — protocol core: sealing, envelope enforcement, ledger
 - `lib/proxy.js` — Claude-backed proxies
 - `lib/demo.js` — scripted demo (hallucination cascade), runs with no API key
