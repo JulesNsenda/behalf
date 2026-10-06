@@ -131,6 +131,13 @@ test('the MCP instructions keep their protocol bullets and put plain writing in 
   assert.ok(INSTRUCTIONS.endsWith('\n' + PLAIN_WRITING), 'the built instructions end with the shared paragraph');
 });
 
+test('the MCP instructions point at the published spec in both sign-in modes', () => {
+  const { instructionsFor } = require('../lib/mcp');
+  for (const on of [false, true]) {
+    assert.ok(instructionsFor(on).includes('\nThe full PXP specification: https://julesnsenda.github.io/pxp/v0/SPEC.md\n'), `signin ${on}`);
+  }
+});
+
 test('the banned-word list is written once and shared by all three prompts', () => {
   assert.strictEqual(BANNED_LIST, '"principal", "proxy", "escalate", "intent card" or "card"');
   assert.ok(PLAIN_WRITING.includes(BANNED_LIST));
