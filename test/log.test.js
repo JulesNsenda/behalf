@@ -10,7 +10,7 @@ function capture() {
 }
 
 test('the allowlist is pinned', () => {
-  assert.deepEqual(ALLOWED, ['room', 'seat', 'status', 'httpStatus', 'errorClass', 'code', 'durationMs', 'stack', 'reason', 'kind']);
+  assert.deepEqual(ALLOWED, ['room', 'seat', 'status', 'httpStatus', 'errorClass', 'code', 'durationMs', 'stack', 'reason', 'kind', 'tag']);
 });
 
 test('one line per call: level, event and allowlisted fields, JSON-escaped', () => {

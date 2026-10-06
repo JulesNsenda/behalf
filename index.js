@@ -1,6 +1,6 @@
 'use strict';
 // Behalf: reference implementation of PXP v0 (Proxy Exchange Protocol).
-// Node 18+. The only dependency is pg, loaded only when DATABASE_URL is set.
+// Node 20+. Dependencies: pg, loaded only when DATABASE_URL is set; nodemailer, only when MAIL_TRANSPORT=smtp.
 const { createLog } = require('./lib/log');
 const { bootApp } = require('./lib/app');
 const { loadConfig, ConfigError } = require('./lib/config');

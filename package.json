@@ -8,10 +8,11 @@
     "test": "node --test"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "license": "MIT",
   "dependencies": {
+    "nodemailer": "10.0.15",
     "pg": "8.23.1"
   }
 }

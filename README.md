@@ -10,7 +10,8 @@ Based on the essay *Agentic Proxies: When Humans Become Routing Nodes* by Jules 
 - `lib/demo.js` — scripted demo (hallucination cascade), runs with no API key
 - `lib/mcp.js` — MCP endpoint at `/mcp`, so any MCP-capable agent can take a seat
 - `lib/auth.js`, `lib/http-auth.js` — GitHub sign-in and agent keys
-- `index.js` — the Node server (Node 18+). Its one dependency is `pg`, installed by npm and loaded only when `DATABASE_URL` is set
+- `lib/mail.js` — email: one `sendMail` over a dev outbox or SMTP (`lib/mail-dev.js`, `lib/mail-smtp.js`). See [MAIL.md](MAIL.md)
+- `index.js` — the Node server (Node 20+). Its dependencies are `pg`, loaded only when `DATABASE_URL` is set, and `nodemailer`, loaded only when `MAIL_TRANSPORT=smtp`
 - `web/` — the pages:
   - Home (`/`)
   - Start (`/start`): create a room, then invite the other person
@@ -44,9 +45,14 @@ Based on the essay *Agentic Proxies: When Humans Become Routing Nodes* by Jules 
 | `GITHUB_BLOCKED_IDS` | none | Comma-separated numeric GitHub user ids that may not sign in. Their existing sessions and agent keys stop working at once |
 | `REQUIRE_DATABASE` | `0` | `1` or `0`. With `1` the server exits at startup (`BAD_REQUIRE_DATABASE`, before it binds the port) when `DATABASE_URL` is not set, instead of falling back to an empty `rooms.json`. `drop.yaml` sets it to `1` |
 | `DATABASE_URL` | none | A Postgres URL. When set, rooms and accounts live in Postgres instead of `rooms.json`. Configure the connection only through this URL: don't set the other `PG*` variables. It must be a direct or session-mode connection, not a transaction pooler (`EPOOLER`). The server logs `store.no_tls` if a non-local URL doesn't ask for TLS, or turns off certificate checks |
+| `MAIL_TRANSPORT` | `dev` | `dev` or `smtp`. `dev` sends nothing: each email is written to `DROP_DATA_DIR/outbox` (or `./.data/outbox`), and, off the platform only, listed at `/dev/outbox`. `smtp` sends through your SMTP server. See [MAIL.md](MAIL.md) |
+| `MAIL_FROM` | none | The sender, `Name <address>` or a bare address, e.g. `Behalf <invites@your-domain>`. Required with `smtp`. Your SMTP server must be allowed to send for its domain |
+| `SMTP_HOST`, `SMTP_PORT` | none | Your SMTP server. Required with `smtp` |
+| `SMTP_SECURE` | follows the port | `true` (TLS from the start, port 465) or `false` (STARTTLS, port 587). TLS is required either way: the password never crosses a plain connection. `465` with `false` and `587` with `true` are refused (`BAD_SMTP_SECURE`) |
+| `SMTP_USER`, `SMTP_PASS` | none | Secrets: the SMTP login. Required with `smtp` (`BAD_SMTP_AUTH`). Read once and removed from the environment |
 | `DRAIN_DEADLINE_MS` | 4000 | On `SIGTERM` or `SIGINT`, how long the server may spend saving before it exits. 100 to 9000. Keep it below the time your platform allows between the stop signal and a forced kill (Drop: 5 s under PM2, 10 s under Docker). The Postgres statement timeout is 3 s, so one write fits |
 
-`ROOM_TTL_DAYS`, `DEMO_TTL_HOURS`, `MAX_ROOMS`, `TRUST_PROXY`, `SIGNIN`, `PER_USER_DAILY`, `GITHUB_BLOCKED_IDS`, `DRAIN_DEADLINE_MS` and `REQUIRE_DATABASE` are strict: an invalid value stops the server at startup with `BAD_<NAME>`, and the log names the variable but never its value. `ROOM_TTL_DAYS`, `DEMO_TTL_HOURS` and `MAX_ROOMS` must be whole numbers from 1 up to 3650, 87600 and 1,000,000; `PER_USER_DAILY` from 1 to 1000. Each room also has an AI allowance of `MAX_TURNS × 3` Claude calls, and drafting a card doesn't count toward it. A room that uses it up ends with no deal, like reaching the turn limit.
+`ROOM_TTL_DAYS`, `DEMO_TTL_HOURS`, `MAX_ROOMS`, `TRUST_PROXY`, `SIGNIN`, `PER_USER_DAILY`, `GITHUB_BLOCKED_IDS`, `DRAIN_DEADLINE_MS`, `REQUIRE_DATABASE` and the mail variables are strict: an invalid value stops the server at startup with `BAD_<NAME>`, and the log names the variable but never its value. `ROOM_TTL_DAYS`, `DEMO_TTL_HOURS` and `MAX_ROOMS` must be whole numbers from 1 up to 3650, 87600 and 1,000,000; `PER_USER_DAILY` from 1 to 1000. Each room also has an AI allowance of `MAX_TURNS × 3` Claude calls, and drafting a card doesn't count toward it. A room that uses it up ends with no deal, like reaching the turn limit.
 
 ### Startup refusals
 
@@ -57,6 +63,7 @@ The server stops at startup, and logs one line with a code, rather than run in a
 | `BAD_SIGNIN` | `SIGNIN` is missing on the platform, or isn't `github` or `off` |
 | `BAD_SIGNIN_SECRETS` | `SIGNIN=github` without both GitHub secrets |
 | `BAD_PUBLIC_URL` | `SIGNIN=github` with a `PUBLIC_URL` that isn't https (or http on localhost) |
+| `BAD_SMTP_HOST`, `BAD_SMTP_PORT`, `BAD_SMTP_AUTH`, `BAD_MAIL_FROM`, `BAD_SMTP_SECURE` | `MAIL_TRANSPORT=smtp` with a setting missing or invalid, or a port and TLS mode that don't go together. A server that can't be reached or refuses the login does not stop startup: the log says `mail.verify_failed` and sending is off |
 | `EFUTURESCHEMA` | The stored data was written by a newer build |
 | `ELOCKED` | Another server still holds the database after 45 seconds of retrying. A dead one is released by the database within about 25 seconds; a hung one must be stopped |
 | `EPOOLER` | `DATABASE_URL` points at a transaction-mode pooler |
