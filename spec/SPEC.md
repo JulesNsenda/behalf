@@ -141,4 +141,4 @@ the principal confirm relayed answers out of band.
 ## Not in v0
 
 Cryptographic signatures by principals (v0 seals with hashes on a trusted server), out-of-band confirmation of answers relayed by agents,
-multi-party rooms (>2), payment authority (see Shap), cross-room identity.
+multi-party rooms (>2), payment authority, cross-room identity.

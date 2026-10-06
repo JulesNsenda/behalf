@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "pxp/v0/envelope.schema.json",
+  "$id": "https://julesnsenda.github.io/pxp/v0/envelope.schema.json",
   "title": "PXP Envelope v0",
   "type": "object",
   "required": ["pxp", "room", "seq", "from", "intent_hash", "message", "claims", "reviews", "status"],
