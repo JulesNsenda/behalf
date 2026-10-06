@@ -11,7 +11,10 @@ env:
   # empty file store, so Drop's readiness probe fails and the old version keeps serving.
   REQUIRE_DATABASE: "1"
   PUBLIC_URL: https://behalf.dropkit.sh
-# Set in the dashboard, never here. Drop holds the app in needs-config until both are set.
+  # dev sends nothing (emails go to the outbox folder, with no page on the platform). Switch to smtp in the dashboard once
+  # SMTP_HOST, SMTP_PORT, MAIL_FROM and the two SMTP secrets are set and scripts/send-test-mail.js reached an inbox (MAIL.md).
+  MAIL_TRANSPORT: dev
+# Set in the dashboard, never here. Drop holds the app in needs-config until the required ones are set.
 secrets:
   GITHUB_CLIENT_ID:
     required: true
@@ -19,3 +22,9 @@ secrets:
   GITHUB_CLIENT_SECRET:
     required: true
     description: Client secret of the Behalf GitHub OAuth app
+  SMTP_USER:
+    required: false
+    description: SMTP login for sending invites (needed only with MAIL_TRANSPORT=smtp; see MAIL.md)
+  SMTP_PASS:
+    required: false
+    description: SMTP password for sending invites (needed only with MAIL_TRANSPORT=smtp)

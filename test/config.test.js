@@ -28,6 +28,12 @@ test('defaults with an empty environment', () => {
     perUserDaily: 3,
     githubBlockedIds: [],
     requireDatabase: false,
+    mailTransport: 'dev',
+    mailFrom: null,
+    smtpHost: '',
+    smtpPort: 0,
+    smtpSecure: '',
+    devOutbox: true,
   });
   assert.equal(ROOT, path.join(__dirname, '..'));
 });

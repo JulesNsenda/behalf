@@ -8,17 +8,19 @@ Behalf is the reference implementation of **PXP v0 (Proxy Exchange Protocol)**: 
 
 ## Commands
 
-Node 18+ (it uses global `fetch`). There is no build or lint step. The one dependency is `pg` (`npm ci` locally; Drop runs `npm install`). It is loaded only when `DATABASE_URL` is set, so the file store, local dev and most of the suite run without `node_modules`.
+Node 20+ (it uses global `fetch`). There is no build or lint step. The dependencies are `pg` and `nodemailer` (`npm ci` locally; Drop runs `npm install`). `pg` is loaded only when `DATABASE_URL` is set, and `nodemailer` only when `MAIL_TRANSPORT=smtp` (by `lib/mail-smtp.js`, the one file that may require it), so the file store, local dev and most of the suite run without `node_modules`.
 
 ```sh
 npm test                              # node:test suite in test/ (UI tokens + contrast, ui.js, server, pages)
 node index.js                         # or: npm start  (PORT defaults to 3000; PORT=0 picks a free port, BIND_HOST is optional)
 DEMO_DELAY_MS=200 node index.js       # speed up the scripted demo (default 2600ms per turn)
-curl localhost:3000/health            # {ok, live, rooms, store, storeOk, build}; build = hash of the source tree
+curl localhost:3000/health            # {ok, live, rooms, store, storeOk, mail, mailOk, build}; build = hash of the source tree
+open localhost:3000/dev/outbox        # emails the dev transport wrote (only off the platform)
+node scripts/send-test-mail.js you@example.com   # one test email through the configured transport (MAIL.md)
 curl -XPOST localhost:3000/api/demo   # create a scripted demo room, then open /room/<id>?seat=A&t=<token>
-# Linux + Node 18, which also runs the POSIX-only tests. The repo is mounted read-only.
-docker run --rm -v "$PWD:/app:ro" -w /app node:18 node --test
-MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/app:ro" -w /app node:18 node --test   # the same, from Git Bash on Windows
+# Linux + Node 20, which also runs the POSIX-only tests. The repo is mounted read-only.
+docker run --rm -v "$PWD:/app:ro" -w /app node:20 node --test
+MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/app:ro" -w /app node:20 node --test   # the same, from Git Bash on Windows
 # The Postgres tests run only with PG_TEST_URL. Its database name must end in _test: the tests DROP the table.
 # PostgreSQL 13+ (the 16 image is what is used). The role needs CREATEDB (the auth and export tests make their own database), and the tests terminate backends, so use a scratch server. From Docker, reach the host as host.docker.internal.
 PG_TEST_URL=postgres://behalf:behalf@localhost:55432/behalf_test npm test
@@ -57,7 +59,7 @@ Every dependency can be overridden (`config`, `secrets`, `log`, `store`, `proxy`
 Secrets are never in the config object.
 
 **`lib/log.js`** writes one line per event to stderr. Its rules:
-- **Fields:** only allowlisted fields are written: room, seat, status, httpStatus, errorClass, code, durationMs, stack, reason and kind (`reason` takes only `ttl` or `capacity`; `kind` takes only a record kind or `meta`). A new field must be added to `ALLOWED`, and a test pins that list.
+- **Fields:** only allowlisted fields are written: room, seat, status, httpStatus, errorClass, code, durationMs, stack, reason, kind and tag (`reason` takes only `ttl` or `capacity`; `kind` takes only a record kind or `meta`; `tag` only an email kind from `TAGS` in `lib/mail.js`). A new field must be added to `ALLOWED`, and a test pins that list.
 - **Messages:** an error's `message` is **never** logged, because it can echo model output or a card. Log errors as `log.error(event, fields, err)`. The logger takes the class, a vetted code and well-formed stack frames from `err`.
 
 **Persistence** is three modules with one public API. The in-memory state is the runtime source of truth, and the domain stays synchronous; a store loads it, then writes behind it.
@@ -92,6 +94,11 @@ Secrets are never in the config object.
 - **AI allowance.** Each room gets an AI allowance of `maxTurns × 3` Claude calls. Turns and the authority audit count; drafts don't, because they have their own per-seat cap.
   - The proxy charges each attempt, retries included, through `chargeCall` before it calls Claude.
   - When the allowance is spent, the room ends with no deal (`stalled`, brief outcome `no_agreement`), like reaching the turn limit. `resume` and `hydrate` keep a spent room stalled. The reason is only in the log (`errorClass="BudgetError"`).
+
+**Email** is three modules behind one interface:
+- **`lib/mail.js`**: `createMailer({ config, secrets, log, clock, transport })` returns `sendMail({ to, toName, replyTo, subject, text, html, tag, fromName })`, `start()` (verifies the transport once at boot, in the background; a failure logs `mail.verify_failed` and turns sending off, the app keeps running), `status()`, `available()`, `outbox` and `close()` (called by `close` and `drain`). `sendMail` never throws: it returns `{ status: 'sent' | 'failed', messageId?, code?, permanent?, attempts }`. A bad message (an address, a header-breaking subject, an unknown tag) is `MAIL_INVALID` before the transport sees it. SMTP 4xx and connection failures are retried 3 times with backoff; 5xx, a rejected recipient, auth and TLS failures are permanent; a local timeout is never retried (the server may have taken it). Logs carry the tag and a code only, never an address, subject or reply text. `escapeHtml` is for every value put into an email's HTML.
+- **`lib/mail-dev.js`** (`MAIL_TRANSPORT=dev`, the default) writes `<id>.json` and `<id>.html` (0600) to `<dataDir>/outbox`, keeps the newest 500, and serves `list()`/`read(id)` for `/dev/outbox`. `lib/http.js` serves that page only when `config.devOutbox` (off the platform); each email view gets its own sandboxed CSP with no script.
+- **`lib/mail-smtp.js`** (`MAIL_TRANSPORT=smtp`) is the only file that requires `nodemailer`: pooled, `requireTLS` when not `secure`, TLS 1.2+, certificate checks on, per-phase timeouts, no file or URL access.
 
 **`lib/view.js`**:
 - `view(room, seat, token)` is the only thing sent to clients (REST, SSE and MCP). It must never leak the other seat's card, draft or token. Demo rooms are the deliberate exception: both seats share one token, so a single person drives both sides.
@@ -227,7 +234,8 @@ Sign-in has three pairs to keep together:
 
 Deploy and configuration have more places to keep together:
 - the deploy hostname `behalf.dropkit.sh`: the `PUBLIC_URL` default in `lib/config.js`, `drop.yaml` (the `env` value and the secret description), the README (the `PUBLIC_URL` row, deploy steps 1 and 3, and the `claude mcp add` line) and, outside the repo, the callback URL of the GitHub OAuth app. A redeploy that changes the URL touches all of them;
-- the secrets: `SECRET_NAMES` and the `loadSecrets` fields in `lib/config.js`, `redacted()`, the `secrets:` in `drop.yaml`, `checkSignin`, and the README rows;
+- the secrets: `SECRET_NAMES` and the `loadSecrets` fields in `lib/config.js`, `redacted()`, the `secrets:` in `drop.yaml`, `checkSignin`, `checkMail`, and the README rows;
+- the mail settings: `loadConfig` and `checkMail` in `lib/config.js`, the README rows and refusal codes, `MAIL.md`, and `MAIL_TRANSPORT` in `drop.yaml`;
 - the drain timing: `DRAIN_DEADLINE_MS` (`lib/config.js`), `STATEMENT_MS` and the release limits in `lib/store-pg.js`, and the platform's kill timeout (Drop: PM2 5 s, Docker 10 s). The statement timeout stays under the drain default, and the drain default under the kill timeout;
 - the README "Startup refusals" table and the `StoreError` and `ConfigError` codes in `lib/store-core.js`, `lib/store.js`, `lib/store-pg.js` and `lib/config.js`. The table covers the common cases, not every code;
 - the record kinds: `rowsToDoc` (`lib/store-pg.js`) and `scripts/export-rooms.js` read the kind table in `lib/store-core.js`, so a new kind goes in `KIND` and nowhere else.
