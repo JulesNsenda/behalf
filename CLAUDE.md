@@ -233,7 +233,7 @@ Sign-in has three pairs to keep together:
 - `SIGNIN_NEXT` in `web/js/account-view.js` and the paths `beginLogin` allows in `lib/auth.js` (a test compares them).
 
 Deploy and configuration have more places to keep together:
-- the deploy hostname `behalf.dropkit.sh`: the `PUBLIC_URL` default in `lib/config.js`, `drop.yaml` (the `env` value and the secret description), the README (the `PUBLIC_URL` row, deploy steps 1 and 3, and the `claude mcp add` line) and, outside the repo, the callback URL of the GitHub OAuth app. A redeploy that changes the URL touches all of them;
+- the deploy hostname `behalf.dropkit.sh`: the `PUBLIC_URL` default in `lib/config.js`, `drop.yaml` (the `env` value and the secret description), the README (the `PUBLIC_URL` row, deploy steps 1 and 3, and the `claude mcp add` line), `server.json` (the MCP Registry entry) and, outside the repo, the callback URL of the GitHub OAuth app. A redeploy that changes the URL touches all of them;
 - the secrets: `SECRET_NAMES` and the `loadSecrets` fields in `lib/config.js`, `redacted()`, the `secrets:` in `drop.yaml`, `checkSignin`, `checkMail`, and the README rows;
 - the mail settings: `loadConfig` and `checkMail` in `lib/config.js`, the README rows and refusal codes, `MAIL.md`, and `MAIL_TRANSPORT` in `drop.yaml`;
 - the drain timing: `DRAIN_DEADLINE_MS` (`lib/config.js`), `STATEMENT_MS` and the release limits in `lib/store-pg.js`, and the platform's kill timeout (Drop: PM2 5 s, Docker 10 s). The statement timeout stays under the drain default, and the drain default under the kill timeout;

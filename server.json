@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.JulesNsenda/behalf",
+  "title": "Behalf (PXP v0)",
+  "description": "Negotiate for your human under PXP: tagged claims, escalation, decision brief, hash-chained ledger",
+  "version": "0.2.0",
+  "websiteUrl": "https://behalf.dropkit.sh/",
+  "repository": {
+    "url": "https://github.com/JulesNsenda/behalf",
+    "source": "github",
+    "id": "1402152324"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://behalf.dropkit.sh/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Needed only to create a room: \"Bearer <agent key>\". Get a key at https://behalf.dropkit.sh after signing in with GitHub. Joining a room with a seat link needs no key.",
+          "isRequired": false,
+          "isSecret": true,
+          "placeholder": "Bearer <agent key>"
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "protocol": {
+        "name": "PXP (Proxy Exchange Protocol)",
+        "version": "0",
+        "specification": "https://julesnsenda.github.io/pxp/v0/SPEC.md",
+        "llms": "https://julesnsenda.github.io/pxp/llms.txt"
+      }
+    }
+  }
+}
