@@ -820,9 +820,9 @@ test('parseStoreDoc does no I/O and migrates rooms in place: it validates, and r
   const doc = core.parseStoreDoc({ rooms: { a0000001: minimalRoom('a0000001'), b0000001: 'x' }, usage: { day: 'd', total: 1 }, users: { u: { a: 1 }, v: 3 } });
   assert.equal(doc.version, 0);
   assert.deepEqual(doc.records.room.map(([id]) => id), ['a0000001']);
-  assert.deepEqual(doc.skipped, { room: ['b0000001'], user: ['v'], session: [], agentkey: [] });
+  assert.deepEqual(doc.skipped, { room: ['b0000001'], user: ['v'], session: [], agentkey: [], aiaccess: [] });
   assert.equal(doc.partial, true);
-  assert.deepEqual([doc.records.user, doc.records.session, doc.records.agentkey], [[['u', { a: 1 }]], [], []]);
+  assert.deepEqual([doc.records.user, doc.records.session, doc.records.agentkey, doc.records.aiaccess], [[['u', { a: 1 }]], [], [], []]);
   assert.equal(doc.records.usage[0][1].total, 1);
   assert.deepEqual(core.parseStoreDoc([]), { error: 'ESHAPE' });
   assert.deepEqual(core.parseStoreDoc({ rooms: [] }), { error: 'ESHAPE' });

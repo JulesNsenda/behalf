@@ -11,6 +11,7 @@ const { loadConfig } = require('../lib/config');
 const entry = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'server.json'), 'utf8'));
 
 test('the registry entry carries the server version and title the MCP server reports', () => {
+  assert.equal(SERVER_INFO.version, '0.3.0');
   assert.equal(entry.version, SERVER_INFO.version);
   assert.equal(entry.title, SERVER_INFO.title);
   assert.ok(entry.description.length <= 100, 'the registry caps the description at 100 characters');

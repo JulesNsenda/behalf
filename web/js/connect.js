@@ -8,6 +8,7 @@
  * never written into markup (copyField sets it as a property, the command takes it as text), a reload loses it, and
  * so does leaving the page (pagehide) or coming back to it from the back-forward cache (pageshow).
  * With sign-in off there is no panel and the command has no key in it.
+ * A signed-in person who has not been approved to use our AI also gets one line saying so, with a link to ask for it on the start page.
  * What the panel shows always comes from the server's last answer (Account), never from what this page guessed:
  * after any request that got an answer the page asks again, and a key it was handed is kept only while that answer agrees.
  */
@@ -166,6 +167,16 @@
     render(Account.current()); // the panel and the command say what is true without the key
   }
 
+  // One line for a signed-in person without access to our AI (and only where the server has a built-in AI to ask for).
+  var lineEl = UI.byId('ai-access-line');
+  var hasBuiltin = false;
+
+  function renderLine(me) {
+    var line = hasBuiltin ? AccountView.connectLine(me) : null;
+    UI.render(lineEl, line ? html`${line.text} <a href="${UI.url(line.href)}">${line.link}</a>` : html``);
+    lineEl.hidden = !line;
+  }
+
   window.addEventListener('pagehide', scrub);
   window.addEventListener('pageshow', function (e) {
     if (!e.persisted) return;
@@ -179,6 +190,10 @@
     if (shown && me && (!me.user || !me.agentKeys.some(function (k) { return k.kid === shown.kid; }))) shown = null;
   }
 
-  Account.onChange(function (me) { reconcile(me); render(me); });
-  Account.load().then(render);
+  Account.onChange(function (me) { reconcile(me); render(me); renderLine(me); });
+  Account.load().then(function (me) { render(me); renderLine(me); });
+  UI.loadConfig().then(function (config) {
+    hasBuiltin = Boolean(config && config.live);
+    renderLine(Account.current());
+  });
 })();

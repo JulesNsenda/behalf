@@ -5,7 +5,8 @@
  *  - No DOM, no UI dependency. account.js, start.js and connect.js turn these results into markup through UI.html.
  *  - The page's own path, the server's /api/me answer and the key just made are arguments, never read here.
  *  - The answers from the server are untrusted: parseMe reads only the fields it knows and checks their types.
- *  - The sentences for a refused sign-out or agent key request are here (errorMessage); a refused room is worded in room-view.js.
+ *  - The sentences for a refused sign-out, agent key or "Use our AI" request are here (errorMessage); a refused room is worded in room-view.js.
+ *  - The "Use our AI" request block (aiAccess) and the lines that go with it are here too; the admin page's own wording is in admin-view.js.
  *  - Keep SIGNIN_NEXT in sync with the pages beginLogin in lib/auth.js allows (a test compares them).
  *
  * Plain language only: say "agent key" (the term the server's own messages use) and explain it once.
@@ -17,7 +18,8 @@
 
   // The pages a sign-in can send a person back to. Any other page signs in and lands on the home page.
   // /key is the short link that lands on the connect page's key panel, so signing in from the panel comes back to it.
-  var SIGNIN_NEXT = ['/', '/start', '/connect', '/key'];
+  // /admin is the page that decides who may use our AI.
+  var SIGNIN_NEXT = ['/', '/start', '/connect', '/key', '/admin'];
 
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -36,8 +38,10 @@
 
   var time = function (v) { return typeof v === 'number' && isFinite(v) ? v : null; };
 
-  // The server's /api/me answer as {signin, user: {login} | null, agentKeys: [{kid, name, createdAt, lastUsedAt}]}, or
-  // null when it isn't one. Only an entry with a well-formed kid is kept; a name is kept only as text, a time only as a time.
+  var AI_STATES = ['granted', 'requested', 'denied', 'none']; // the "Use our AI" status /api/me can report
+
+  // The server's /api/me answer as {signin, user: {login} | null, agentKeys: [{kid, name, createdAt, lastUsedAt}], ai, admin}, or
+  // null when it isn't one. ai is one of AI_STATES ('none' for anything else, and for nobody signed in), admin is true only for exactly true. Only an entry with a well-formed kid is kept; a name is kept only as text, a time only as a time.
   function parseMe(data) {
     if (data === null || typeof data !== 'object') return null;
     if (data.signin !== 'github' && data.signin !== 'off') return null;
@@ -49,17 +53,21 @@
         keys.push({ kid: k.kid, name: typeof k.name === 'string' && k.name.trim() ? k.name.trim() : null, createdAt: time(k.createdAt), lastUsedAt: time(k.lastUsedAt) });
       });
     }
-    return { signin: data.signin, user: user, agentKeys: keys };
+    var ai = user && AI_STATES.indexOf(data.ai) !== -1 ? data.ai : 'none';
+    return { signin: data.signin, user: user, agentKeys: keys, ai: ai, admin: Boolean(user) && data.admin === true };
   }
 
   // What the header slot shows, or null when it stays empty (sign-in is off, or the answer couldn't be read).
   //   signed-out  text and short are the button's words (wide and narrow screens), href where it goes
   //   signed-in   who is the login (or "Signed in" when there is none); hint is the "Signed in as" that only a screen reader
-  //               hears before the login, empty when who already says it; signOut is the button's word
+  //               hears before the login, empty when who already says it; signOut is the button's word; admin is {text, href},
+  //               the link to the admin page, present only for an admin
   function slot(me, path) {
     if (!me || me.signin !== 'github') return null;
     if (!me.user) return { kind: 'signed-out', text: SIGN_IN, short: SIGN_IN_SHORT, href: signinHref(path) };
-    return { kind: 'signed-in', who: me.user.login || 'Signed in', hint: me.user.login ? 'Signed in as ' : '', signOut: 'Sign out' };
+    var d = { kind: 'signed-in', who: me.user.login || 'Signed in', hint: me.user.login ? 'Signed in as ' : '', signOut: 'Sign out' };
+    if (me.admin) d.admin = { text: 'Admin', href: '/admin' };
+    return d;
   }
 
   // The sign-in call to action that replaces the form on the start page.
@@ -162,6 +170,51 @@
     return panel;
   }
 
+  // ---------- "Use our AI" ----------
+  // Our AI (the built-in one) is for people who were approved. needsAiAccess is the one rule: signed in, not approved and not an admin.
+  // The start page adds the other half itself (the server has a built-in AI at all).
+  function needsAiAccess(me) {
+    return Boolean(me && me.signin === 'github' && me.user && me.ai !== 'granted' && !me.admin);
+  }
+
+  var AI_TITLE = 'Use our AI';
+  var AI_NOTE_LABEL = 'A short note (optional)';
+  var AI_NOTE_HINT = 'Who you are and what you would use it for.';
+
+  // What the "Use our AI" block on the start page shows for each status (none | requested | denied):
+  //   lead    the sentence under the title
+  //   hint    what the disabled "Our AI" card says about itself
+  //   note    {label, hint}: the optional note field, only before a request
+  //   button  the word on the request button, only before a request
+  function aiAccess(ai) {
+    if (ai === 'requested') return { state: 'requested', title: AI_TITLE, lead: "Requested. Refresh this page after it's approved.", hint: 'Waiting for approval.', note: null, button: null };
+    if (ai === 'denied') return { state: 'denied', title: AI_TITLE, lead: 'Not available for your account.', hint: 'Not available for your account.', note: null, button: null };
+    return {
+      state: 'none',
+      title: AI_TITLE,
+      lead: 'Our AI needs approval first. Ask for access and we will look at it.',
+      hint: 'Needs approval first. You can ask below.',
+      note: { label: AI_NOTE_LABEL, hint: AI_NOTE_HINT },
+      button: 'Request access'
+    };
+  }
+
+  // What a request got back: the status when it is one the page can show, else "requested".
+  function aiStatusOf(data) {
+    return data && typeof data === 'object' && AI_STATES.indexOf(data.status) !== -1 ? data.status : 'requested';
+  }
+
+  // Without access the other person uses their own AI too, since there is no built-in AI for the room.
+  var OWN_AI_HINT = 'The other person will use their own AI agent too.';
+  function ownAiInvite(name) { return name + ' will use their own AI agent. Their link shows how to connect it.'; }
+
+  // The line on the connect page for a signed-in person who has not asked for access to our AI yet, or null. Someone who has asked, or was
+  // turned down, is not told to ask again.
+  function connectLine(me) {
+    if (!needsAiAccess(me) || me.ai !== 'none') return null;
+    return { text: 'Our AI needs approval first.', link: 'Ask for it on the start page.', href: '/start' };
+  }
+
   // Short confirmations, shown as toasts. The deleted key is named by its label (keyLabel, as the panel's rows show it).
   function keyDeleted(label) { return (label || 'Your agent key') + ' no longer works.'; }
   var SIGNED_OUT = "You're signed out.";
@@ -199,6 +252,17 @@
         saving_unavailable: "We couldn't save your new key. Your other keys still work. Try again in a minute."
       }
     },
+    aiRequest: {
+      def: "We couldn't send your request. Please try again.",
+      codes: {
+        signin_required: 'Your sign-in has ended. Sign in again to ask for access.',
+        origin: RELOAD,
+        content_type: BAD_REQUEST,
+        rate_limited: "You've asked a few times already. Wait a few minutes and try again.",
+        requests_full: "We can't take more requests right now. Please try again later.",
+        ai_note: "Your note can't be sent as it is. Make it shorter and use plain text."
+      }
+    },
     keyRevoke: {
       def: "We couldn't delete that agent key. Please try again.",
       codes: {
@@ -231,6 +295,12 @@
     parseMe: parseMe,
     slot: slot,
     startPrompt: startPrompt,
+    needsAiAccess: needsAiAccess,
+    aiAccess: aiAccess,
+    aiStatusOf: aiStatusOf,
+    OWN_AI_HINT: OWN_AI_HINT,
+    ownAiInvite: ownAiInvite,
+    connectLine: connectLine,
     formatDate: formatDate,
     keyPanel: keyPanel,
     errorMessage: errorMessage

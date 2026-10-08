@@ -27,6 +27,7 @@ test('defaults with an empty environment', () => {
     signin: 'off',
     perUserDaily: 3,
     githubBlockedIds: [],
+    adminGithubIds: [],
     requireDatabase: false,
     mailTransport: 'dev',
     mailFrom: null,

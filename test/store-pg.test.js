@@ -923,7 +923,7 @@ test('rowsToDoc takes its top-level keys from the kind table: a new kind round-t
   assert.equal(Object.hasOwn(texts, 'other'), false);
   // And against the real table: every non-singleton kind of KIND has its collection.
   const real = rowsToDoc([], 1, { error() {} });
-  assert.deepEqual(Object.keys(real.raw).sort(), ['agentkeys', 'rooms', 'schemaVersion', 'sessions', 'users']);
+  assert.deepEqual(Object.keys(real.raw).sort(), ['agentkeys', 'aiaccess', 'rooms', 'schemaVersion', 'sessions', 'users']);
 });
 
 // A fake clock: sleeping moves time on and is recorded, so the boot's retry and lock loops run without waiting.

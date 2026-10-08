@@ -741,10 +741,12 @@
       saving_unavailable: "Saving is unavailable right now, so we can't open a room. Try again in a minute.",
       user_limit: "You've opened all the rooms you can today. Try again tomorrow, or watch the demo.",
       ip_limit: "You've opened all the rooms this network can today. Try again tomorrow, or watch the demo.",
-      daily_limit: "Behalf has opened all the rooms it can today. Try again tomorrow, or watch the demo."
+      daily_limit: "Behalf has opened all the rooms it can today. Try again tomorrow, or watch the demo.",
+      ai_access: 'Our AI needs approval first. Ask for access below, or use your own AI agent.'
     },
     draft: {
-      shutting_down: RESTARTING + ' You can fill in the fields yourself.'
+      shutting_down: RESTARTING + ' You can fill in the fields yourself.',
+      ai_access: "Our AI isn't available for this room. You can fill in the fields yourself."
     }
   };
 

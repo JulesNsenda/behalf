@@ -921,7 +921,7 @@ test('the whole flow: sign in, /api/me, create a room, sign out', T, async (t) =
   // Signed out.
   const anon = await h.req('GET', '/api/me');
   assert.equal(anon.status, 200);
-  assert.deepEqual(anon.json, { user: null, signin: 'github', agentKeys: [] });
+  assert.deepEqual(anon.json, { user: null, signin: 'github', agentKeys: [], ai: 'none', admin: false });
   assert.equal((await h.req('GET', '/api/config')).json.signin, 'github');
   // Sign in.
   const s = await signIn(h, { next: '/start' });
@@ -934,7 +934,7 @@ test('the whole flow: sign in, /api/me, create a room, sign out', T, async (t) =
   assert.deepEqual([...h.sessions.keys()], [sha256(s.session)]);
   // /api/me.
   const me = await h.req('GET', '/api/me', { headers: { cookie: s.cookie } });
-  assert.deepEqual(me.json, { user: { login: 'octocat' }, signin: 'github', agentKeys: [] });
+  assert.deepEqual(me.json, { user: { login: 'octocat' }, signin: 'github', agentKeys: [], ai: 'none', admin: false });
   // Create a live room: the user the domain gets is the session's, whatever the body says.
   const seen = [];
   const real = h.app.domain.createLiveRoom;
@@ -948,7 +948,7 @@ test('the whole flow: sign in, /api/me, create a room, sign out', T, async (t) =
   assert.equal(out.status, 204);
   assert.equal(out.cookies[0], `${SESSION}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`);
   assert.deepEqual(h.store.persistCalls.filter((c) => c[0] === 'session'), [['session', sha256(s.session)]]);
-  assert.deepEqual((await h.req('GET', '/api/me', { headers: { cookie: s.cookie } })).json, { user: null, signin: 'github', agentKeys: [] });
+  assert.deepEqual((await h.req('GET', '/api/me', { headers: { cookie: s.cookie } })).json, { user: null, signin: 'github', agentKeys: [], ai: 'none', admin: false });
   assert.equal((await h.post('/api/rooms', { cookie: s.cookie, body: roomBody })).status, 401);
   // Logging out again is fine and writes nothing.
   h.store.persistCalls.length = 0;
@@ -1149,7 +1149,7 @@ test('POST /api/me/agent-key mints a named key once and replaces nothing; /api/m
   assert.equal(minted.json.name, 'Claude Desktop');
   h.clock.t += 1000;
   const me = await h.req('GET', '/api/me', { headers: { cookie: s.cookie } });
-  assert.deepEqual(me.json, { user: { login: 'octocat' }, signin: 'github', agentKeys: [{ kid: minted.json.kid, name: 'Claude Desktop', createdAt: minted.json.createdAt, lastUsedAt: null }] });
+  assert.deepEqual(me.json, { user: { login: 'octocat' }, signin: 'github', agentKeys: [{ kid: minted.json.kid, name: 'Claude Desktop', createdAt: minted.json.createdAt, lastUsedAt: null }], ai: 'none', admin: false });
   assert.ok(!me.text.includes(minted.json.key));
   assert.deepEqual(h.app.auth.userForAgentKey(minted.json.key), { id: '1001', login: 'octocat' });
   h.clock.t += 1000;
@@ -1342,8 +1342,8 @@ test('SIGNIN=off: the auth routes and the agent-key routes are unknown routes, /
   await same('POST', '/auth/logout', '/auth/zzz');
   await same('POST', '/api/me/agent-key', '/api/me/zzz');
   await same('POST', '/api/me/agent-key/revoke', '/api/me/zzz');
-  assert.deepEqual((await h.req('GET', '/api/me')).json, { user: null, signin: 'off', agentKeys: [] });
-  assert.deepEqual((await h.req('GET', '/api/me', { headers: { cookie: `${SESSION}=anything` } })).json, { user: null, signin: 'off', agentKeys: [] });
+  assert.deepEqual((await h.req('GET', '/api/me')).json, { user: null, signin: 'off', agentKeys: [], ai: 'none', admin: false });
+  assert.deepEqual((await h.req('GET', '/api/me', { headers: { cookie: `${SESSION}=anything` } })).json, { user: null, signin: 'off', agentKeys: [], ai: 'none', admin: false });
   assert.equal((await h.req('GET', '/api/config')).json.signin, 'off');
   // POST /api/rooms: no Origin, no content type, no cookie needed, and the domain is given no user.
   const seen = [];
@@ -2373,6 +2373,13 @@ test('MCP: instructions and the create_room description are built per mode: on i
   assert.deepEqual(tools[0].inputSchema, mcp.TOOLS[0].inputSchema);
   assert.ok('passcode' in tools[0].inputSchema.properties);
   assert.ok(!('agent_key' in tools[0].inputSchema.properties) && !('user' in tools[0].inputSchema.properties));
+  // Exactly what the sign-in description adds: the off text, then the key clause, no passcode, and "Use our AI" for a builtin counterpart.
+  const added = tools[0].description.slice(mcp.TOOLS[0].description.length);
+  assert.match(added, /^ This server requires sign-in: your MCP client must send your principal's agent key as an Authorization: Bearer header \(not as an argument\)\./);
+  assert.ok(added.includes(`Your principal gets a key at ${PUBLIC}/key. No passcode is needed.`), added);
+  assert.ok(added.endsWith(`counterpart_proxy "builtin" also needs "Use our AI" access, which your principal asks for at ${PUBLIC}/start; without it, use "external".`), added);
+  assert.ok(!/Use our AI|passcode/i.test(mcp.TOOLS[0].description), 'the off description says nothing of either');
+  assert.equal(mcp.toolsFor(true, 'https://other.test')[0].description.includes(PUBLIC), false, 'the start URL is built per call too');
 });
 
 test('MCP over HTTP serves the instructions and the tool list of its mode', T, async (t) => {
@@ -2694,6 +2701,7 @@ test('a logout or revoke refused because the store was failing is still owed aft
 const BrowserUI = require('../web/ui/ui.js');
 const AccountView = require('../web/js/account-view.js');
 const RoomView = require('../web/js/room-view.js');
+const AdminView = require('../web/js/admin-view.js');
 const { EXPECTED } = require('../test-support/refusals');
 const { loadPage } = require('../test-support/fake-page');
 
@@ -2714,14 +2722,14 @@ async function asBrowser(h, cookie, fn) {
 test('the pages talk to the real server: /api/me, the agent key panel, UI.request with no body, and sign out, all as the scripts use them', T, async (t) => {
   const h = await boot(t);
   const out = await asBrowser(h, null, () => BrowserUI.request('GET', '/api/me'));
-  assert.deepEqual(AccountView.parseMe(out.data), { signin: 'github', user: null, agentKeys: [] });
+  assert.deepEqual(AccountView.parseMe(out.data), { signin: 'github', user: null, agentKeys: [], ai: 'none', admin: false });
   assert.equal(AccountView.slot(AccountView.parseMe(out.data), '/connect').kind, 'signed-out');
   assert.equal((await asBrowser(h, null, () => BrowserUI.loadConfig())).signin, 'github');
 
   const s = await signIn(h, { next: '/connect' });
   await asBrowser(h, s.cookie, async () => {
     const me = AccountView.parseMe((await BrowserUI.request('GET', '/api/me')).data);
-    assert.deepEqual(me, { signin: 'github', user: { login: 'octocat' }, agentKeys: [] });
+    assert.deepEqual(me, { signin: 'github', user: { login: 'octocat' }, agentKeys: [], ai: 'none', admin: false });
     assert.deepEqual(AccountView.slot(me, '/connect'), { kind: 'signed-in', who: 'octocat', hint: 'Signed in as ', signOut: 'Sign out' });
     assert.equal(AccountView.keyPanel(me, null, '/connect').state, 'no-key');
 
@@ -2761,7 +2769,8 @@ test('the pages talk to the real server: /api/me, the agent key panel, UI.reques
 test('every coded refusal the server source names for a web action is provoked over real HTTP, and the page has a sentence of its own for it', T, async (t) => {
   const seen = new Set();
   const ACCOUNT = ['logout', 'keyCreate', 'keyRevoke'];
-  const sentence = (a, s, c) => (ACCOUNT.includes(a) ? AccountView : RoomView).errorMessage(a, s, c);
+  const ACCOUNT_VIEW = [...ACCOUNT, 'aiRequest'];
+  const sentence = (a, s, c) => (a === 'adminDecide' ? AdminView : (ACCOUNT_VIEW.includes(a) ? AccountView : RoomView)).errorMessage(a, s, c);
   const check = (action, res) => {
     const body = res.json || {};
     assert.equal(typeof body.code, 'string', `${action}: ${res.status} ${res.text} carries no code`);
@@ -2809,13 +2818,47 @@ test('every coded refusal the server source names for a web action is provoked o
   check('keyCreate', await h.post('/api/me/agent-key', { cookie: s2.cookie }));
   check('keyRevoke', await revokeKid(h, s2, own.kid));
   check('logout', await h.post('/auth/logout', { cookie: s2.cookie }));
+  // the built-in AI needs "Use our AI" access (the proxy has to be live for the question to come up)
+  const live = await boot(t, { proxy: { ...fakeProxy(), live: () => true } });
+  const liveUser = await signIn(live);
+  check('create', await live.post('/api/rooms', { cookie: liveUser.cookie, body: { ...roomBody, modeB: 'builtin' } }));
+  // a room opened without it (two own agents) cannot draft with our AI either
+  const closed = await live.post('/api/rooms', { cookie: liveUser.cookie, body: roomBody });
+  assert.equal(closed.status, 201);
+  const closedToken = new URL(closed.json.links.A, PUBLIC).searchParams.get('t');
+  check('draft', await live.post('/api/rooms/' + closed.json.id + '/seats/A/draft', { origin: null, body: { token: closedToken, text: 'a brief', name: 'Ann' } }));
+  // asking for "Use our AI": the guards, signed out, the note, the rate (5 per user), and a full queue (500 waiting)
+  const q = await boot(t);
+  const qa = await signIn(q);
+  q.gh.id = 1002; q.gh.login = 'second';
+  const qb = await signIn(q);
+  const ask = '/api/me/ai-access';
+  check('aiRequest', await q.post(ask, { cookie: qa.cookie, origin: 'https://evil.test' }));
+  check('aiRequest', await q.post(ask, { cookie: qa.cookie, type: 'text/plain' }));
+  check('aiRequest', await q.post(ask, {}));
+  check('aiRequest', await q.post(ask, { cookie: qa.cookie, body: { note: 'x'.repeat(300) } }));
+  for (let i = 0; i < 5; i++) assert.equal((await q.post(ask, { cookie: qa.cookie, body: { note: 'please' } })).status, 200);
+  check('aiRequest', await q.post(ask, { cookie: qa.cookie, body: { note: 'please' } }));
+  for (let i = 0; i < 500; i++) q.app.aiAccess.request({ id: String(7000 + i), login: 'bulk' + i }, '');
+  check('aiRequest', await q.post(ask, { cookie: qb.cookie, body: { note: 'late' } }));
+  // an admin's decision: the guards (a non-admin gets a 404 before them), and a store that cannot save
+  const boss = await boot(t, { extra: { ADMIN_GITHUB_IDS: '1001' } });
+  const bossSession = await signIn(boss);
+  boss.gh.id = 1002; boss.gh.login = 'second';
+  await signIn(boss);
+  const decide = '/api/admin/ai-access';
+  check('adminDecide', await boss.post(decide, { cookie: bossSession.cookie, origin: 'https://evil.test', body: { userId: '1002', decision: 'grant' } }));
+  check('adminDecide', await boss.post(decide, { cookie: bossSession.cookie, type: 'text/plain', body: { userId: '1002', decision: 'grant' } }));
+  boss.store.failing = true;
+  check('adminDecide', await boss.post(decide, { cookie: bossSession.cookie, body: { userId: '1002', decision: 'grant' } }));
   // the address's own limit exists only with sign-in off
   const off = await boot(t, { signin: 'off', extra: { PER_IP_DAILY: '1' } });
   assert.equal((await off.post('/api/rooms', { origin: null, body: roomBody })).status, 201);
   check('create', await off.post('/api/rooms', { origin: null, body: roomBody }));
-  // Every coded refusal the hand-written table lists for these four actions was provoked (a draft's shutting_down needs a stopping server).
+  // Every coded refusal the hand-written table lists for these actions was provoked (a draft's shutting_down needs a stopping server).
   const wanted = [];
-  for (const action of ['create', 'logout', 'keyCreate', 'keyRevoke']) for (const [status, code] of EXPECTED[action]) wanted.push(`${action} ${status} ${code}`);
+  for (const action of ['create', 'logout', 'keyCreate', 'keyRevoke', 'aiRequest', 'adminDecide']) for (const [status, code] of EXPECTED[action]) wanted.push(`${action} ${status} ${code}`);
+  for (const [status, code] of EXPECTED.draft) if (code !== 'shutting_down') wanted.push(`draft ${status} ${code}`);
   assert.deepEqual([...seen].sort(), wanted.sort(), 'every coded (action, status, code) of EXPECTED was provoked');
 });
 

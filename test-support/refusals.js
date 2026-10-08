@@ -12,11 +12,13 @@ const errors = require('../lib/errors');
 const { serverSource } = require('./paths');
 
 const EXPECTED = {
-  create: [[401, 'signin_required'], [403, 'origin'], [415, 'content_type'], [429, 'user_limit'], [429, 'ip_limit'], [429, 'daily_limit'], [503, 'saving_unavailable']],
-  draft: [[503, 'shutting_down']],
+  create: [[401, 'signin_required'], [403, 'origin'], [415, 'content_type'], [429, 'user_limit'], [429, 'ip_limit'], [429, 'daily_limit'], [503, 'saving_unavailable'], [403, 'ai_access']],
+  draft: [[503, 'shutting_down'], [403, 'ai_access']],
   logout: [[403, 'origin'], [415, 'content_type'], [503, 'saving_unavailable']],
   keyCreate: [[400, 'key_name'], [400, 'key_name_taken'], [401, 'signin_required'], [403, 'origin'], [409, 'key_limit'], [415, 'content_type'], [429, 'rate_limited'], [503, 'saving_unavailable']],
   keyRevoke: [[401, 'signin_required'], [403, 'origin'], [415, 'content_type'], [503, 'saving_unavailable']],
+  aiRequest: [[400, 'ai_note'], [401, 'signin_required'], [403, 'origin'], [415, 'content_type'], [429, 'rate_limited'], [503, 'requests_full']],
+  adminDecide: [[403, 'origin'], [415, 'content_type'], [503, 'saving_unavailable']],
 };
 
 // Codes only an MCP client can receive, with no web action. (agentKeyRequired answers create_room with signin_required, which the web

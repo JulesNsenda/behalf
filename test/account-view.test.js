@@ -20,13 +20,15 @@ const fs = require('node:fs');
 const KID_A = '0123456789ab';
 const KID_B = 'fedcba987654';
 const T0 = Date.UTC(2026, 9, 3, 23, 59, 59);
-const ME_OFF = { signin: 'off', user: null, agentKeys: [] };
-const ME_OUT = { signin: 'github', user: null, agentKeys: [] };
-const ME_IN = { signin: 'github', user: { login: 'octocat' }, agentKeys: [] };
+const ME_OFF = { signin: 'off', user: null, agentKeys: [], ai: 'none', admin: false };
+const ME_OUT = { signin: 'github', user: null, agentKeys: [], ai: 'none', admin: false };
+const ME_IN = { signin: 'github', user: { login: 'octocat' }, agentKeys: [], ai: 'none', admin: false };
 const KEY_NAMED = { kid: KID_A, name: 'Claude Desktop', createdAt: T0, lastUsedAt: Date.UTC(2026, 9, 5, 1) };
 const KEY_PLAIN = { kid: KID_B, name: null, createdAt: T0, lastUsedAt: null };
-const ME_KEY = { signin: 'github', user: { login: 'octocat' }, agentKeys: [KEY_NAMED] };
-const ME_KEYS = { signin: 'github', user: { login: 'octocat' }, agentKeys: [KEY_NAMED, KEY_PLAIN] };
+const ME_KEY = { signin: 'github', user: { login: 'octocat' }, agentKeys: [KEY_NAMED], ai: 'none', admin: false };
+const ME_KEYS = { signin: 'github', user: { login: 'octocat' }, agentKeys: [KEY_NAMED, KEY_PLAIN], ai: 'none', admin: false };
+const ME_GRANTED = { ...ME_IN, ai: 'granted' };
+const ME_ADMIN = { ...ME_IN, ai: 'granted', admin: true };
 const NEW_KEY = { key: 'bh_THE-SECRET-KEY-VALUE', kid: KID_A };
 
 // ---------- signinHref ----------
@@ -35,6 +37,7 @@ test('signinHref: the page the person is on comes back after sign-in when it is 
   assert.strictEqual(AV.signinHref('/start'), '/auth/github?next=/start');
   assert.strictEqual(AV.signinHref('/connect'), '/auth/github?next=/connect');
   assert.strictEqual(AV.signinHref('/key'), '/auth/github?next=/key');
+  assert.strictEqual(AV.signinHref('/admin'), '/auth/github?next=/admin', 'the admin page signs in and comes back');
   for (const p of ['/spec', '/room/abc', '/start/', '/connect?x=1', '', undefined, null, 7, '//evil.test', 'https://evil.test', '/\\evil.test', '/ui/']) {
     assert.strictEqual(AV.signinHref(p), '/auth/github', String(p));
   }
@@ -60,24 +63,34 @@ test('signinHref and the server agree on which pages a sign-in can return to', (
     config: loadConfig({ SIGNIN: 'github', PUBLIC_URL: 'https://behalf.test' }),
     secrets: loadSecrets({ GITHUB_CLIENT_ID: 'id', GITHUB_CLIENT_SECRET: 'secret' }),
   });
-  const pages = ['/', '/start', '/connect', '/spec', '/brief/x', '/room/x', '/ui/', '/start/', '/connect/', '/index.html'];
+  const pages = ['/', '/start', '/connect', '/admin', '/spec', '/brief/x', '/room/x', '/ui/', '/start/', '/connect/', '/index.html'];
   for (const p of pages) {
     const href = AV.signinHref(p);
     const next = new URL(href, 'https://behalf.test').searchParams.get('next');
     assert.strictEqual(auth.beginLogin(next).next, AV.SIGNIN_NEXT.includes(p) ? p : '/', p);
     assert.strictEqual(auth.beginLogin(p).next === p, AV.SIGNIN_NEXT.includes(p), `the server's own list, for ${p}`);
   }
-  assert.deepStrictEqual([...AV.SIGNIN_NEXT].sort(), ['/', '/connect', '/key', '/start'], 'widening where a sign-in may return is a reviewed change');
+  assert.deepStrictEqual([...AV.SIGNIN_NEXT].sort(), ['/', '/admin', '/connect', '/key', '/start'], 'widening where a sign-in may return is a reviewed change');
   assert.deepStrictEqual([...AV.SIGNIN_NEXT].sort(), [...require('../lib/auth').NEXT_PATHS].sort(), 'the two lists are the same');
 });
 
 // ---------- parseMe ----------
-test('parseMe: reads /api/me into the three fields and nothing else', () => {
+test('parseMe: reads /api/me into the five fields and nothing else', () => {
   assert.deepStrictEqual(AV.parseMe({ user: null, signin: 'off', agentKeys: [] }), ME_OFF);
   assert.deepStrictEqual(AV.parseMe({ user: null, signin: 'github', agentKeys: [] }), ME_OUT);
   assert.deepStrictEqual(AV.parseMe({ user: { login: 'octocat', id: '1001', email: 'x' }, signin: 'github', agentKeys: [], extra: 1 }), ME_IN);
   assert.deepStrictEqual(AV.parseMe({ user: { login: ' octocat ' }, signin: 'github', agentKeys: [{ kid: KID_A, name: ' Claude Desktop ', createdAt: 5, lastUsedAt: 6, key: 'leak', id: 'leak' }] }),
-    { signin: 'github', user: { login: 'octocat' }, agentKeys: [{ kid: KID_A, name: 'Claude Desktop', createdAt: 5, lastUsedAt: 6 }] });
+    { signin: 'github', user: { login: 'octocat' }, agentKeys: [{ kid: KID_A, name: 'Claude Desktop', createdAt: 5, lastUsedAt: 6 }], ai: 'none', admin: false });
+});
+
+test('parseMe: ai is one of the four statuses and admin is exactly true; anything else is none and false, and nobody signed in has neither', () => {
+  const me = (extra, user = { login: 'a' }) => AV.parseMe({ signin: 'github', user, agentKeys: [], ...extra });
+  for (const ai of ['granted', 'requested', 'denied', 'none']) assert.strictEqual(me({ ai }).ai, ai);
+  for (const ai of ['GRANTED', 'yes', '', 7, null, undefined, {}, ['granted'], '__proto__', 'granted ']) assert.strictEqual(me({ ai }).ai, 'none', String(ai));
+  assert.strictEqual(me({ admin: true }).admin, true);
+  for (const admin of ['true', 1, 'yes', {}, [true], null, undefined, false]) assert.strictEqual(me({ admin }).admin, false, String(admin));
+  assert.deepStrictEqual([me({ ai: 'granted', admin: true }, null).ai, me({ ai: 'granted', admin: true }, null).admin], ['none', false], 'a claim with nobody signed in is ignored');
+  assert.deepStrictEqual(AV.parseMe({ signin: 'off', user: null, ai: 'granted', admin: true }).ai, 'none');
 });
 
 test('parseMe: anything that is not that shape is null, and keys without a user, or without a well-formed kid, are dropped', () => {
@@ -105,6 +118,55 @@ test('slot: empty with sign-in off or unreadable, a sign-in link when signed out
   assert.deepStrictEqual(AV.slot(ME_IN, '/spec'), { kind: 'signed-in', who: 'octocat', hint: 'Signed in as ', signOut: 'Sign out' });
   assert.deepStrictEqual(AV.slot(ME_KEY, '/'), { kind: 'signed-in', who: 'octocat', hint: 'Signed in as ', signOut: 'Sign out' });
   assert.deepStrictEqual(AV.slot({ signin: 'github', user: { login: '' }, agentKeys: [] }, '/'), { kind: 'signed-in', who: 'Signed in', hint: '', signOut: 'Sign out' });
+});
+
+test('slot: an admin gets an Admin link to /admin, and nobody else does (not even a person granted our AI)', () => {
+  assert.deepStrictEqual(AV.slot(ME_ADMIN, '/'), { kind: 'signed-in', who: 'octocat', hint: 'Signed in as ', signOut: 'Sign out', admin: { text: 'Admin', href: '/admin' } });
+  for (const me of [ME_IN, ME_GRANTED, ME_KEY]) assert.ok(!('admin' in AV.slot(me, '/')), JSON.stringify(me));
+  assert.strictEqual(AV.slot({ ...ME_OUT, admin: true }, '/').kind, 'signed-out', 'a signed-out claim of admin is nothing');
+  assert.ok(!('admin' in AV.slot({ ...ME_OUT, admin: true }, '/')));
+});
+
+// ---------- "Use our AI" ----------
+test('needsAiAccess: only a signed-in person who is neither granted nor an admin, with sign-in on', () => {
+  assert.strictEqual(AV.needsAiAccess(ME_IN), true);
+  assert.strictEqual(AV.needsAiAccess({ ...ME_IN, ai: 'requested' }), true);
+  assert.strictEqual(AV.needsAiAccess({ ...ME_IN, ai: 'denied' }), true);
+  assert.strictEqual(AV.needsAiAccess(ME_GRANTED), false);
+  assert.strictEqual(AV.needsAiAccess(ME_ADMIN), false);
+  assert.strictEqual(AV.needsAiAccess({ ...ME_IN, ai: 'none', admin: true }), false, 'an admin is always granted');
+  for (const me of [ME_OFF, ME_OUT, null, undefined]) assert.strictEqual(AV.needsAiAccess(me), false, JSON.stringify(me));
+});
+
+test('aiAccess: before a request a note field and Request access; after it only the sentence; the card says the same in its own hint', () => {
+  const none = AV.aiAccess('none');
+  assert.deepStrictEqual([none.state, none.title, none.button], ['none', 'Use our AI', 'Request access']);
+  assert.deepStrictEqual(none.note, { label: 'A short note (optional)', hint: 'Who you are and what you would use it for.' });
+  assert.match(none.lead, /^Our AI needs approval first\./);
+  const requested = AV.aiAccess('requested');
+  assert.strictEqual(requested.lead, "Requested. Refresh this page after it's approved.");
+  assert.deepStrictEqual([requested.note, requested.button], [null, null]);
+  const denied = AV.aiAccess('denied');
+  assert.strictEqual(denied.lead, 'Not available for your account.');
+  assert.deepStrictEqual([denied.note, denied.button], [null, null]);
+  assert.strictEqual(denied.hint, 'Not available for your account.');
+  for (const odd of ['granted', 'x', undefined, null, 7]) assert.strictEqual(AV.aiAccess(odd).state, 'none', String(odd));
+  assert.strictEqual(new Set([none.hint, requested.hint, denied.hint]).size, 3);
+});
+
+test('aiStatusOf: the status a request answered with when it is one the page can show, else requested', () => {
+  for (const status of ['granted', 'requested', 'denied', 'none']) assert.strictEqual(AV.aiStatusOf({ status }), status);
+  for (const data of [null, undefined, {}, { status: 'x' }, { status: 7 }, 'granted', []]) assert.strictEqual(AV.aiStatusOf(data), 'requested', JSON.stringify(data));
+});
+
+test('connectLine: one line with a link to the start page, only for a signed-in person who has not asked yet', () => {
+  assert.deepStrictEqual(AV.connectLine(ME_IN), { text: 'Our AI needs approval first.', link: 'Ask for it on the start page.', href: '/start' });
+  for (const me of [{ ...ME_IN, ai: 'requested' }, { ...ME_IN, ai: 'denied' }, ME_GRANTED, ME_ADMIN, ME_OUT, ME_OFF, null]) assert.strictEqual(AV.connectLine(me), null, JSON.stringify(me));
+});
+
+test('the invite says the other person uses their own AI, by name', () => {
+  assert.strictEqual(AV.ownAiInvite('Bob'), 'Bob will use their own AI agent. Their link shows how to connect it.');
+  assert.strictEqual(AV.OWN_AI_HINT, 'The other person will use their own AI agent too.');
 });
 
 // ---------- start page ----------
@@ -219,6 +281,8 @@ test('every sentence a person reads here avoids protocol jargon, and says "agent
   const collect = (v) => { if (typeof v === 'string') strings.push(v); else if (v && typeof v === 'object') Object.values(v).forEach(collect); };
   for (const me of [ME_OUT, ME_IN, ME_KEY, ME_KEYS]) for (const held of [null, NEW_KEY]) { collect(AV.keyPanel(me, held, '/connect')); collect(AV.slot(me, '/')); }
   collect(AV.startPrompt());
+  for (const ai of ['none', 'requested', 'denied']) collect(AV.aiAccess(ai));
+  collect([AV.connectLine(ME_IN), AV.ownAiInvite('Bob'), AV.OWN_AI_HINT, AV.slot(ME_ADMIN, '/')]);
   collect([AV.SIGNIN_FAILED, AV.keyDeleted('Claude Desktop'), AV.keyDeleted(null), AV.SIGNED_OUT]);
   assert.ok(strings.length > 30);
   for (const s of strings.filter((x) => !x.startsWith('/'))) {
@@ -228,7 +292,7 @@ test('every sentence a person reads here avoids protocol jargon, and says "agent
 });
 
 // ---------- refused requests ----------
-const ACTIONS = ['logout', 'keyCreate', 'keyRevoke'];
+const ACTIONS = ['logout', 'keyCreate', 'keyRevoke', 'aiRequest'];
 
 test('errorMessage: a sentence by code for each sign-out and agent key action, the action default for anything else', () => {
   const NETWORK = "We couldn't reach the server. Check your connection and try again.";
@@ -256,11 +320,22 @@ test('errorMessage: a sentence by code for each sign-out and agent key action, t
   assert.strictEqual(AV.errorMessage('logout', 403, 'origin'), 'Please reload the page and try again.');
   // logout needs no session, so it has no 401 sentence
   assert.strictEqual(AV.errorMessage('logout', 401, 'signin_required'), AV.errorMessage('logout', 401));
-  for (const a of ACTIONS) for (const c of ['origin', 'content_type', 'saving_unavailable', ...(a === 'keyCreate' ? ['key_limit', 'key_name', 'key_name_taken'] : [])]) {
+  const CODES = { logout: ['origin', 'content_type', 'saving_unavailable'], keyCreate: ['origin', 'content_type', 'saving_unavailable', 'key_limit', 'key_name', 'key_name_taken'], keyRevoke: ['origin', 'content_type', 'saving_unavailable'], aiRequest: ['origin', 'content_type', 'signin_required', 'rate_limited', 'requests_full', 'ai_note'] };
+  for (const a of ACTIONS) for (const c of CODES[a]) {
     const s = AV.errorMessage(a, 599, c);
     assert.notStrictEqual(s, AV.errorMessage(a, 599), `${a} ${c}`);
     assert.ok(!JARGON.test(s) && !/built-in AI/i.test(s), s);
   }
+});
+
+test('errorMessage: a sentence for each refused "Use our AI" request, never the server text', () => {
+  assert.strictEqual(AV.errorMessage('aiRequest', 429, 'rate_limited'), "You've asked a few times already. Wait a few minutes and try again.");
+  assert.strictEqual(AV.errorMessage('aiRequest', 503, 'requests_full'), "We can't take more requests right now. Please try again later.");
+  assert.strictEqual(AV.errorMessage('aiRequest', 401, 'signin_required'), 'Your sign-in has ended. Sign in again to ask for access.');
+  assert.strictEqual(AV.errorMessage('aiRequest', 403, 'origin'), 'Please reload the page and try again.');
+  assert.strictEqual(AV.errorMessage('aiRequest', 400, 'ai_note'), "Your note can't be sent as it is. Make it shorter and use plain text.");
+  assert.strictEqual(AV.errorMessage('aiRequest', 500), "We couldn't send your request. Please try again.");
+  assert.strictEqual(new Set(['origin', 'content_type', 'signin_required', 'rate_limited', 'requests_full', 'ai_note'].map((c) => AV.errorMessage('aiRequest', 599, c))).size, 6, 'each code its own sentence');
 });
 
 test('KEY_PATTERN: only a key the server could have made (bh_ and at least 20 URL-safe characters)', () => {

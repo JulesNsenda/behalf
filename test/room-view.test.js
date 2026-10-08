@@ -902,8 +902,9 @@ test('errorMessage: every status code the server returns for an action has its o
 // account-view.js (sign-out and the agent key), and every sentence by code has to be on the list.
 const AV = require('../web/js/account-view.js');
 const { EXPECTED, unclassifiedCodes, codesInServer } = require('../test-support/refusals');
-const ACCOUNT_ACTIONS = ['logout', 'keyCreate', 'keyRevoke'];
-const sentence = (action, status, code) => (ACCOUNT_ACTIONS.includes(action) ? AV : RV).errorMessage(action, status, code);
+const ACCOUNT_ACTIONS = ['logout', 'keyCreate', 'keyRevoke', 'aiRequest'];
+const ADMIN = require('../web/js/admin-view.js'); // the admin page's decisions are worded in admin-view.js
+const sentence = (action, status, code) => (action === 'adminDecide' ? ADMIN : ACCOUNT_ACTIONS.includes(action) ? AV : RV).errorMessage(action, status, code);
 
 test('errorMessage: every coded refusal in EXPECTED has its own sentence, and every sentence by code is for one in EXPECTED', () => {
   const allCodes = [...new Set(Object.values(EXPECTED).flatMap((pairs) => pairs.map(([, c]) => c))), 'made_up_code'];
@@ -949,7 +950,7 @@ test('errorMessage: never contains or reflects server text', () => {
 const ALL_ACTIONS = ['seal', 'draft', 'answer', 'resume', 'create', 'demo', 'load'];
 
 test('errorMessage: a code picks its own sentence before the status, for create', () => {
-  const codes = ['signin_required', 'origin', 'content_type', 'saving_unavailable', 'user_limit', 'ip_limit', 'daily_limit'];
+  const codes = ['signin_required', 'origin', 'content_type', 'saving_unavailable', 'user_limit', 'ip_limit', 'daily_limit', 'ai_access'];
   const sentences = codes.map((c) => RV.errorMessage('create', 599, c));
   assert.strictEqual(new Set(sentences).size, sentences.length, 'each code has its own sentence');
   assert.strictEqual(RV.errorMessage('create', 401, 'signin_required'), "The room wasn't opened because you're not signed in.");
@@ -987,8 +988,20 @@ test('errorMessage: the code is untrusted: only an own sentence of that action i
   assert.strictEqual(RV.errorMessage('create', 0, 'signin_required'), "We couldn't reach the server. Check your connection and try again.", 'no connection beats a code');
 });
 
+test('errorMessage: a room or draft refused for want of access to our AI says so, in its own sentence, and a draft keeps the fields open', () => {
+  const create = RV.errorMessage('create', 403, 'ai_access');
+  assert.strictEqual(create, 'Our AI needs approval first. Ask for access below, or use your own AI agent.');
+  assert.notStrictEqual(create, RV.errorMessage('create', 403), 'not the passcode sentence');
+  assert.notStrictEqual(create, RV.errorMessage('create', 500));
+  const draft = RV.errorMessage('draft', 403, 'ai_access');
+  assert.strictEqual(draft, "Our AI isn't available for this room. You can fill in the fields yourself.");
+  assert.notStrictEqual(draft, RV.errorMessage('draft', 403), 'not the no-access sentence for a seat link');
+  assert.ok(!/passcode/i.test(create + draft));
+  assert.strictEqual(RV.errorMessage('seal', 403, 'ai_access'), RV.errorMessage('seal', 403), 'only create and draft have it');
+});
+
 test('every create and draft sentence by code is plain: no protocol jargon, a full sentence', () => {
-  for (const [a, c] of [['create', 'signin_required'], ['create', 'origin'], ['create', 'content_type'], ['create', 'saving_unavailable'], ['create', 'user_limit'], ['create', 'ip_limit'], ['create', 'daily_limit'], ['draft', 'shutting_down']]) {
+  for (const [a, c] of [['create', 'signin_required'], ['create', 'origin'], ['create', 'content_type'], ['create', 'saving_unavailable'], ['create', 'user_limit'], ['create', 'ip_limit'], ['create', 'daily_limit'], ['create', 'ai_access'], ['draft', 'shutting_down'], ['draft', 'ai_access']]) {
     const s = RV.errorMessage(a, 599, c);
     assert.ok(/[.]$/.test(s) && s.length > 20 && !JARGON.test(s), s);
   }
