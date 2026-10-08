@@ -30,17 +30,26 @@
     return '/auth/github' + (SIGNIN_NEXT.indexOf(path) !== -1 ? '?next=' + path : '');
   }
 
-  // The server's /api/me answer as {signin, user: {login} | null, agentKey: {createdAt} | null}, or null when it
-  // isn't one. A key's createdAt is kept only when it is a time.
+  var KID = /^[0-9a-f]{12}$/; // a key's public id (lib/auth.js)
+  var KEY_NAME_MAX = 40; // the longest name the server keeps, in code points (lib/auth.js; a test holds the copies together)
+  var MAX_KEYS = 10; // the most live keys one person can hold (lib/auth.js MAX_KEYS_PER_USER)
+
+  var time = function (v) { return typeof v === 'number' && isFinite(v) ? v : null; };
+
+  // The server's /api/me answer as {signin, user: {login} | null, agentKeys: [{kid, name, createdAt, lastUsedAt}]}, or
+  // null when it isn't one. Only an entry with a well-formed kid is kept; a name is kept only as text, a time only as a time.
   function parseMe(data) {
     if (data === null || typeof data !== 'object') return null;
     if (data.signin !== 'github' && data.signin !== 'off') return null;
     var user = data.user !== null && typeof data.user === 'object' ? { login: typeof data.user.login === 'string' ? data.user.login.trim() : '' } : null;
-    var key = null;
-    if (user && data.agentKey !== null && typeof data.agentKey === 'object') {
-      key = { createdAt: typeof data.agentKey.createdAt === 'number' && isFinite(data.agentKey.createdAt) ? data.agentKey.createdAt : null };
+    var keys = [];
+    if (user && Array.isArray(data.agentKeys)) {
+      data.agentKeys.forEach(function (k) {
+        if (k === null || typeof k !== 'object' || typeof k.kid !== 'string' || !KID.test(k.kid)) return;
+        keys.push({ kid: k.kid, name: typeof k.name === 'string' && k.name.trim() ? k.name.trim() : null, createdAt: time(k.createdAt), lastUsedAt: time(k.lastUsedAt) });
+      });
     }
-    return { signin: data.signin, user: user, agentKey: key };
+    return { signin: data.signin, user: user, agentKeys: keys };
   }
 
   // What the header slot shows, or null when it stays empty (sign-in is off, or the answer couldn't be read).
@@ -72,18 +81,31 @@
     return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
   }
 
-  var KEY_TITLE = 'Get an agent key';
-  var KEY_TITLE_HAVE = 'Your agent key'; // once there is a key, new or old
-  var KEY_WHAT = 'An agent key lets your own AI app, like Claude Desktop or Claude Code, start rooms on Behalf for you. Rooms your app starts count towards your daily limit.';
+  var KEY_TITLE = 'Get an agent key'; // the connect page's panel: the first key, or another (KEY_TITLE_HAVE once there is one)
+  var KEY_TITLE_HAVE = 'Your agent keys'; // once there is a key, new or old
+  var KEY_WHAT = 'An agent key lets one of your own AI apps, like Claude Desktop or Claude Code, start rooms on Behalf for you. Make one key for each app. Rooms your apps start count towards your daily limit.';
   var KEY_PLACEHOLDER = 'YOUR_AGENT_KEY'; // stands in the command when a key exists that this page can't show
 
+  // How a key is named in a list or a toast: its name, else "Agent key (created 3 Oct 2026, ab12)" (a key made without a name,
+  // or before names existed); the first four characters of its id tell apart two made on the same day.
+  function keyLabel(key) {
+    if (key && typeof key.name === 'string' && key.name) return key.name;
+    var date = key ? formatDate(key.createdAt) : null;
+    var parts = [];
+    if (date) parts.push('created ' + date);
+    if (key && typeof key.kid === 'string' && KID.test(key.kid)) parts.push(key.kid.slice(0, 4));
+    return parts.length ? 'Agent key (' + parts.join(', ') + ')' : 'Agent key';
+  }
+
   // What the agent key panel on the connect page shows, or null when there is no panel (sign-in is off). shown is
-  // {key, createdAt} for the key just created, which is the only time it can be read, else null.
+  // {key, kid} for the key just created, which is the only time it can be read, else null.
   //   state       signed-out | no-key | has-key | new-key
   //   lead        the sentence under the title
   //   signin      {text, href}: the link, when signed out
-  //   create      the button that creates a key, when signed in; label says whether it replaces one
-  //   revoke      the button that deletes the key, when there is one
+  //   keys        one row per key, newest first: {kid, label, created, lastUsed, remove, removeName}; remove is the button's
+  //               word, removeName what a screen reader hears for it (it names the key)
+  //   nameField   {label}: the optional name for the next key, when signed in (no maxlength: browsers count UTF-16 units, the server code points)
+  //   create      the button that creates a key, when signed in
   //   field       {label, note, button}: the copy field that holds the new key, once
   //   warning     the warning that goes with it
   //   commandNote what to tell about the command in the first step, or null
@@ -91,12 +113,28 @@
   //               be shown, else null (no header)
   function keyPanel(me, shown, path) {
     if (!me || me.signin !== 'github') return null;
-    var panel = { title: KEY_TITLE, state: 'signed-out', lead: KEY_WHAT, signin: null, create: null, revoke: null, field: null, warning: null, commandNote: null, commandKey: null };
+    var panel = { title: KEY_TITLE, state: 'signed-out', lead: KEY_WHAT, signin: null, keys: [], nameField: null, create: null, field: null, warning: null, commandNote: null, commandKey: null };
     if (!me.user) {
       panel.signin = { text: SIGN_IN, href: signinHref(path) };
       panel.lead = 'To let your own AI app start rooms for you, sign in first. You then get an agent key to give it.';
       return panel;
     }
+    var keys = me.agentKeys;
+    panel.keys = keys.map(function (k) {
+      var label = keyLabel(k);
+      var created = formatDate(k.createdAt);
+      var used = formatDate(k.lastUsedAt);
+      return {
+        kid: k.kid,
+        label: label,
+        created: created ? 'Created ' + created : null,
+        lastUsed: used ? 'Last used ' + used : 'Not used yet',
+        remove: 'Delete',
+        removeName: 'Delete ' + label
+      };
+    });
+    panel.nameField = { label: 'Which app is this for?' };
+    panel.create = 'Create key';
     if (shown && typeof shown.key === 'string' && shown.key) {
       panel.state = 'new-key';
       panel.title = KEY_TITLE_HAVE;
@@ -107,31 +145,25 @@
         button: 'Copy key'
       };
       panel.warning = "Copy it now. We can't show it again.";
-      panel.create = 'Create a new key';
-      panel.revoke = 'Delete key';
       panel.commandNote = 'This command has your new agent key in it.';
       panel.commandKey = shown.key;
       return panel;
     }
-    if (me.agentKey) {
-      var date = formatDate(me.agentKey.createdAt);
+    if (keys.length) {
       panel.state = 'has-key';
       panel.title = KEY_TITLE_HAVE;
-      panel.lead = (date ? 'You created an agent key on ' + date + '. ' : 'You have an agent key. ') + "We can't show it again. If you lost it, create a new one and the old one stops working.";
-      panel.create = 'Create a new key';
-      panel.revoke = 'Delete key';
+      panel.lead = "Use one key for each app. We can't show a key again after you create it. To change an app's key, create a new one for it, then delete the old one.";
       panel.commandNote = 'In this command, replace ' + KEY_PLACEHOLDER + ' with your key.';
       panel.commandKey = KEY_PLACEHOLDER;
       return panel;
     }
     panel.state = 'no-key';
     panel.lead = KEY_WHAT + ' Create one, then add it to your app.';
-    panel.create = 'Create an agent key';
     return panel;
   }
 
-  // Short confirmations, shown as toasts.
-  var KEY_DELETED = 'Your agent key no longer works.';
+  // Short confirmations, shown as toasts. The deleted key is named by its label (keyLabel, as the panel's rows show it).
+  function keyDeleted(label) { return (label || 'Your agent key') + ' no longer works.'; }
   var SIGNED_OUT = "You're signed out.";
 
   // ---------- refused requests ----------
@@ -160,17 +192,20 @@
         origin: RELOAD,
         content_type: BAD_REQUEST,
         rate_limited: "You've created a lot of keys in a short time. Wait a few minutes and try again.",
-        // Creating a key puts the old one out first, so a failure to save leaves no working key.
-        saving_unavailable: "We couldn't save your new key, so you have no working agent key right now. Try again in a minute."
+        key_name: 'Use a name of up to ' + KEY_NAME_MAX + ' characters.',
+        key_name_taken: 'You already have a key with that name. Choose another one.',
+        key_limit: 'You have as many agent keys as you can keep (' + MAX_KEYS + '). Delete one you no longer use, then try again.',
+        // Creating a key ends no other key, so a failure to save leaves the others working.
+        saving_unavailable: "We couldn't save your new key. Your other keys still work. Try again in a minute."
       }
     },
     keyRevoke: {
-      def: "We couldn't delete your agent key. Please try again.",
+      def: "We couldn't delete that agent key. Please try again.",
       codes: {
-        signin_required: 'Your sign-in has ended. Sign in again to delete your agent key.',
+        signin_required: 'Your sign-in has ended. Sign in again to delete an agent key.',
         origin: RELOAD,
         content_type: BAD_REQUEST,
-        saving_unavailable: "We couldn't save that just now, so your agent key may still work. Try again in a minute."
+        saving_unavailable: "We couldn't save that just now, so that key may still work. Your other keys are not affected. Try again in a minute."
       }
     }
   };
@@ -185,8 +220,12 @@
   var AccountView = {
     SIGNIN_NEXT: SIGNIN_NEXT,
     SIGNIN_FAILED: SIGNIN_FAILED,
-    KEY_DELETED: KEY_DELETED,
+    KEY_NAME_MAX: KEY_NAME_MAX,
+    MAX_KEYS: MAX_KEYS,
+    KID: KID,
     SIGNED_OUT: SIGNED_OUT,
+    keyDeleted: keyDeleted,
+    keyLabel: keyLabel,
     KEY_PATTERN: /^bh_[A-Za-z0-9_-]{20,}$/,
     signinHref: signinHref,
     parseMe: parseMe,

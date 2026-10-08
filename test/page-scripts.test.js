@@ -6,6 +6,12 @@ const assert = require('node:assert');
 const { loadPage, loadRoomKit, makeEl, ok, refused, ME } = require('../test-support/fake-page');
 
 const KEY = 'bh_' + 'k'.repeat(43);
+const KID = '0123456789ab'; // the kid the scripted server gives the key it makes
+const KID_OLD = 'fedcba987654';
+const T0 = Date.UTC(2026, 9, 3, 12);
+const OLD = { kid: KID_OLD, name: null, createdAt: T0, lastUsedAt: null }; // a key made earlier, with no name
+const LABEL_OLD = 'Agent key (created 3 Oct 2026, fedc)'; // an unnamed key: its date and the start of its kid
+const LABEL_NEW = 'Agent key (created 3 Oct 2026, 0123)'; // the key the scripted server makes
 
 // A button on the page, for the room-kit act() tests.
 const ctl = (id, over) => Object.assign(makeEl({ focused: null }, id), { localName: 'button', isConnected: true }, over);
@@ -18,9 +24,13 @@ function scripted(initial) {
     if (url === '/api/me') return s.meFails ? refused(500) : ok(200, JSON.parse(JSON.stringify(s.me)));
     const route = method + ' ' + url;
     if (s.replies[route] && s.replies[route].length) return s.replies[route].shift();
-    if (route === 'POST /api/me/agent-key') { s.me.agentKey = { createdAt: 5 }; return ok(201, { key: KEY, createdAt: 5 }); }
-    if (route === 'POST /api/me/agent-key/revoke') { s.me.agentKey = null; return ok(204); }
-    if (route === 'POST /auth/logout') { s.me = { signin: 'github', user: null, agentKey: null }; return ok(204); }
+    if (route === 'POST /api/me/agent-key') {
+      const name = body && typeof body.name === 'string' ? body.name : null;
+      s.me.agentKeys = [{ kid: KID, name, createdAt: T0, lastUsedAt: null }, ...s.me.agentKeys];
+      return ok(201, { key: KEY, kid: KID, name, createdAt: T0 });
+    }
+    if (route === 'POST /api/me/agent-key/revoke') { s.me.agentKeys = s.me.agentKeys.filter((k) => k.kid !== body.kid); return ok(204); }
+    if (route === 'POST /auth/logout') { s.me = { signin: 'github', user: null, agentKeys: [] }; return ok(204); }
     return refused(404);
   };
   return s;
@@ -46,7 +56,8 @@ test('signed in with no key: the panel offers to create one, and the command has
   const { page } = await open(ME());
   assert.equal(page.byId('agent-keys').hidden, false);
   assert.ok(page.byId('key-create'));
-  assert.equal(page.byId('key-revoke'), null);
+  assert.ok(page.byId('key-name'), 'the optional name field is there');
+  assert.ok(!page.panelHtml().includes('key-delete-'), 'no keys to delete');
   assert.equal(page.command(), 'claude mcp add --transport http behalf https://behalf.test/mcp');
   assert.equal(page.byId('no-signin-note').hidden, true, '"There is no sign-in." is for sign-in off');
   assert.equal(page.focused, null, 'nothing grabs the focus on load');
@@ -57,14 +68,41 @@ test('creating a key: the key is shown once as a value (with autocomplete off) a
   page.byId('key-create').click();
   await page.flush();
   const post = page.requests.find((r) => r.method === 'POST');
-  assert.deepStrictEqual(post, { method: 'POST', url: '/api/me/agent-key', body: {} }, 'bodyless POSTs would be refused with a 415: the call passes {}');
+  assert.deepStrictEqual(post, { method: 'POST', url: '/api/me/agent-key', body: { name: '' } }, 'the name is always sent, \'\' for none: a body without it is refused, and a bodyless POST gets a 415');
+  assert.ok(!page.panelHtml().includes('maxlength'), 'the name field has no maxlength: browsers count UTF-16 units, the server counts code points');
   assert.ok(hasKeyField(page));
   assert.equal(page.byId('agent-key').value, KEY);
   assert.equal(page.byId('agent-key').getAttribute('autocomplete'), 'off');
   assert.ok(!page.panelHtml().includes(KEY), 'the key is never in the markup');
   assert.equal(page.command(), 'claude mcp add --transport http behalf https://behalf.test/mcp --header "Authorization: Bearer ' + KEY + '"');
   assert.equal(page.focused, 'agent-key');
-  assert.ok(page.byId('key-revoke'));
+  assert.ok(page.byId('key-delete-' + KID), 'the new key is listed, with its own Delete');
+});
+
+test('creating a key with a name sends the name (trimmed), and the name field empties; without one the body is { name: \'\' }', async () => {
+  const { page } = await open(ME());
+  page.byId('key-name').value = '  Claude Code ';
+  page.byId('key-name').fire('input');
+  page.byId('key-create').click();
+  await page.flush();
+  const posts = page.requests.filter((r) => r.method === 'POST');
+  assert.deepStrictEqual(posts[0], { method: 'POST', url: '/api/me/agent-key', body: { name: 'Claude Code' } });
+  assert.equal(page.byId('key-name').value, '', 'the next key starts with an empty name');
+  assert.ok(page.panelHtml().includes('Claude Code'), 'and the new key is listed under its name');
+  page.byId('key-name').value = '   ';
+  page.byId('key-name').fire('input');
+  page.byId('key-create').click();
+  await page.flush();
+  assert.deepStrictEqual(page.requests.filter((r) => r.method === 'POST')[1].body, { name: '' }, 'blanks are no name');
+});
+
+test('creating a second key leaves the first listed and working: both rows, the new key shown', async () => {
+  const { page } = await open(ME({ agentKeys: [OLD] }));
+  assert.ok(page.panelHtml().includes(LABEL_OLD));
+  page.byId('key-create').click();
+  await page.flush();
+  assert.ok(hasKeyField(page));
+  assert.ok(page.byId('key-delete-' + KID) && page.byId('key-delete-' + KID_OLD), 'both keys have a Delete');
 });
 
 test('other re-renders never move the focus to the key field', async () => {
@@ -81,41 +119,92 @@ test('other re-renders never move the focus to the key field', async () => {
 
 test('deleting the key: the key goes from the page, the command loses its header, a toast says so, and focus lands on the create button', async () => {
   const { page } = await withKey();
-  page.byId('key-revoke').click();
+  page.byId('key-delete-' + KID).click();
   await page.flush();
   const post = page.requests.filter((r) => r.method === 'POST').pop();
-  assert.deepStrictEqual(post, { method: 'POST', url: '/api/me/agent-key/revoke', body: {} });
+  assert.deepStrictEqual(post, { method: 'POST', url: '/api/me/agent-key/revoke', body: { kid: KID } });
   assert.ok(!hasKeyField(page));
   assert.equal(page.command(), 'claude mcp add --transport http behalf https://behalf.test/mcp');
-  assert.deepStrictEqual(page.toasts, [['Your agent key no longer works.', 'ok']]);
+  assert.deepStrictEqual(page.toasts, [[LABEL_NEW + ' no longer works.', 'ok']], 'the toast names the key');
   assert.equal(page.focused, 'key-create');
-  assert.ok(page.byId('key-create') && !page.byId('key-revoke'));
+  assert.ok(page.byId('key-create') && !page.byId('key-delete-' + KID));
 });
 
-test('a refused create clears the key that was on screen, asks the server again, and says why; focus stays in the panel', async () => {
+test('deleting another key leaves the new key on screen and in the command; deleting the shown one clears it', async () => {
+  const h = await open(ME({ agentKeys: [OLD] }));
+  h.page.byId('key-create').click();
+  await h.page.flush();
+  h.page.byId('key-delete-' + KID_OLD).click();
+  await h.page.flush();
+  assert.ok(hasKeyField(h.page), 'the key just made is still shown');
+  assert.ok(h.page.command().includes(KEY));
+  assert.deepStrictEqual(h.page.toasts, [[LABEL_OLD + ' no longer works.', 'ok']]);
+  assert.ok(!h.page.byId('key-delete-' + KID_OLD), 'and the deleted one is gone from the list');
+  h.page.byId('key-delete-' + KID).click();
+  await h.page.flush();
+  assert.ok(!hasKeyField(h.page));
+});
+
+test('deleting the shown key clears it on its own: even when the next answer still lists that kid, no key field or Bearer stays', async () => {
+  const h = await open(ME());
+  h.page.byId('key-create').click();
+  await h.page.flush();
+  assert.ok(hasKeyField(h.page));
+  h.server.replies['POST /api/me/agent-key/revoke'] = [ok(204)]; // accepted, but the scripted answer is stale and still lists the key
+  h.page.byId('key-delete-' + KID).click();
+  await h.page.flush();
+  assert.ok(!hasKeyField(h.page), 'the key that was deleted is not shown any more');
+  assert.ok(!h.page.command().includes(KEY));
+});
+
+test('a refused create leaves the key that was on screen (the server still lists it), asks the server again, and says why; focus stays in the panel', async () => {
   const { page, server } = await withKey();
   const asked = server.log.filter((l) => l === 'GET /api/me').length;
   server.replies['POST /api/me/agent-key'] = [refused(503, 'saving_unavailable')];
-  server.me.agentKey = null; // what the server really did: the old key went out first
   page.byId('key-create').click();
   await page.flush();
-  assert.ok(!hasKeyField(page), 'the shown key is gone');
-  assert.ok(!page.command().includes(KEY) && !page.command().includes('--header'));
+  assert.ok(hasKeyField(page), 'creating a key ended no other key, so the shown one is still good');
+  assert.ok(page.command().includes(KEY));
   assert.ok(server.log.filter((l) => l === 'GET /api/me').length > asked, 'the page asked the server what is true');
-  assert.ok(page.panelHtml().includes('you have no working agent key right now'));
+  assert.ok(page.panelHtml().includes('Your other keys still work'));
   assert.ok(!page.panelHtml().includes('text from the server'));
   assert.equal(page.focused, 'key-create');
 });
 
+test('a refused create at the limit says so, and the name that was typed is kept', async () => {
+  const { page, server } = await open(ME({ agentKeys: [OLD] }));
+  server.replies['POST /api/me/agent-key'] = [refused(409, 'key_limit')];
+  page.byId('key-name').value = 'Another app';
+  page.byId('key-name').fire('input');
+  page.byId('key-create').click();
+  await page.flush();
+  assert.ok(page.panelHtml().includes('as many agent keys as you can keep'));
+  assert.equal(page.byId('key-name').value, 'Another app');
+  const bad = await open(ME());
+  bad.server.replies['POST /api/me/agent-key'] = [refused(400, 'key_name')];
+  bad.page.byId('key-create').click();
+  await bad.page.flush();
+  assert.ok(bad.page.panelHtml().includes('Use a name of up to 40 characters.'));
+  bad.server.replies['POST /api/me/agent-key'] = [refused(400, 'key_name_taken')];
+  bad.page.byId('key-create').click();
+  await bad.page.flush();
+  assert.ok(bad.page.panelHtml().includes('You already have a key with that name. Choose another one.'));
+  bad.server.replies['POST /api/me/agent-key'] = [refused(400)];
+  bad.page.byId('key-create').click();
+  await bad.page.flush();
+  assert.ok(bad.page.panelHtml().includes("We couldn&#39;t create your agent key.") || bad.page.panelHtml().includes("We couldn't create your agent key."), 'a 400 with no code is a page that sent something broken: the action default');
+});
+
 test('a refused delete keeps the panel honest: it asks again, shows the key as the server has it, and says why', async () => {
-  const { page, server } = await open(ME({ agentKey: { createdAt: 5 } }));
-  assert.ok(page.panelHtml().includes('You created an agent key on'));
+  const { page, server } = await open(ME({ agentKeys: [OLD] }));
+  assert.ok(page.panelHtml().includes(LABEL_OLD));
   server.replies['POST /api/me/agent-key/revoke'] = [refused(503, 'saving_unavailable')];
   const asked = server.log.filter((l) => l === 'GET /api/me').length;
-  page.byId('key-revoke').click();
+  page.byId('key-delete-' + KID_OLD).click();
   await page.flush();
   assert.ok(server.log.filter((l) => l === 'GET /api/me').length > asked);
-  assert.ok(page.panelHtml().includes('your agent key may still work'));
+  assert.ok(page.panelHtml().includes('that key may still work'));
+  assert.ok(page.panelHtml().includes(LABEL_OLD), 'and it is still listed');
   assert.deepStrictEqual(page.toasts, []);
   assert.equal(page.focused, 'key-create');
 });
@@ -137,7 +226,7 @@ test('no answer at all (the network): the page stays as it was, the key still on
   const { page, server } = await withKey();
   const asked = server.log.filter((l) => l === 'GET /api/me').length;
   server.replies['POST /api/me/agent-key/revoke'] = [{ ok: false, status: 0, data: {} }];
-  page.byId('key-revoke').click();
+  page.byId('key-delete-' + KID).click();
   await page.flush();
   assert.ok(hasKeyField(page), 'a delete that did not get through has not changed what the page knows');
   assert.equal(server.log.filter((l) => l === 'GET /api/me').length, asked);
@@ -145,7 +234,7 @@ test('no answer at all (the network): the page stays as it was, the key still on
 });
 
 test('a 201 whose key is not a key is a failure: nothing is shown, and the page asks again', async () => {
-  for (const bad of [{}, { key: '' }, { key: 'bh_short' }, { key: 'sk-' + 'x'.repeat(40) }, { key: KEY + ' ' }, { key: 7 }]) {
+  for (const bad of [{}, { key: '' }, { key: 'bh_short' }, { key: 'sk-' + 'x'.repeat(40) }, { key: KEY + ' ' }, { key: 7 }, { key: KEY }, { key: KEY, kid: 7 }]) {
     const { page, server } = await open(ME());
     server.replies['POST /api/me/agent-key'] = [ok(201, bad)];
     page.byId('key-create').click();
@@ -386,31 +475,35 @@ test('a key on screen goes when the session ends, and does not come back if some
   await page.window.Account.refresh();
   assert.ok(!hasKeyField(page));
   assert.ok(!page.command().includes(KEY));
-  server.me = ME({ agentKey: { createdAt: 9 } });
+  server.me = ME({ agentKeys: [{ ...OLD, kid: KID }] }); // the same kid, a new session
   await page.window.Account.refresh();
   assert.ok(!hasKeyField(page), 'the old key is not shown again');
   assert.ok(!page.command().includes(KEY));
-  assert.ok(page.panelHtml().includes('You created an agent key on'));
+  assert.ok(page.panelHtml().includes(LABEL_NEW));
 });
 
 test('a key the server no longer has is dropped when its answer says so: a refused delete while the server has no key leaves no field and no Bearer in the command', async () => {
   const { page, server } = await withKey();
   server.replies['POST /api/me/agent-key/revoke'] = [refused(503, 'saving_unavailable')];
-  server.me.agentKey = null; // the server dropped it in memory, and could not save
-  page.byId('key-revoke').click();
+  server.me.agentKeys = []; // the server dropped it in memory, and could not save
+  page.byId('key-delete-' + KID).click();
   await page.flush();
   assert.ok(!hasKeyField(page));
   assert.ok(!page.command().includes('Bearer bh_') && !page.command().includes(KEY));
   assert.ok(!page.panelHtml().includes('Your new key is below'));
 });
 
-test('a key that is not the server\'s current one (another was created since) is dropped on the next answer', async () => {
+test('a key the server lists under another kid is not the one on screen, and is dropped on the next answer; one it still lists stays', async () => {
   const { page, server } = await withKey();
-  server.me.agentKey = { createdAt: 99 };
+  server.me.agentKeys = [{ ...OLD }, ...server.me.agentKeys];
+  await page.window.Account.refresh();
+  await page.flush();
+  assert.ok(hasKeyField(page), 'the server lists the kid of the key on screen too');
+  server.me.agentKeys = [{ ...OLD }];
   await page.window.Account.refresh();
   await page.flush();
   assert.ok(!hasKeyField(page));
-  assert.ok(page.panelHtml().includes('You created an agent key on'));
+  assert.ok(page.panelHtml().includes(LABEL_OLD));
 });
 
 test('a create whose follow-up read fails still shows the new key once (the render that is its only chance), unreconciled', async () => {
@@ -431,14 +524,14 @@ test('two refreshes that come back out of order: the older answer never undoes t
   const second = page.window.Account.refresh();
   await page.flush();
   assert.equal(waiting.length, 2);
-  waiting[1](ok(200, ME({ agentKey: { createdAt: 7 } }))); // the newer question answers first
+  waiting[1](ok(200, ME({ agentKeys: [OLD] }))); // the newer question answers first
   await page.flush();
-  assert.ok(page.panelHtml().includes('You created an agent key on'));
+  assert.ok(page.panelHtml().includes(LABEL_OLD));
   waiting[0](ok(200, ME())); // the older one, from before the key existed, arrives late
   await Promise.all([first, second]);
   await page.flush();
-  assert.ok(page.panelHtml().includes('You created an agent key on'), 'still the newer answer');
-  assert.deepStrictEqual((await page.window.Account.load()).agentKey, { createdAt: 7 });
+  assert.ok(page.panelHtml().includes(LABEL_OLD), 'still the newer answer');
+  assert.deepStrictEqual((await page.window.Account.load()).agentKeys, [OLD]);
 });
 
 test('coming back from the back-forward cache when the refresh fails: no key field and no "Your new key is below" over an empty one', async () => {
@@ -548,32 +641,31 @@ test('room page: act() on success switches the controls back on only when the st
 
 test('a key the server has since lost (deleted elsewhere) is dropped on the next answer', async () => {
   const { page, server } = await withKey();
-  server.me.agentKey = null;
+  server.me.agentKeys = [];
   await page.window.Account.refresh();
   await page.flush();
   assert.ok(!hasKeyField(page));
   assert.ok(!page.command().includes('Bearer bh_'));
 });
 
-test('a refused delete clears the key on screen even when the server still has that very key: it says what may still work, without the secret', async () => {
+test('a refused delete of the key on screen leaves it there, while the server still lists it: the page says what may still work', async () => {
   const { page, server } = await withKey();
-  server.replies['POST /api/me/agent-key/revoke'] = [refused(503, 'saving_unavailable')]; // the server's key (created at 5) is untouched
-  page.byId('key-revoke').click();
+  server.replies['POST /api/me/agent-key/revoke'] = [refused(503, 'saving_unavailable')]; // the server's key is untouched
+  page.byId('key-delete-' + KID).click();
   await page.flush();
-  assert.ok(!hasKeyField(page));
-  assert.ok(page.panelHtml().includes('You created an agent key on'));
-  assert.ok(page.panelHtml().includes('your agent key may still work'));
-  assert.ok(!page.command().includes(KEY));
+  assert.ok(hasKeyField(page), 'it is still listed, so it is still shown');
+  assert.ok(page.panelHtml().includes('that key may still work'));
+  assert.ok(page.command().includes(KEY));
 });
 
 test('a key on screen goes with the session: after a sign-out, signing in again does not bring it back, even though the account still has that key', async () => {
   const { page, server } = await withKey();
-  server.me = ME({ user: null, agentKey: { createdAt: 5 } });
+  server.me = ME({ user: null, agentKeys: [{ ...OLD, kid: KID }] });
   await page.window.Account.refresh();
-  server.me = ME({ agentKey: { createdAt: 5 } }); // the same key record, a new session
+  server.me = ME({ agentKeys: [{ ...OLD, kid: KID }] }); // the same key record, a new session
   await page.window.Account.refresh();
   await page.flush();
   assert.ok(!hasKeyField(page));
-  assert.ok(page.panelHtml().includes('You created an agent key on'));
+  assert.ok(page.panelHtml().includes(LABEL_NEW));
   assert.ok(!page.command().includes(KEY));
 });

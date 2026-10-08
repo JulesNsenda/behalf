@@ -605,11 +605,36 @@
     <div class="guide-example stack stack--md" data-snippet="key-panel">
       <section class="card stack" aria-labelledby="guide-key-title">
         <h2 id="guide-key-title" class="card__title">Get an agent key</h2>
-        <p class="text-muted">An agent key lets your own AI app, like Claude Desktop or Claude Code, start rooms on Behalf for you. Rooms your app starts count towards your daily limit. Create one, then add it to your app.</p>
-        <div class="cluster"><button class="btn btn--secondary" type="button">Create an agent key</button></div>
+        <p class="text-muted">An agent key lets one of your own AI apps, like Claude Desktop or Claude Code, start rooms on Behalf for you. Make one key for each app. Rooms your apps start count towards your daily limit. Create one, then add it to your app.</p>
+        <div class="field">
+          <label class="field__label" for="guide-key-name">Which app is this for?</label>
+          <input class="input" id="guide-key-name" type="text" autocomplete="off">
+        </div>
+        <div class="cluster"><button class="btn btn--secondary" type="button">Create key</button></div>
+      </section>
+      <section class="card stack" aria-labelledby="guide-key-has-title">
+        <h2 id="guide-key-has-title" class="card__title">Your agent keys</h2>
+        <p class="text-muted">Use one key for each app. We can't show a key again after you create it. To change an app's key, create a new one for it, then delete the old one.</p>
+        <ul class="list-reset stack stack--sm">
+          <li class="stack stack--sm">
+            <strong>Claude Desktop</strong>
+            <span class="text-caption">Created 3 Oct 2026. Last used 5 Oct 2026</span>
+            <div><button class="btn btn--link btn--flush" type="button" aria-label="Delete Claude Desktop">Delete</button></div>
+          </li>
+          <li class="stack stack--sm">
+            <strong>Agent key (created 3 Oct 2026, fedc)</strong>
+            <span class="text-caption">Created 3 Oct 2026. Not used yet</span>
+            <div><button class="btn btn--link btn--flush" type="button" aria-label="Delete Agent key (created 3 Oct 2026, fedc)">Delete</button></div>
+          </li>
+        </ul>
+        <div class="field">
+          <label class="field__label" for="guide-key-name-more">Which app is this for?</label>
+          <input class="input" id="guide-key-name-more" type="text" autocomplete="off">
+        </div>
+        <div class="cluster"><button class="btn btn--secondary" type="button">Create key</button></div>
       </section>
       <section class="card stack" aria-labelledby="guide-key-new-title">
-        <h2 id="guide-key-new-title" class="card__title">Your agent key</h2>
+        <h2 id="guide-key-new-title" class="card__title">Your agent keys</h2>
         <p class="text-muted">Your new key is below, and the command in step 1 now includes it.</p>
         <div class="field">
           <label class="field__label" for="guide-agent-key">Your key</label>
@@ -623,10 +648,11 @@
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>
           <div class="callout__body"><p>Copy it now. We can't show it again.</p></div>
         </div>
-        <div class="cluster">
-          <button class="btn btn--secondary" type="button">Create a new key</button>
-          <button class="btn btn--link" type="button">Delete key</button>
+        <div class="field">
+          <label class="field__label" for="guide-key-name-new">Which app is this for?</label>
+          <input class="input" id="guide-key-name-new" type="text" autocomplete="off">
         </div>
+        <div class="cluster"><button class="btn btn--secondary" type="button">Create key</button></div>
       </section>
     </div>
     <details class="disclosure"><summary>Markup</summary><div class="disclosure__body prose"><pre><code data-snippet-for="key-panel"></code></pre></div></details>

@@ -576,7 +576,7 @@ test('every page with the main nav carries the same account slot, and no other p
   assert.ok(!/^<div[^>]*\shidden\b/.test(slots[0][0]), 'the slot shows with the page');
   // The static link is exactly what account-view.js renders for a signed-out person (the words, and a href that works with no script).
   const AccountView = require('../web/js/account-view.js');
-  const d = AccountView.slot({ signin: 'github', user: null, agentKey: null }, '/spec');
+  const d = AccountView.slot({ signin: 'github', user: null, agentKeys: [] }, '/spec');
   const m = /^<div class="site-header__account" id="account-slot"><a class="btn btn--secondary btn--small" id="account-signin" href="([^"]*)"><svg[\s\S]*?<\/svg><span class="site-header__account-long">([^<]*)<\/span><span class="site-header__account-short">([^<]*)<\/span><\/a><\/div>$/.exec(slots[0][0]);
   assert.ok(m, slots[0][0]);
   assert.deepStrictEqual([m[1], m[2], m[3]], [d.href, d.text, d.short], 'static sign-in link drifted from account-view.js');
@@ -844,12 +844,13 @@ test('connect.js: the key is never written into markup, and the sign-in scripts 
   assert.match(html, /<span id="no-signin-note" hidden>There is no sign-in\. <\/span>/);
 });
 
-test('every POST the account and connect scripts make passes {}: a bodyless one has no JSON content type and the server answers 415', () => {
+test('every POST the account and connect scripts make passes a body (at least {}): a bodyless one has no JSON content type and the server answers 415', () => {
+  const bodies = { 'account.js': [', {}'], 'connect.js': [', { name: name }', ', { kid: kid }'] };
   for (const name of ['account.js', 'connect.js']) {
     const src = read(path.join(WEB, 'js', name));
     const posts = [...src.matchAll(/UI\.request\('POST', ('[^']+')(, [^)]*)?\)/g)];
     assert.ok(posts.length >= 1, name);
-    for (const m of posts) assert.strictEqual(m[2], ', {}', `${name}: ${m[0]}`);
+    assert.deepStrictEqual(posts.map((m) => m[2]), bodies[name], name);
   }
   assert.strictEqual([...read(path.join(WEB, 'js', 'connect.js')).matchAll(/UI\.request\('POST'/g)].length, 2);
 });

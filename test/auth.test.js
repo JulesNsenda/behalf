@@ -452,50 +452,211 @@ test('logout answers false when the write did not land, and attempts no write wh
 });
 
 // ---------- agent keys ----------
-test('mintAgentKey: bh_ + 32 random bytes, stored by hash, replacing the previous key, confirmed before it answers', T, async (t) => {
+const kidOf = (id) => sha256('kid:' + id).slice(0, 12);
+
+// A second auth over the harness's store that records which agent key records it marks for saving (a restart on the same data).
+function spiedAuth(h) {
+  const saves = [];
+  const store = Object.create(h.store);
+  store.collection = (kind) => {
+    const c = h.store.collection(kind);
+    if (kind !== 'agentkey') return c;
+    return { map: c.map, save: (id) => { saves.push(id); c.save(id); } };
+  };
+  const auth = createAuth({ store, canRevoke: canRevokeOf(h.store), config: cfg(), secrets: secrets(), fetch: h.gh.fetch, clock: h.clock, log: quietLog() });
+  return { auth, saves };
+}
+
+test('mintAgentKey: bh_ + 32 random bytes, stored by hash with its name, replacing nothing, confirmed before it answers', T, async (t) => {
   const h = mkAuth(t);
   const { token } = await login(h);
   const user = h.auth.userForSession(token);
-  assert.equal(h.auth.agentKeyInfo(user), null);
-  const first = await h.auth.mintAgentKey(user);
+  assert.deepEqual(h.auth.agentKeysInfo(user), []);
+  const first = await h.auth.mintAgentKey(user, '  Claude Desktop ');
   assert.match(first.key, /^bh_[A-Za-z0-9_-]{43}$/);
+  assert.deepEqual(Object.keys(first).sort(), ['createdAt', 'key', 'kid', 'name', 'ok']);
+  assert.equal(first.ok, true);
   assert.equal(first.createdAt, h.clock.t);
+  assert.equal(first.name, 'Claude Desktop');
+  assert.equal(first.kid, kidOf(sha256(first.key)), 'the kid is the first 12 hex of sha256("kid:" + id)');
   assert.deepEqual([...h.keys.keys()], [sha256(first.key)]);
-  assert.deepEqual(h.keys.get(sha256(first.key)), { userId: '1001', createdAt: h.clock.t, lastUsedAt: h.clock.t });
+  assert.deepEqual(h.keys.get(sha256(first.key)), { userId: '1001', name: 'Claude Desktop', createdAt: h.clock.t, lastUsedAt: null });
   assert.ok(!JSON.stringify([...h.keys]).includes(first.key), 'only the hash is stored');
-  assert.deepEqual(h.auth.userForAgentKey(first.key), { id: '1001', login: 'octocat' });
-  assert.deepEqual(h.auth.agentKeyInfo(user), { createdAt: h.clock.t });
+  assert.ok(!JSON.stringify([...h.keys]).includes(first.kid), 'and the kid is derived, never stored');
+  assert.deepEqual(h.auth.agentKeysInfo(user), [{ kid: first.kid, name: 'Claude Desktop', createdAt: h.clock.t, lastUsedAt: null }], 'not used yet');
   assert.deepEqual(h.store.persistCalls, [['agentkey', sha256(first.key)]]);
   h.clock.t += 1000;
+  assert.deepEqual(h.auth.userForAgentKey(first.key), { id: '1001', login: 'octocat' });
+  assert.equal(h.auth.agentKeysInfo(user)[0].lastUsedAt, h.clock.t, 'the first use shows');
+  h.clock.t += 1000;
   h.store.persistCalls.length = 0;
-  const second = await h.auth.mintAgentKey(user);
+  const second = await h.auth.mintAgentKey(user, '');
   assert.notEqual(second.key, first.key);
-  assert.equal(h.keys.size, 1);
-  assert.equal(h.auth.userForAgentKey(first.key), null, 'the old key is dead');
+  assert.notEqual(second.kid, first.kid);
+  assert.equal(second.name, null);
+  assert.equal(h.keys.size, 2, 'a new key replaces nothing');
+  assert.ok(h.auth.userForAgentKey(first.key), 'the old key still works');
   assert.ok(h.auth.userForAgentKey(second.key));
-  assert.deepEqual(h.store.persistCalls.map((c) => c[1]).sort(), [sha256(first.key), sha256(second.key)].sort(), 'both the new key and the deleted one are confirmed');
+  assert.deepEqual(h.store.persistCalls, [['agentkey', sha256(second.key)]], 'only the new key is confirmed');
+  assert.deepEqual(h.auth.agentKeysInfo(user).map((k) => k.kid), [second.kid, first.kid], 'newest first');
   for (const bad of [undefined, null, '', 'bh_', first.key + 'x', token, 7]) assert.equal(h.auth.userForAgentKey(bad), null, String(bad));
 });
 
-test('agent keys are per user: one user\'s mint and revoke leave another user\'s key alone', T, async (t) => {
+test('key names: cleaned by lib/text.js, counted in code points, a lone surrogate or a non-string refused', T, async (t) => {
+  const h = mkAuth(t);
+  const user = h.auth.userForSession((await login(h)).token);
+  // (each key is deleted again, so the count never reaches the limit)
+  const name = async (v) => {
+    const r = await h.auth.mintAgentKey(user, v);
+    if (!r.ok) return r.reason;
+    assert.equal(await h.auth.revokeAgentKey(user, r.kid), true);
+    return r.name;
+  };
+  assert.equal(await name('Claude\u{202E} Desk\u{200B}top\u0007\u0000'), 'Claude Desktop', 'bidi override, zero-width space and controls are removed');
+  assert.equal(await name('a\u{2028}b\u{AD}c\u{FEFF}d'), 'a bcd', 'a line separator is a space; format characters are removed');
+  assert.equal(await name('Cafe\u{301}'), 'Caf\u{E9}', 'NFC');
+  assert.equal(await name('\u{1F600}'.repeat(40)), '\u{1F600}'.repeat(40), '40 code points is allowed, though 80 UTF-16 units');
+  assert.equal(await name('\u{1F600}'.repeat(41)), 'name', '41 code points is too long');
+  assert.equal(await name('x'.repeat(40) + '\u{200B}'), 'x'.repeat(40), 'length is counted after stripping');
+  assert.equal(await name('\u{D83D}'), 'name', 'a lone high surrogate is refused');
+  assert.equal(await name('ab\u{DE00}'), 'name', 'a lone low surrogate is refused');
+  for (const bad of [undefined, null, 7, {}, [], true]) assert.equal(await name(bad), 'name', 'a name is a string: ' + JSON.stringify(bad));
+  for (const none of ['', '   ', '\u{200B}\u{202E}', '\u{2800}\u{3164}', '\u{301}']) assert.equal(await name(none), null, 'no name: ' + JSON.stringify(none));
+  assert.equal(h.keys.size, 0);
+});
+
+test('a name is unique among the user\'s live keys, case-insensitively, after cleaning; an empty name never clashes', T, async (t) => {
+  const h = mkAuth(t);
+  const user = h.auth.userForSession((await login(h)).token);
+  const code = await h.auth.mintAgentKey(user, 'Claude Code');
+  assert.ok(code.ok);
+  for (const same of ['Claude Code', 'CLAUDE CODE', '  claude\u{200B}   code ']) assert.deepEqual(await h.auth.mintAgentKey(user, same), { ok: false, reason: 'name_taken' }, JSON.stringify(same));
+  assert.equal(h.keys.size, 1, 'a refused name made nothing');
+  assert.ok((await h.auth.mintAgentKey(user, '')).ok);
+  assert.ok((await h.auth.mintAgentKey(user, '')).ok, 'two keys with no name are fine');
+  assert.ok((await h.auth.mintAgentKey(user, 'Claude Desktop')).ok);
+  // Another user may use the same name; a deleted key frees its name.
+  h.gh.id = 2002; h.gh.login = 'other';
+  const other = h.auth.userForSession((await login(h)).token);
+  assert.ok((await h.auth.mintAgentKey(other, 'Claude Code')).ok);
+  assert.equal(await h.auth.revokeAgentKey(user, code.kid), true);
+  assert.ok((await h.auth.mintAgentKey(user, 'claude code')).ok);
+  // A key that has gone idle no longer holds its name.
+  h.clock.t += 91 * DAY;
+  assert.ok((await h.auth.mintAgentKey(user, 'Claude Desktop')).ok);
+});
+
+test('checkMint is the mint\'s checks without the mint: the same refusals, nothing made, nothing changed, nothing written', T, async (t) => {
+  const h = mkAuth(t);
+  const user = h.auth.userForSession((await login(h)).token);
+  assert.deepEqual(h.auth.checkMint(user, '  Claude Code '), { ok: true, name: 'Claude Code' });
+  assert.deepEqual(h.auth.checkMint(user, ''), { ok: true, name: null });
+  assert.deepEqual(h.auth.checkMint(user, 'x'.repeat(41)), { ok: false, reason: 'name' });
+  assert.deepEqual(h.auth.checkMint(user, undefined), { ok: false, reason: 'name' });
+  assert.equal(h.keys.size, 0);
+  const made = await h.auth.mintAgentKey(user, 'Claude Code');
+  assert.deepEqual(h.auth.checkMint(user, 'claude code'), { ok: false, reason: 'name_taken' });
+  h.store.persistCalls.length = 0;
+  // A refusal for the name or the count comes before the store is asked: it is the same whatever the store is doing.
+  h.store.failing = true;
+  assert.deepEqual(await h.auth.mintAgentKey(user, 'claude code'), { ok: false, reason: 'name_taken' });
+  assert.deepEqual(await h.auth.mintAgentKey(user, 'x'.repeat(41)), { ok: false, reason: 'name' });
+  assert.deepEqual(await h.auth.mintAgentKey(user, 'Another'), { ok: false, reason: 'saving' });
+  assert.deepEqual(h.store.persistCalls, []);
+  h.store.failing = false;
+  // It does not drop an idle key (mint does, before counting).
+  for (let i = 0; i < 9; i++) assert.ok((await h.auth.mintAgentKey(user, '')).ok);
+  assert.deepEqual(h.auth.checkMint(user, ''), { ok: false, reason: 'limit' });
+  h.clock.t += 91 * DAY;
+  assert.deepEqual(h.auth.checkMint(user, ''), { ok: true, name: null }, 'idle keys do not count');
+  assert.equal(h.keys.size, 10, 'and checkMint dropped none');
+  assert.ok((await h.auth.mintAgentKey(user, '')).ok);
+  assert.equal(h.keys.size, 1, 'mint did');
+  assert.equal(made.ok, true);
+});
+
+test('agent keys are per user: one user\'s mint and revoke leave another user\'s keys alone, and a kid revokes only its owner\'s key', T, async (t) => {
   const h = mkAuth(t);
   const a = h.auth.userForSession((await login(h)).token);
   h.gh.id = 2002; h.gh.login = 'other';
   const b = h.auth.userForSession((await login(h)).token);
-  const ka = await h.auth.mintAgentKey(a);
-  const kb = await h.auth.mintAgentKey(b);
+  const ka = await h.auth.mintAgentKey(a, '');
+  const kb = await h.auth.mintAgentKey(b, '');
   assert.equal(h.keys.size, 2);
   assert.equal(h.auth.userForAgentKey(ka.key).login, 'octocat');
   assert.equal(h.auth.userForAgentKey(kb.key).login, 'other');
-  assert.equal(await h.auth.revokeAgentKey(a), true);
+  h.store.persistCalls.length = 0;
+  assert.equal(await h.auth.revokeAgentKey(a, kb.kid), true, "a's revoke of b's kid is a revoke of nothing");
+  assert.deepEqual(h.store.persistCalls, [], 'and writes nothing');
+  assert.equal(h.auth.userForAgentKey(kb.key).login, 'other', "b's key is untouched");
+  assert.equal(h.auth.userForAgentKey(ka.key).login, 'octocat');
+  assert.equal(await h.auth.revokeAgentKey(a, ka.kid), true);
   assert.equal(h.auth.userForAgentKey(ka.key), null);
   assert.equal(h.auth.userForAgentKey(kb.key).login, 'other');
+  assert.deepEqual(h.auth.agentKeysInfo(b).map((k) => k.kid), [kb.kid]);
+});
+
+test('MAX_KEYS_PER_USER: the 11th live key is refused; an idle key is dropped before counting, so it does not count', T, async (t) => {
+  const h = mkAuth(t);
+  const user = h.auth.userForSession((await login(h)).token);
+  const made = [];
+  for (let i = 0; i < 10; i++) made.push(await h.auth.mintAgentKey(user, ''));
+  assert.deepEqual(await h.auth.mintAgentKey(user, ''), { ok: false, reason: 'limit' });
+  assert.equal(h.keys.size, 10);
+  // 50 days on, nine of them are used; 100 days after creation the tenth has been idle for more than 90 days.
+  h.clock.t += 50 * DAY;
+  for (const m of made.slice(0, 9)) assert.ok(h.auth.userForAgentKey(m.key));
+  h.clock.t += 50 * DAY;
+  const next = await h.auth.mintAgentKey(user, '');
+  assert.ok(next.key, 'the idle key made room');
+  assert.equal(h.keys.has(sha256(made[9].key)), false, 'and it was dropped');
+  assert.equal(h.keys.size, 10);
+  assert.deepEqual(await h.auth.mintAgentKey(user, ''), { ok: false, reason: 'limit' }, 'ten live keys again');
+  // Another user is not limited by this one.
+  h.gh.id = 2002; h.gh.login = 'other';
+  assert.ok((await h.auth.mintAgentKey(h.auth.userForSession((await login(h)).token), '')).key);
+});
+
+test('a key record with no name (made before names) is a key with name null and a derived kid, and reads as not used until it is', T, async (t) => {
+  const h = mkAuth(t);
+  const user = h.auth.userForSession((await login(h)).token);
+  const legacy = 'bh_legacy-key-without-a-name';
+  const created = h.clock.t - DAY;
+  h.keys.set(sha256(legacy), { userId: '1001', createdAt: created, lastUsedAt: created });
+  const again = createAuth({ store: h.store, canRevoke: canRevokeOf(h.store), config: cfg(), secrets: secrets(), fetch: h.gh.fetch, clock: h.clock, log: quietLog() });
+  assert.deepEqual(again.agentKeysInfo(user), [{ kid: kidOf(sha256(legacy)), name: null, createdAt: created, lastUsedAt: null }], 'a lastUsedAt equal to createdAt is a key never used');
+  assert.ok(again.userForAgentKey(legacy));
+  assert.equal(again.agentKeysInfo(user)[0].lastUsedAt, h.clock.t, 'and once used it says when');
+  assert.equal(await again.revokeAgentKey(user, kidOf(sha256(legacy))), true);
+  assert.equal(again.userForAgentKey(legacy), null);
+  // A record that has a name (even null) with lastUsedAt equal to createdAt is a real use.
+  const t1 = h.clock.t;
+  h.keys.set('named', { userId: '1001', name: null, createdAt: t1, lastUsedAt: t1 });
+  const third = createAuth({ store: h.store, canRevoke: canRevokeOf(h.store), config: cfg(), secrets: secrets(), fetch: h.gh.fetch, clock: h.clock, log: quietLog() });
+  assert.equal(third.agentKeysInfo(user)[0].lastUsedAt, t1);
+});
+
+test('at load, a user\'s several nameless keys (from before names) are cut to the newest and the others are dropped from the store; keys with a name, even null, are never cut', T, async (t) => {
+  const h = mkAuth(t);
+  const now = h.clock.t;
+  h.users.set('1001', { id: '1001', login: 'octocat', createdAt: now, lastLoginAt: now });
+  h.keys.set('old-a', { userId: '1001', createdAt: now - 5000, lastUsedAt: now });
+  h.keys.set('old-b', { userId: '1001', createdAt: now - 1000, lastUsedAt: now });
+  h.keys.set('old-c', { userId: '1001', createdAt: now - 3000, lastUsedAt: now });
+  h.keys.set('old-z', { userId: '2002', createdAt: now - 9000, lastUsedAt: now });
+  h.keys.set('named-1', { userId: '1001', name: null, createdAt: now - 7000, lastUsedAt: null });
+  h.keys.set('named-2', { userId: '1001', name: 'Claude Code', createdAt: now - 8000, lastUsedAt: null });
+  const { auth, saves } = spiedAuth(h);
+  assert.deepEqual([...h.keys.keys()].sort(), ['named-1', 'named-2', 'old-b', 'old-z']);
+  assert.deepEqual(saves.sort(), ['old-a', 'old-c'], 'the dropped ones are marked for the store');
+  assert.deepEqual(auth.agentKeysInfo({ id: '1001' }).map((k) => k.kid), ['old-b', 'named-1', 'named-2'].map(kidOf));
+  assert.equal(auth.agentKeysInfo({ id: '2002' }).length, 1);
 });
 
 test('a key record that is damaged, or whose user is gone, is no key', T, async (t) => {
   const h = mkAuth(t);
   const user = h.auth.userForSession((await login(h)).token);
-  const { key } = await h.auth.mintAgentKey(user);
+  const { key } = await h.auth.mintAgentKey(user, '');
   const id = sha256(key);
   h.keys.set(id, { userId: 7, createdAt: h.clock.t });
   assert.equal(h.auth.userForAgentKey(key), null);
@@ -507,31 +668,31 @@ test('a key record that is damaged, or whose user is gone, is no key', T, async 
   assert.equal(h.auth.userForAgentKey(key), null);
 });
 
-test('mintAgentKey while the store is failing changes nothing; a write that fails removes only the new key and never brings the old one back', T, async (t) => {
+test('mintAgentKey while the store is failing changes nothing; a write that fails removes only the new key and leaves the others', T, async (t) => {
   const h = mkAuth(t);
   const user = h.auth.userForSession((await login(h)).token);
-  const first = await h.auth.mintAgentKey(user);
+  const first = await h.auth.mintAgentKey(user, '');
   h.store.persistCalls.length = 0;
   h.store.failing = true;
-  assert.equal(await h.auth.mintAgentKey(user), null);
+  assert.deepEqual(await h.auth.mintAgentKey(user, ''), { ok: false, reason: 'saving' });
   assert.deepEqual(h.store.persistCalls, [], 'no write while failing');
   assert.ok(h.auth.userForAgentKey(first.key), 'the old key still works');
   h.store.failing = false;
-  // A write that fails: the new key is gone, and the old one is not restored (its deletion stays marked, for the store to retry).
+  // A write that fails: the new key is gone, and the others are as they were.
   let ok = true;
   const h2 = mkAuth(t, { persist: async () => ok });
   const u2 = h2.auth.userForSession((await login(h2)).token);
-  const old = await h2.auth.mintAgentKey(u2);
+  const old = await h2.auth.mintAgentKey(u2, '');
   ok = false;
-  assert.equal(await h2.auth.mintAgentKey(u2), null);
-  assert.equal(h2.keys.size, 0, 'neither the new key nor the replaced one is left');
-  assert.equal(h2.auth.userForAgentKey(old.key), null, 'the replaced key stays dead');
-  assert.equal(h2.auth.agentKeyInfo(u2), null);
+  assert.deepEqual(await h2.auth.mintAgentKey(u2, ''), { ok: false, reason: 'saving' });
+  assert.equal(h2.keys.size, 1, 'only the new key is removed');
+  assert.ok(h2.auth.userForAgentKey(old.key), 'the earlier key still works');
+  assert.deepEqual(h2.auth.agentKeysInfo(u2).map((k) => k.kid), [old.kid]);
   ok = true;
-  assert.ok(await h2.auth.mintAgentKey(u2), 'and minting works again');
+  assert.ok(await h2.auth.mintAgentKey(u2, ''), 'and minting works again');
 });
 
-test('two mints where one fails, or a mint racing a revoke, never bring a replaced key back', T, async (t) => {
+test('a mint whose write fails, racing another mint or a revoke, takes away only its own key', T, async (t) => {
   // The first persist waits; a second mint (or a revoke) runs meanwhile; then the first one fails.
   for (const second of ['mint', 'revoke']) {
     let release;
@@ -539,48 +700,53 @@ test('two mints where one fails, or a mint racing a revoke, never bring a replac
     let calls = 0;
     const h = mkAuth(t, { persist: async () => { calls++; if (calls === 2) { await gate; return false; } return true; } });
     const user = h.auth.userForSession((await login(h)).token);
-    const x = await h.auth.mintAgentKey(user); // persist call 1
-    const racing = h.auth.mintAgentKey(user); // persist calls 2 (waits, then fails) and 3
+    const x = await h.auth.mintAgentKey(user, ''); // persist call 1
+    const racing = h.auth.mintAgentKey(user, ''); // persist call 2 (waits, then fails)
     await Promise.resolve();
     let other = null;
-    if (second === 'mint') other = await h.auth.mintAgentKey(user); else await h.auth.revokeAgentKey(user);
+    if (second === 'mint') other = await h.auth.mintAgentKey(user, ''); else await h.auth.revokeAgentKey(user, x.kid);
     release();
-    assert.equal(await racing, null, second);
-    assert.equal(h.auth.userForAgentKey(x.key), null, 'the first key was replaced and stays replaced: ' + second);
+    assert.deepEqual(await racing, { ok: false, reason: 'saving' }, second);
     if (second === 'mint') {
+      assert.ok(h.auth.userForAgentKey(x.key), 'the first key is independent of the failed one');
       assert.ok(other && h.auth.userForAgentKey(other.key), 'the later mint is not undone by the earlier one failing');
-      assert.equal(h.keys.size, 1);
-      assert.deepEqual(h.auth.agentKeyInfo(user), { createdAt: other.createdAt }, "and it is still the user's key");
+      assert.equal(h.keys.size, 2);
+      assert.deepEqual(h.auth.agentKeysInfo(user).map((k) => k.kid).sort(), [other.kid, x.kid].sort(), 'both are listed');
     } else {
+      assert.equal(h.auth.userForAgentKey(x.key), null, 'the revoked key stays revoked');
       assert.equal(h.keys.size, 0);
     }
   }
 });
 
-test('revokeAgentKey confirms the deletion, writes nothing when there is no key, and answers false (still revoked in memory) while the store is failing', T, async (t) => {
+test('revokeAgentKey confirms the deletion of one key by kid, writes nothing when no key has that kid, and answers false (still revoked in memory) while the store is failing', T, async (t) => {
   const h = mkAuth(t);
   const user = h.auth.userForSession((await login(h)).token);
-  assert.equal(await h.auth.revokeAgentKey(user), true);
-  assert.deepEqual(h.store.persistCalls, [], 'no key, no persist');
-  const { key } = await h.auth.mintAgentKey(user);
+  assert.equal(await h.auth.revokeAgentKey(user, '0123456789ab'), true);
+  assert.deepEqual(h.store.persistCalls, [], 'no such key, no persist');
+  const one = await h.auth.mintAgentKey(user, '');
+  const two = await h.auth.mintAgentKey(user, '');
   h.store.persistCalls.length = 0;
   h.store.failing = true;
-  assert.equal(await h.auth.revokeAgentKey(user), false);
+  assert.equal(await h.auth.revokeAgentKey(user, one.kid), false);
   assert.deepEqual(h.store.persistCalls, [], 'no write against a failing store');
-  assert.equal(h.auth.userForAgentKey(key), null, 'but the key is dead in memory at once');
+  assert.equal(h.auth.userForAgentKey(one.key), null, 'but the key is dead in memory at once');
+  assert.ok(h.auth.userForAgentKey(two.key), 'and the other key is not affected');
+  assert.equal(await h.auth.revokeAgentKey(user, one.kid), false, 'a retry while it is still failing is not "done" either');
   h.store.failing = false;
-  const again = await h.auth.mintAgentKey(user);
+  assert.equal(await h.auth.revokeAgentKey(user, one.kid), true, 'once the store is back the owed write is confirmed');
+  assert.deepEqual(h.store.persistCalls, [['agentkey', sha256(one.key)]]);
   h.store.persistCalls.length = 0;
-  assert.equal(await h.auth.revokeAgentKey(user), true);
-  assert.deepEqual(h.store.persistCalls, [['agentkey', sha256(again.key)]]);
-  assert.equal(h.auth.userForAgentKey(again.key), null);
-  assert.equal(h.auth.agentKeyInfo(user), null);
+  assert.equal(await h.auth.revokeAgentKey(user, two.kid), true);
+  assert.deepEqual(h.store.persistCalls, [['agentkey', sha256(two.key)]]);
+  assert.equal(h.auth.userForAgentKey(two.key), null);
+  assert.deepEqual(h.auth.agentKeysInfo(user), []);
   let ok = true;
   const h2 = mkAuth(t, { persist: async () => ok });
   const u2 = h2.auth.userForSession((await login(h2)).token);
-  await h2.auth.mintAgentKey(u2);
+  const m2 = await h2.auth.mintAgentKey(u2, '');
   ok = false;
-  assert.equal(await h2.auth.revokeAgentKey(u2), false);
+  assert.equal(await h2.auth.revokeAgentKey(u2, m2.kid), false);
 });
 
 // ---------- callback rate limit ----------
@@ -696,8 +862,8 @@ async function boot(t, { gh = fakeGithub(), signin = 'github', persist, extra, p
   const h = { app, store, gh, out, clock, base: root, users: store.collection('user').map, sessions: store.collection('session').map, keys: store.collection('agentkey').map };
   h.req = (method, p, o) => request(root, method, p, o);
   // A JSON POST as the web page sends it, unless a test removes or changes a part.
-  h.post = (p, { origin = ORIGIN, cookie, type = 'application/json', body = {}, headers = {} } = {}) => {
-    const hd = { ...headers };
+  h.post = (p, { origin = ORIGIN, cookie, type = 'application/json', body = p === '/api/me/agent-key' ? { name: '' } : {}, headers = {} } = {}) => {
+    const hd = { ...headers }; // (a key is made with a name, '' for none: a body without one is refused)
     if (origin !== null) hd.origin = origin;
     if (cookie) hd.cookie = cookie;
     if (type !== null) hd['content-type'] = type;
@@ -755,7 +921,7 @@ test('the whole flow: sign in, /api/me, create a room, sign out', T, async (t) =
   // Signed out.
   const anon = await h.req('GET', '/api/me');
   assert.equal(anon.status, 200);
-  assert.deepEqual(anon.json, { user: null, signin: 'github', agentKey: null });
+  assert.deepEqual(anon.json, { user: null, signin: 'github', agentKeys: [] });
   assert.equal((await h.req('GET', '/api/config')).json.signin, 'github');
   // Sign in.
   const s = await signIn(h, { next: '/start' });
@@ -768,7 +934,7 @@ test('the whole flow: sign in, /api/me, create a room, sign out', T, async (t) =
   assert.deepEqual([...h.sessions.keys()], [sha256(s.session)]);
   // /api/me.
   const me = await h.req('GET', '/api/me', { headers: { cookie: s.cookie } });
-  assert.deepEqual(me.json, { user: { login: 'octocat' }, signin: 'github', agentKey: null });
+  assert.deepEqual(me.json, { user: { login: 'octocat' }, signin: 'github', agentKeys: [] });
   // Create a live room: the user the domain gets is the session's, whatever the body says.
   const seen = [];
   const real = h.app.domain.createLiveRoom;
@@ -782,7 +948,7 @@ test('the whole flow: sign in, /api/me, create a room, sign out', T, async (t) =
   assert.equal(out.status, 204);
   assert.equal(out.cookies[0], `${SESSION}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`);
   assert.deepEqual(h.store.persistCalls.filter((c) => c[0] === 'session'), [['session', sha256(s.session)]]);
-  assert.deepEqual((await h.req('GET', '/api/me', { headers: { cookie: s.cookie } })).json, { user: null, signin: 'github', agentKey: null });
+  assert.deepEqual((await h.req('GET', '/api/me', { headers: { cookie: s.cookie } })).json, { user: null, signin: 'github', agentKeys: [] });
   assert.equal((await h.post('/api/rooms', { cookie: s.cookie, body: roomBody })).status, 401);
   // Logging out again is fine and writes nothing.
   h.store.persistCalls.length = 0;
@@ -921,6 +1087,25 @@ test('no session, or a dead one, is 401 on every cookie-authenticated POST, and 
   assert.equal(h.keys.size, 0);
 });
 
+test('the key routes refuse a request with no session before they read its body: a body that is not JSON is 401, not 400, and a valid body from a dead session is 401', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h);
+  for (const p of ['/api/me/agent-key', '/api/me/agent-key/revoke']) {
+    for (const body of ['not json', '[', '{"name":"' + 'x'.repeat(10000) + '"}']) {
+      const r = await h.post(p, { body });
+      assert.equal(r.status, 401, p + ' ' + body.slice(0, 10));
+      assert.equal(r.json.code, 'signin_required');
+    }
+    const bad = await h.post(p, { cookie: s.cookie, body: 'not json' });
+    assert.equal(bad.status, 400, 'with a session the same body is the usual bad request');
+  }
+  assert.equal(h.keys.size, 0);
+  const minted = await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'a' } });
+  await h.post('/auth/logout', { cookie: s.cookie });
+  assert.equal((await revokeKid(h, s, minted.json.kid)).status, 401, 'a dead session cannot revoke');
+  assert.equal(h.keys.size, 1, 'and the key is untouched');
+});
+
 test('path spellings cannot skip the guard: /api//rooms, a trailing slash, a query string, repeated slashes', T, async (t) => {
   const h = await boot(t);
   const s = await signIn(h);
@@ -950,28 +1135,131 @@ test('GET /api/me needs no Origin (it reads, and changes nothing); a GET cannot 
 });
 
 // ---------- agent keys over HTTP ----------
-test('POST /api/me/agent-key mints a key once, /api/me shows only its date, revoke ends it', T, async (t) => {
+const meKeys = async (h, s) => (await h.req('GET', '/api/me', { headers: { cookie: s.cookie } })).json.agentKeys;
+const revokeKid = (h, s, kid) => h.post('/api/me/agent-key/revoke', { cookie: s.cookie, body: { kid } });
+
+test('POST /api/me/agent-key mints a named key once and replaces nothing; /api/me lists them by kid, newest first, with no secret', T, async (t) => {
   const h = await boot(t);
   const s = await signIn(h);
-  const minted = await h.post('/api/me/agent-key', { cookie: s.cookie });
+  const minted = await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'Claude Desktop' } });
   assert.equal(minted.status, 201);
-  assert.deepEqual(Object.keys(minted.json).sort(), ['createdAt', 'key']);
+  assert.deepEqual(Object.keys(minted.json).sort(), ['createdAt', 'key', 'kid', 'name']);
   assert.match(minted.json.key, /^bh_[A-Za-z0-9_-]{43}$/);
+  assert.match(minted.json.kid, /^[0-9a-f]{12}$/);
+  assert.equal(minted.json.name, 'Claude Desktop');
+  h.clock.t += 1000;
   const me = await h.req('GET', '/api/me', { headers: { cookie: s.cookie } });
-  assert.deepEqual(me.json, { user: { login: 'octocat' }, signin: 'github', agentKey: { createdAt: minted.json.createdAt } });
+  assert.deepEqual(me.json, { user: { login: 'octocat' }, signin: 'github', agentKeys: [{ kid: minted.json.kid, name: 'Claude Desktop', createdAt: minted.json.createdAt, lastUsedAt: null }] });
   assert.ok(!me.text.includes(minted.json.key));
   assert.deepEqual(h.app.auth.userForAgentKey(minted.json.key), { id: '1001', login: 'octocat' });
-  const again = await h.post('/api/me/agent-key', { cookie: s.cookie });
-  assert.notEqual(again.json.key, minted.json.key);
-  assert.equal(h.app.auth.userForAgentKey(minted.json.key), null, 'the first key was replaced');
-  const gone = await h.post('/api/me/agent-key/revoke', { cookie: s.cookie });
+  h.clock.t += 1000;
+  const unnamed = await h.post('/api/me/agent-key', { cookie: s.cookie });
+  assert.equal(unnamed.status, 201);
+  assert.equal(unnamed.json.name, null);
+  assert.notEqual(unnamed.json.key, minted.json.key);
+  assert.notEqual(unnamed.json.kid, minted.json.kid);
+  assert.ok(h.app.auth.userForAgentKey(minted.json.key), 'the first key still works: a new key replaces nothing');
+  assert.ok(h.app.auth.userForAgentKey(unnamed.json.key));
+  assert.deepEqual((await meKeys(h, s)).map((k) => k.kid), [unnamed.json.kid, minted.json.kid], 'newest first');
+  const gone = await revokeKid(h, s, unnamed.json.kid);
   assert.equal(gone.status, 204);
   assert.equal(gone.text, '');
-  assert.equal(h.app.auth.userForAgentKey(again.json.key), null);
-  assert.equal((await h.req('GET', '/api/me', { headers: { cookie: s.cookie } })).json.agentKey, null);
-  assert.equal((await h.post('/api/me/agent-key/revoke', { cookie: s.cookie })).status, 204, 'revoking nothing is fine');
+  assert.equal(h.app.auth.userForAgentKey(unnamed.json.key), null);
+  assert.ok(h.app.auth.userForAgentKey(minted.json.key), 'deleting one key leaves the other');
+  assert.deepEqual((await meKeys(h, s)).map((k) => k.kid), [minted.json.kid]);
+  assert.equal((await revokeKid(h, s, unnamed.json.kid)).status, 204, 'deleting a key that is already gone is fine');
   const logged = h.out.join('');
-  for (const k of [minted.json.key, again.json.key]) assert.ok(!logged.includes(k));
+  for (const k of [minted.json.key, unnamed.json.key]) assert.ok(!logged.includes(k));
+  assert.ok(!logged.includes('Claude Desktop'), 'a key name is never logged');
+});
+
+test('a key record from before names whose lastUsedAt is its creation time reads as not yet used: its first use is saved at once, unlike a record with a name', T, async (t) => {
+  const h = mkAuth(t);
+  const user = h.auth.userForSession((await login(h)).token);
+  const t0 = h.clock.t;
+  const legacy = 'bh_legacy-from-before-names';
+  const named = 'bh_named-and-unused-so-far';
+  h.keys.set(sha256(legacy), { userId: String(user.id), createdAt: t0 - 1000, lastUsedAt: t0 - 1000 });
+  h.keys.set(sha256(named), { userId: String(user.id), name: null, createdAt: t0, lastUsedAt: t0 });
+  const { auth, saves } = spiedAuth(h);
+  assert.deepEqual(auth.agentKeysInfo(user).map((k) => k.lastUsedAt), [t0, null], 'newest first; only the record without a name reads as unused');
+  h.clock.t = t0 + HOUR;
+  assert.ok(auth.userForAgentKey(legacy));
+  assert.deepEqual(saves, [sha256(legacy)], 'the first use of the old record is saved within the day');
+  assert.ok(auth.userForAgentKey(named));
+  assert.deepEqual(saves, [sha256(legacy)], 'a record with a name and a used time is saved only daily');
+});
+
+test('the key routes: a missing name is a 400 with no code; a bad or taken name a 400 with its code and a fixed sentence; a missing or malformed kid a 400 with no code; the 11th live key is 409 key_limit', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h);
+  const AV = require('../web/js/account-view.js');
+  const stale = await h.post('/api/me/agent-key', { cookie: s.cookie, body: {} });
+  assert.equal(stale.status, 400, 'a page from before names sends no name: it must not mint');
+  assert.deepEqual(Object.keys(stale.json), ['error'], 'no machine code');
+  assert.equal(h.keys.size, 0, 'and nothing was minted');
+  assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie, body: { other: 'x' } })).status, 400);
+  assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie, body: [] })).status, 400, 'the body must be an object');
+  assert.equal(h.keys.size, 0);
+  for (const name of ['x'.repeat(41), 7, null, ['a'], { a: 1 }, '\u{D800}']) {
+    const r = await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name } });
+    assert.equal(r.status, 400, JSON.stringify(name));
+    assert.equal(r.json.code, 'key_name');
+    assert.equal(r.json.error, 'A key name is at most 40 characters.', 'a fixed sentence that does not echo the name');
+    assert.notEqual(AV.errorMessage('keyCreate', 400, 'key_name'), AV.errorMessage('keyCreate', 400), 'the page words it itself');
+  }
+  assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: '\u{202E}\u0007' } })).json.name, null, 'a name that cleans to nothing is no name');
+  assert.equal(h.keys.size, 1);
+  const named = await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'Claude Code' } });
+  assert.equal(named.status, 201);
+  const taken = await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: ' claude code' } });
+  assert.equal(taken.status, 400);
+  assert.deepEqual(taken.json, { error: 'A key with that name already exists.', code: 'key_name_taken' });
+  assert.equal(h.keys.size, 2);
+  for (const body of [{}, { kid: 7 }, { kid: null }, { kid: '' }, { kid: 'ABCDEF012345' }, { kid: 'abcdef01234' }, { kid: 'abcdef0123456' }, { kid: 'abcdef01234g' }, { kid: ['abcdef012345'] }, { kid: 'abcdef012345\n' }]) {
+    const r = await h.post('/api/me/agent-key/revoke', { cookie: s.cookie, body });
+    assert.equal(r.status, 400, JSON.stringify(body));
+    assert.deepEqual(Object.keys(r.json), ['error'], 'no machine code');
+  }
+  assert.equal(h.keys.size, 2, 'a bad request revoked nothing');
+  for (let i = 2; i < 10; i++) assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'App ' + i } })).status, 201, 'mint ' + i);
+  const over = await h.post('/api/me/agent-key', { cookie: s.cookie });
+  assert.equal(over.status, 409);
+  assert.equal(over.json.code, 'key_limit');
+  assert.equal(h.keys.size, 10);
+});
+
+test('a refused key request (bad name, taken name, no name, the limit) does not use up the mint allowance of 10 per 10 minutes', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h);
+  const first = await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'Claude Code' } });
+  assert.equal(first.status, 201);
+  for (let i = 0; i < 15; i++) {
+    assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'x'.repeat(41) } })).json.code, 'key_name');
+    assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'CLAUDE CODE' } })).json.code, 'key_name_taken');
+    assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie, body: {} })).status, 400);
+  }
+  for (let i = 1; i < 10; i++) assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'App ' + i } })).status, 201, 'mint ' + i + ': the allowance is intact');
+  assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'One more' } })).json.code, 'key_limit', 'the limit is checked before the rate');
+  for (let i = 0; i < 5; i++) assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'One more' } })).status, 409, 'and a refusal still uses none');
+  assert.equal((await revokeKid(h, s, first.json.kid)).status, 204);
+  assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'One more' } })).status, 429, 'the tenth mint was the last one allowed');
+});
+
+test('a user at the key limit with one idle key can create a key: the route counts only the live ones, and the idle one is dropped', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h);
+  const made = [];
+  for (let i = 0; i < 10; i++) made.push(await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'App ' + i } }));
+  assert.ok(made.every((r) => r.status === 201));
+  assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'Over' } })).json.code, 'key_limit', 'ten live keys is the limit');
+  const idle = h.keys.get(sha256(made[3].json.key));
+  idle.createdAt -= 91 * DAY; // never used and made 91 days ago: idle, the others are not
+  h.clock.t += 11 * 60 * 1000; // past the mint rate window (ten mints used it up)
+  const r = await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'Fresh' } });
+  assert.equal(r.status, 201, JSON.stringify(r.json));
+  assert.equal(h.keys.has(sha256(made[3].json.key)), false, 'the idle key was dropped');
+  assert.equal(h.keys.size, 10);
 });
 
 test('mint, revoke and logout answer 503 with the saving_unavailable code when the store is failing or the write fails; a revocation still takes effect in memory', T, async (t) => {
@@ -985,10 +1273,13 @@ test('mint, revoke and logout answer 503 with the saving_unavailable code when t
   assert.equal(mint.status, 503);
   assert.deepEqual(mint.json, SAVING);
   assert.ok(h.app.auth.userForAgentKey(minted.json.key), 'a refused mint changed nothing');
-  const revoke = await h.post('/api/me/agent-key/revoke', { cookie: s.cookie });
+  const revoke = await revokeKid(h, s, minted.json.kid);
   assert.equal(revoke.status, 503);
   assert.deepEqual(revoke.json, SAVING);
   assert.equal(h.app.auth.userForAgentKey(minted.json.key), null, 'the revoke took effect in memory');
+  const retried = await revokeKid(h, s, minted.json.kid);
+  assert.equal(retried.status, 503, 'a retry while saving is still failing is not "deleted"');
+  assert.deepEqual(retried.json, SAVING);
   const out = await h.post('/auth/logout', { cookie: s.cookie });
   assert.equal(out.status, 503);
   assert.deepEqual(out.json, SAVING);
@@ -1051,8 +1342,8 @@ test('SIGNIN=off: the auth routes and the agent-key routes are unknown routes, /
   await same('POST', '/auth/logout', '/auth/zzz');
   await same('POST', '/api/me/agent-key', '/api/me/zzz');
   await same('POST', '/api/me/agent-key/revoke', '/api/me/zzz');
-  assert.deepEqual((await h.req('GET', '/api/me')).json, { user: null, signin: 'off', agentKey: null });
-  assert.deepEqual((await h.req('GET', '/api/me', { headers: { cookie: `${SESSION}=anything` } })).json, { user: null, signin: 'off', agentKey: null });
+  assert.deepEqual((await h.req('GET', '/api/me')).json, { user: null, signin: 'off', agentKeys: [] });
+  assert.deepEqual((await h.req('GET', '/api/me', { headers: { cookie: `${SESSION}=anything` } })).json, { user: null, signin: 'off', agentKeys: [] });
   assert.equal((await h.req('GET', '/api/config')).json.signin, 'off');
   // POST /api/rooms: no Origin, no content type, no cookie needed, and the domain is given no user.
   const seen = [];
@@ -1101,14 +1392,14 @@ test('a blocked id is blocked everywhere: its existing sessions and keys stop re
   const h = mkAuth(t);
   const { token } = await login(h);
   const user = h.auth.userForSession(token);
-  const { key } = await h.auth.mintAgentKey(user);
+  const { key } = await h.auth.mintAgentKey(user, '');
   // The same store, now with the id on the block list (a restart with GITHUB_BLOCKED_IDS set).
   const blocked = createAuth({ store: h.store, canRevoke: canRevokeOf(h.store), config: cfg({ GITHUB_BLOCKED_IDS: '1001' }), secrets: secrets(), fetch: h.gh.fetch, clock: h.clock, log: quietLog() });
   assert.ok(h.auth.userForSession(token) && h.auth.userForAgentKey(key), 'unblocked, both resolve (so the block is the cause)');
   assert.equal(blocked.userForSession(token), null);
   assert.equal(blocked.userForAgentKey(key), null);
   const writes = h.store.persistCalls.length;
-  assert.equal(await blocked.mintAgentKey(user), null, 'minting is refused');
+  assert.deepEqual(await blocked.mintAgentKey(user, ''), { ok: false, reason: 'saving' }, 'minting is refused');
   assert.equal(h.store.persistCalls.length, writes, 'and nothing was written for it');
   assert.equal(h.keys.size + h.sessions.size, 2, 'refusing does not delete');
   blocked.sweep();
@@ -1135,15 +1426,17 @@ test('the per-user limiter allows 10 per 10 minutes per user and is its own coun
   assert.equal(a.userRateOk('1'), true);
 });
 
-test('only minting is rate-limited: the 11th mint in 10 minutes is 429 with a fixed sentence, and logout and revoke still work', T, async (t) => {
+test('only minting is rate-limited: the mint after 10 in 10 minutes is 429 with a fixed sentence, and logout and revoke still work', T, async (t) => {
   const h = await boot(t);
   const s = await signIn(h);
-  for (let i = 0; i < 10; i++) assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie })).status, 201, 'mint ' + i);
+  const kids = [];
+  for (let i = 0; i < 10; i++) { const r = await h.post('/api/me/agent-key', { cookie: s.cookie }); assert.equal(r.status, 201, 'mint ' + i); kids.push(r.json.kid); }
+  assert.equal((await revokeKid(h, s, kids[0])).status, 204, 'room for one more key');
   const minted = await h.post('/api/me/agent-key', { cookie: s.cookie });
   assert.equal(minted.status, 429);
   assert.deepEqual(minted.json, { error: 'Too many requests. Try again in a few minutes.', code: 'rate_limited' });
-  assert.equal(h.keys.size, 1, 'the refused mint changed nothing');
-  for (let i = 0; i < 12; i++) assert.equal((await h.post('/api/me/agent-key/revoke', { cookie: s.cookie })).status, 204, 'revoke ' + i);
+  assert.equal(h.keys.size, 9, 'the refused mint changed nothing');
+  for (const kid of [...kids.slice(1), ...kids.slice(0, 2)]) assert.equal((await revokeKid(h, s, kid)).status, 204, 'revoke ' + kid);
   assert.equal(h.keys.size, 0);
   assert.equal((await h.post('/auth/logout', { cookie: s.cookie })).status, 204);
   assert.equal(h.app.auth.userForSession(s.session), null);
@@ -1305,26 +1598,50 @@ test('a sign-in cookie that appears twice, or only matches after trimming its na
   assert.equal((await h.post('/api/me/agent-key', { cookie: `${s.cookie}; ${SESSION}=x` })).status, 401);
 });
 
-test('agent keys expire after 90 days unused, lastUsedAt is saved at most daily, and a key without lastUsedAt counts from its creation', T, async (t) => {
+test('agent keys expire after 90 days unused, lastUsedAt moves on every use but is saved on the first use and then daily, and a key without lastUsedAt counts from its creation', T, async (t) => {
   const h = mkAuth(t);
   const user = h.auth.userForSession((await login(h)).token);
-  const { key } = await h.auth.mintAgentKey(user);
+  const { key } = await h.auth.mintAgentKey(user, '');
   const id = sha256(key);
   const t0 = h.clock.t;
-  h.clock.t = t0 + DAY - 1;
-  assert.ok(h.auth.userForAgentKey(key));
-  assert.equal(h.keys.get(id).lastUsedAt, t0, 'not rewritten within the day');
-  h.clock.t = t0 + DAY;
-  assert.ok(h.auth.userForAgentKey(key));
-  assert.equal(h.keys.get(id).lastUsedAt, t0 + DAY, 'rewritten after a day');
+  assert.equal(h.keys.get(id).lastUsedAt, null, 'never used');
+  const { auth: a, saves } = spiedAuth(h);
+  saves.length = 0;
+  h.clock.t = t0 + 1000;
+  assert.ok(a.userForAgentKey(key));
+  assert.equal(h.keys.get(id).lastUsedAt, t0 + 1000);
+  assert.deepEqual(saves, [id], 'the first use is saved at once');
+  h.clock.t = t0 + 1000 + DAY - 1;
+  assert.ok(a.userForAgentKey(key));
+  assert.equal(h.keys.get(id).lastUsedAt, t0 + 1000 + DAY - 1, 'in memory every use counts');
+  assert.equal(a.agentKeysInfo(user)[0].lastUsedAt, t0 + 1000 + DAY - 1);
+  assert.equal(saves.length, 1, 'but it is not saved again within the day');
+  h.clock.t = t0 + 1000 + DAY;
+  assert.ok(a.userForAgentKey(key));
+  assert.equal(saves.length, 2, 'a day after the last save, it is saved');
+  h.clock.t += DAY - 1;
+  assert.ok(a.userForAgentKey(key));
+  assert.equal(saves.length, 2, 'the day is counted from the last save, not from the last use');
   // Used every 60 days it lives past 90 days from creation.
-  for (const d of [60, 120, 180]) { h.clock.t = t0 + d * DAY; assert.ok(h.auth.userForAgentKey(key), 'day ' + d); }
+  for (const d of [60, 120, 180]) { h.clock.t = t0 + d * DAY; assert.ok(a.userForAgentKey(key), 'day ' + d); }
   h.clock.t = t0 + 180 * DAY + 90 * DAY - 1;
-  assert.ok(h.auth.userForAgentKey(key));
+  assert.ok(a.userForAgentKey(key));
   h.clock.t += 90 * DAY;
-  assert.equal(h.auth.userForAgentKey(key), null);
+  assert.equal(a.userForAgentKey(key), null);
   assert.equal(h.keys.has(id), false, 'an idle key is deleted');
-  assert.equal(h.auth.agentKeyInfo(user), null);
+  assert.deepEqual(a.agentKeysInfo(user), []);
+  // A restart: the time of the last save is not stored, so the stored lastUsedAt stands in for it.
+  const { key: k2 } = await a.mintAgentKey(user, '');
+  h.clock.t += 1000;
+  assert.ok(a.userForAgentKey(k2));
+  const restarted = spiedAuth(h);
+  restarted.saves.length = 0;
+  h.clock.t += DAY - 1;
+  assert.ok(restarted.auth.userForAgentKey(k2));
+  assert.equal(restarted.saves.length, 0);
+  h.clock.t += 1;
+  assert.ok(restarted.auth.userForAgentKey(k2));
+  assert.equal(restarted.saves.length, 1);
   // A record from before lastUsedAt existed.
   const legacy = 'bh_legacy-key';
   h.keys.set(sha256(legacy), { userId: '1001', createdAt: h.clock.t - 89 * DAY });
@@ -1335,19 +1652,34 @@ test('agent keys expire after 90 days unused, lastUsedAt is saved at most daily,
   assert.equal(again.userForAgentKey(legacy), null, 'a legacy key is idle from its creation');
 });
 
-test('the indexes are built from what the store loaded: the session cap counts loaded sessions, and a user with two keys keeps the newer', T, async (t) => {
+test('a mint whose write fails forgets its key: a later revoke of that kid has nothing owed to wait for', T, async (t) => {
+  let ok = false;
+  const h = mkAuth(t, { persist: async () => ok });
+  const user = h.auth.userForSession((await login(h)).token);
+  assert.deepEqual(await h.auth.mintAgentKey(user, ''), { ok: false, reason: 'saving' });
+  const id = h.store.persistCalls[0][1];
+  assert.equal(h.keys.size, 0);
+  h.store.persistCalls.length = 0;
+  ok = true;
+  assert.equal(await h.auth.revokeAgentKey(user, kidOf(id)), true);
+  assert.deepEqual(h.store.persistCalls, [], 'no write is waited for: the key was never kept');
+});
+
+test('the indexes are built from what the store loaded: the session cap counts loaded sessions, and a user\'s keys are all kept, each with a derived kid', T, async (t) => {
   const h = mkAuth(t);
   const now = h.clock.t;
   h.users.set('1001', { id: '1001', login: 'octocat', createdAt: now, lastLoginAt: now });
   for (let i = 0; i < 10; i++) h.sessions.set('old-session-' + i, { userId: '1001', createdAt: now - (20 - i) * 1000, expiresAt: now + DAY, lastSeenAt: now });
-  h.keys.set('key-old', { userId: '1001', createdAt: now - 5000, lastUsedAt: now });
-  h.keys.set('key-new', { userId: '1001', createdAt: now - 1000, lastUsedAt: now });
-  h.keys.set('key-other', { userId: '2002', createdAt: now - 1000, lastUsedAt: now });
+  h.keys.set('key-old', { userId: '1001', name: null, createdAt: now - 5000, lastUsedAt: now });
+  h.keys.set('key-new', { userId: '1001', name: 'Claude Code', createdAt: now - 1000, lastUsedAt: now });
+  h.keys.set('key-other', { userId: '2002', name: null, createdAt: now - 1000, lastUsedAt: now });
   const a = createAuth({ store: h.store, canRevoke: canRevokeOf(h.store), config: cfg(), secrets: secrets(), fetch: h.gh.fetch, clock: h.clock, log: quietLog() });
-  assert.equal(h.keys.has('key-old'), false, 'the older of two keys is dropped at load');
-  assert.deepEqual([...h.keys.keys()].sort(), ['key-new', 'key-other']);
-  assert.deepEqual(a.agentKeyInfo({ id: '1001' }), { createdAt: now - 1000 });
-  assert.equal(a.agentKeyInfo({ id: '3003' }), null);
+  assert.deepEqual([...h.keys.keys()].sort(), ['key-new', 'key-old', 'key-other'], 'no key is dropped at load');
+  assert.deepEqual(a.agentKeysInfo({ id: '1001' }), [
+    { kid: kidOf('key-new'), name: 'Claude Code', createdAt: now - 1000, lastUsedAt: now },
+    { kid: kidOf('key-old'), name: null, createdAt: now - 5000, lastUsedAt: now },
+  ], 'newest first');
+  assert.deepEqual(a.agentKeysInfo({ id: '3003' }), []);
   const begin = a.beginLogin();
   h.gh.challenge = new URL(begin.location).searchParams.get('code_challenge');
   await a.completeLogin({ code: 'good-code', state: begin.state, expected: begin });
@@ -1420,21 +1752,21 @@ test('the saving-unavailable error comes from one factory in lib/errors.js', () 
 test('a repeated revoke or logout is not "done" while the store is failing, and is once it has recovered (an unknown token forces no write)', T, async (t) => {
   const h = await boot(t);
   const s = await signIn(h);
-  await h.post('/api/me/agent-key', { cookie: s.cookie });
+  const { kid } = (await h.post('/api/me/agent-key', { cookie: s.cookie })).json;
   h.store.failing = true;
   h.store.persistCalls.length = 0;
   for (let i = 0; i < 3; i++) {
-    assert.equal((await h.post('/api/me/agent-key/revoke', { cookie: s.cookie })).status, 503, 'revoke ' + i);
+    assert.equal((await revokeKid(h, s, kid)).status, 503, 'revoke ' + i);
   }
   for (let i = 0; i < 3; i++) {
     const out = await h.post('/auth/logout', { cookie: s.cookie });
     assert.equal(out.status, 503, 'logout ' + i);
   }
   h.store.failing = false;
-  assert.equal((await h.post('/api/me/agent-key/revoke', { cookie: s.cookie })).status, 401, 'the session is gone: nothing to authenticate with');
+  assert.equal((await revokeKid(h, s, kid)).status, 401, 'the session is gone: nothing to authenticate with');
   // With a session of their own the same user sees 204 once the store is healthy.
   const s2 = await signIn(h);
-  assert.equal((await h.post('/api/me/agent-key/revoke', { cookie: s2.cookie })).status, 204);
+  assert.equal((await revokeKid(h, s2, kid)).status, 204);
   assert.equal((await h.post('/auth/logout', { cookie: s2.cookie })).status, 204);
   assert.equal((await h.post('/auth/logout', { cookie: s2.cookie })).status, 204, 'a logout with no session left is fine on a healthy store');
 });
@@ -1448,12 +1780,13 @@ test('a repeated revoke or logout: nothing owed costs no I/O and answers whether
   h.store.settle = () => { spy.settle++; return realSettle(); };
   h.store.persistCalls.length = 0;
   // Nothing to remove: no persist, no settle.
-  assert.equal(await h.auth.revokeAgentKey(user), true);
+  const NOKID = '0123456789ab';
+  assert.equal(await h.auth.revokeAgentKey(user, NOKID), true);
   for (const nothing of ['no-such-token', undefined, '', 'x'.repeat(300), 7]) assert.equal(await h.auth.logout(nothing), true, String(nothing));
   assert.deepEqual(h.store.persistCalls, []);
   assert.equal(spy.settle, 0);
   h.store.failing = true;
-  assert.equal(await h.auth.revokeAgentKey(user), false, 'a failing store takes no revocation');
+  assert.equal(await h.auth.revokeAgentKey(user, NOKID), false, 'a failing store takes no revocation');
   assert.equal(await h.auth.logout('no-such-token'), false);
   assert.deepEqual(h.store.persistCalls, []);
   h.store.failing = false;
@@ -1470,16 +1803,18 @@ test('a repeated revoke or logout: nothing owed costs no I/O and answers whether
   assert.equal(await h.auth.logout(token), true);
   assert.deepEqual(h.store.persistCalls, [], 'and no longer owed: no I/O');
   // The same for a key.
-  await h.auth.mintAgentKey(user);
+  const { kid } = await h.auth.mintAgentKey(user, '');
   ok = false;
-  assert.equal(await h.auth.revokeAgentKey(user), false);
+  assert.equal(await h.auth.revokeAgentKey(user, kid), false);
   h.store.persistCalls.length = 0;
-  assert.equal(await h.auth.revokeAgentKey(user), false, 'still owed');
+  assert.equal(await h.auth.revokeAgentKey(user, kid), false, 'still owed');
+  assert.equal(h.store.persistCalls.length, 1);
+  assert.equal(await h.auth.revokeAgentKey(user, NOKID), true, 'a kid that names nothing owed costs no I/O');
   assert.equal(h.store.persistCalls.length, 1);
   ok = true;
-  assert.equal(await h.auth.revokeAgentKey(user), true);
+  assert.equal(await h.auth.revokeAgentKey(user, kid), true);
   h.store.persistCalls.length = 0;
-  assert.equal(await h.auth.revokeAgentKey(user), true);
+  assert.equal(await h.auth.revokeAgentKey(user, kid), true);
   assert.deepEqual(h.store.persistCalls, []);
   assert.equal(spy.settle, 0, 'none of it settled the store');
 });
@@ -1490,14 +1825,14 @@ test('an owed revocation of one user does not leak into another: a revoke by som
   const a = h.auth.userForSession((await login(h)).token);
   h.gh.id = 2002; h.gh.login = 'other';
   const b = h.auth.userForSession((await login(h)).token);
-  await h.auth.mintAgentKey(a);
+  const { kid } = await h.auth.mintAgentKey(a, '');
   ok = false;
-  await h.auth.revokeAgentKey(a); // owed
+  await h.auth.revokeAgentKey(a, kid); // owed
   h.store.persistCalls.length = 0;
   ok = true;
-  assert.equal(await h.auth.revokeAgentKey(b), true);
-  assert.deepEqual(h.store.persistCalls, [], 'b owes nothing');
-  assert.equal(await h.auth.revokeAgentKey(a), true);
+  assert.equal(await h.auth.revokeAgentKey(b, kid), true);
+  assert.deepEqual(h.store.persistCalls, [], 'b owes nothing: not even for the kid a owes');
+  assert.equal(await h.auth.revokeAgentKey(a, kid), true);
   assert.equal(h.store.persistCalls.length, 1, 'a settles what a owed');
 });
 
@@ -1558,22 +1893,22 @@ test('the callback limiter is called with the client address once the state matc
   assert.equal(h.out.join('').split('\n').filter((l) => l.includes('code="AUTH_RATE"')).length, 2, 'one line per bucket, from checkRate alone');
 });
 
-test('sweep and agentKeyInfo drop an agent key that has been idle for 90 days', T, async (t) => {
+test('sweep and agentKeysInfo drop an agent key that has been idle for 90 days', T, async (t) => {
   const h = mkAuth(t);
   const user = h.auth.userForSession((await login(h)).token);
-  await h.auth.mintAgentKey(user);
-  assert.deepEqual(h.auth.agentKeyInfo(user), { createdAt: h.clock.t });
+  const made = await h.auth.mintAgentKey(user, '');
+  assert.deepEqual(h.auth.agentKeysInfo(user), [{ kid: made.kid, name: null, createdAt: h.clock.t, lastUsedAt: null }]);
   h.clock.t += 90 * DAY - 1;
-  assert.ok(h.auth.agentKeyInfo(user));
+  assert.equal(h.auth.agentKeysInfo(user).length, 1);
   h.auth.sweep();
   assert.equal(h.keys.size, 1, 'not yet');
   h.clock.t += 1;
-  assert.equal(h.auth.agentKeyInfo(user), null, 'an idle key is not shown as the user\'s key');
-  assert.equal(h.keys.size, 1, 'agentKeyInfo only reports');
+  assert.deepEqual(h.auth.agentKeysInfo(user), [], 'an idle key is not listed');
+  assert.equal(h.keys.size, 1, 'agentKeysInfo only reports');
   h.auth.sweep();
   assert.equal(h.keys.size, 0, 'sweep deletes it');
   // and the next one is minted as normal
-  assert.ok(await h.auth.mintAgentKey(h.auth.userForSession((await login(h)).token)));
+  assert.ok(await h.auth.mintAgentKey(h.auth.userForSession((await login(h)).token), ''));
 });
 
 test('the callback limit is per client address (the trusted forwarded one), and replays of a spent state count as attempts', T, async (t) => {
@@ -1642,20 +1977,24 @@ for (const b of BACKENDS) {
     const a1 = await signIn1(auth, 1001, 'octocat');
     const a2 = await signIn1(auth, 1001, 'octocat');
     const bTok = await signIn1(auth, 1002, 'other');
-    const aKey = (await auth.mintAgentKey({ id: '1001' })).key;
-    const bKey = (await auth.mintAgentKey({ id: '1002' })).key;
+    const aMade = await auth.mintAgentKey({ id: '1001' }, 'Claude Desktop');
+    const aKey = aMade.key;
+    const bMade = await auth.mintAgentKey({ id: '1002' }, '');
+    const bKey = bMade.key;
 
-    // Life two: everything is still there, and the indexes work (one key per user, the 10-session cap).
+    // Life two: everything is still there, and the indexes work (several keys per user, the 10-session cap).
     store = await restart(store);
     auth = mk(store);
     assert.deepEqual(auth.userForSession(a1), { id: '1001', login: 'octocat' });
     assert.deepEqual(auth.userForSession(a2), { id: '1001', login: 'octocat' });
     assert.deepEqual(auth.userForAgentKey(aKey), { id: '1001', login: 'octocat' });
     assert.deepEqual(auth.userForAgentKey(bKey), { id: '1002', login: 'other' });
-    assert.ok(auth.agentKeyInfo({ id: '1001' }));
-    const aKey2 = (await auth.mintAgentKey({ id: '1001' })).key;
-    assert.equal(auth.userForAgentKey(aKey), null, 'the loaded key was found through keyByUser, and replaced');
+    assert.deepEqual(auth.agentKeysInfo({ id: '1001' }).map((k) => [k.kid, k.name]), [[aMade.kid, 'Claude Desktop']], 'the kid is the same after a restart: it is derived, not stored');
+    const aMade2 = await auth.mintAgentKey({ id: '1001' }, 'Claude Code');
+    const aKey2 = aMade2.key;
+    assert.ok(auth.userForAgentKey(aKey), 'a new key replaces nothing');
     assert.ok(auth.userForAgentKey(aKey2));
+    assert.deepEqual(auth.agentKeysInfo({ id: '1001' }).map((k) => k.kid).sort(), [aMade2.kid, aMade.kid].sort());
     assert.ok(auth.userForAgentKey(bKey), 'the other user keeps theirs');
     for (let i = 0; i < 9; i++) await signIn1(auth, 1001, 'octocat');
     assert.equal(auth.userForSession(a1), null, 'the loaded sessions were counted: the oldest went at the 11th');
@@ -1663,22 +2002,24 @@ for (const b of BACKENDS) {
     assert.ok(auth.userForSession(bTok));
     // A logout and a revoke are confirmed before they answer.
     assert.equal(await auth.logout(a2), true);
-    assert.equal(await auth.revokeAgentKey({ id: '1002' }), true);
+    assert.equal(await auth.revokeAgentKey({ id: '1002' }, bMade.kid), true);
+    assert.equal(await auth.revokeAgentKey({ id: '1001' }, aMade.kid), true);
 
-    // Life three: the revocations are durable, the new key is the one stored, and id 1001 is now blocked.
+    // Life three: the revocations are durable, the other key is the one stored, and id 1001 is now blocked.
     store = await restart(store);
     auth = mk(store);
     assert.equal(auth.userForSession(a2), null, 'a logout survives a restart');
     assert.equal(auth.userForAgentKey(bKey), null, 'a revoke survives a restart');
-    assert.equal(auth.agentKeyInfo({ id: '1002' }), null);
-    assert.equal(auth.userForAgentKey(aKey), null, 'a replaced key stays replaced');
+    assert.deepEqual(auth.agentKeysInfo({ id: '1002' }), []);
+    assert.equal(auth.userForAgentKey(aKey), null, 'a deleted key stays deleted');
     assert.ok(auth.userForAgentKey(aKey2));
+    assert.deepEqual(auth.agentKeysInfo({ id: '1001' }).map((k) => [k.kid, k.name]), [[aMade2.kid, 'Claude Code']]);
     assert.ok(auth.userForSession(bTok));
     const blocked = mk(store, { GITHUB_BLOCKED_IDS: '1001' });
     assert.equal(blocked.userForAgentKey(aKey2), null, 'a block added between restarts applies to the stored key');
-    assert.notEqual(blocked.agentKeyInfo({ id: '1001' }), null, 'the record is still there until the sweep');
+    assert.equal(blocked.agentKeysInfo({ id: '1001' }).length, 1, 'the record is still there until the sweep');
     blocked.sweep();
-    assert.equal(blocked.agentKeyInfo({ id: '1001' }), null);
+    assert.deepEqual(blocked.agentKeysInfo({ id: '1001' }), []);
     assert.ok(blocked.userForSession(bTok), 'another user is untouched');
     assert.equal(await store.settle(), true);
 
@@ -1714,7 +2055,7 @@ for (const b of BACKENDS) {
     clock.t += 19 * DAY; // day 31: past the 30-day hard cap
     assert.equal(auth.userForSession(token), null);
     // The same for an agent key: used on day 80 (nine days short of the 90-day idle limit), it must still work on day 160.
-    const minted = await auth.mintAgentKey({ id: '1001' });
+    const minted = await auth.mintAgentKey({ id: '1001' }, '');
     assert.equal(await store.settle(), true);
     clock.t += 80 * DAY; // day 111, 80 days after the mint
     assert.ok(auth.userForAgentKey(minted.key));
@@ -1744,7 +2085,7 @@ test('over HTTP, a restart on the same data keeps the session cookie working, an
     const root = `http://127.0.0.1:${app.server.address().port}`;
     try { return await fn((m, p, o) => request(root, m, p, o)); } finally { await app.drain().catch(() => {}); if (app.server.closeAllConnections) app.server.closeAllConnections(); app.close(); }
   };
-  const post = (req, p, cookie) => req('POST', p, { headers: { origin: ORIGIN, 'content-type': 'application/json', 'content-length': '2', cookie }, body: '{}' });
+  const post = (req, p, cookie) => req('POST', p, { headers: { origin: ORIGIN, 'content-type': 'application/json', 'content-length': '11', cookie }, body: '{"name":""}' });
   const cookie = await run(async (req) => {
     const begin = await req('GET', '/auth/github');
     const loc = new URL(begin.headers.location);
@@ -1758,7 +2099,7 @@ test('over HTTP, a restart on the same data keeps the session cookie working, an
   await run(async (req) => {
     const me = await req('GET', '/api/me', { headers: { cookie } });
     assert.equal(me.json.user.login, 'octocat');
-    assert.ok(me.json.agentKey.createdAt, 'the agent key survived too');
+    assert.ok(me.json.agentKeys[0].createdAt, 'the agent key survived too');
     assert.equal((await post(req, '/auth/logout', cookie)).status, 204);
   });
   await run(async (req) => {
@@ -1775,7 +2116,8 @@ const mcpCall = (h, name, args, headers = {}) => h.req('POST', '/mcp', {
 });
 const toolText = (r) => r.json.result.content[0].text;
 const toolOut = (r) => r.json.result.structuredContent;
-const mintKey = async (h, s) => (await h.post('/api/me/agent-key', { cookie: s.cookie })).json.key;
+const mintMade = async (h, s, body) => (await h.post('/api/me/agent-key', { cookie: s.cookie, body })).json;
+const mintKey = async (h, s) => (await mintMade(h, s)).key;
 const bearer = (key) => ({ authorization: `Bearer ${key}` });
 const mcpRoom = { topic: 'Over MCP', your_principal: 'Ann', counterpart: 'Ben' };
 
@@ -1940,13 +2282,17 @@ test('MCP create_room: a revoked key, a key whose user is gone and an idle key a
   const h = await boot(t);
   const s = await signIn(h);
   // Revoked.
-  const k1 = await mintKey(h, s);
+  const m1 = await mintMade(h, s);
+  const k1 = m1.key;
   assert.notEqual((await mcpCall(h, 'create_room', mcpRoom, bearer(k1))).json.result.isError, true, 'it works first (so the refusal is the revocation)');
-  assert.equal((await h.post('/api/me/agent-key/revoke', { cookie: s.cookie })).status, 204);
+  assert.equal((await revokeKid(h, s, m1.kid)).status, 204);
   assert.equal(toolText(await mcpCall(h, 'create_room', mcpRoom, bearer(k1))), KEY_REJECTED);
-  // Replaced by a new key: the old one is dead and the new one lives.
-  const k2 = await mintKey(h, s);
+  // Several keys work side by side; deleting one ends only that one.
+  const m2 = await mintMade(h, s);
+  const k2 = m2.key;
   const k3 = await mintKey(h, s);
+  assert.notEqual((await mcpCall(h, 'create_room', mcpRoom, bearer(k2))).json.result.isError, true, 'a new key replaces nothing');
+  assert.equal((await revokeKid(h, s, m2.kid)).status, 204);
   assert.equal(toolText(await mcpCall(h, 'create_room', mcpRoom, bearer(k2))), KEY_REJECTED);
   assert.notEqual((await mcpCall(h, 'create_room', mcpRoom, bearer(k3))).json.result.isError, true);
   // A user who is gone.
@@ -2236,7 +2582,8 @@ test('end to end over real HTTP with a fake GitHub: login, mint, MCP create_room
   const { usage } = h.app.store.state;
   const ann = await signIn(h);
   assert.equal((await h.req('GET', '/api/me', { headers: { cookie: ann.cookie } })).json.user.login, 'octocat');
-  const annKey = await mintKey(h, ann);
+  const annMade = await mintMade(h, ann);
+  const annKey = annMade.key;
   const first = await mcpCall(h, 'create_room', mcpRoom, bearer(annKey));
   assert.notEqual(first.json.result.isError, true, toolText(first));
   assert.equal(h.app.domain.rooms.get(toolOut(first).room_id).ownerId, '1001');
@@ -2259,7 +2606,7 @@ test('end to end over real HTTP with a fake GitHub: login, mint, MCP create_room
   // Ann is at her limit and Ben's is a separate count.
   assert.equal(toolText(await mcpCall(h, 'create_room', mcpRoom, bearer(annKey))), 'You have opened the maximum live rooms for today. The demo is unlimited.');
   // Revoking Ann's key ends it, and Ben's still works for his own limit-free tools.
-  assert.equal((await h.post('/api/me/agent-key/revoke', { cookie: ann.cookie })).status, 204);
+  assert.equal((await revokeKid(h, ann, annMade.kid)).status, 204);
   const after = await mcpCall(h, 'create_room', mcpRoom, bearer(annKey));
   assert.equal(after.json.result.isError, true);
   assert.equal(toolText(after), KEY_REJECTED);
@@ -2329,16 +2676,16 @@ test('a logout or revoke refused because the store was failing is still owed aft
   const h = mkAuth(t);
   const { token } = await login(h);
   const user = h.auth.userForSession(token);
-  await h.auth.mintAgentKey(user);
+  const { kid } = await h.auth.mintAgentKey(user, '');
   h.store.failing = true;
   assert.equal(await h.auth.logout(token), false);
-  assert.equal(await h.auth.revokeAgentKey(user), false);
+  assert.equal(await h.auth.revokeAgentKey(user, kid), false);
   h.store.failing = false;
   h.store.persistCalls.length = 0;
   assert.equal(await h.auth.logout(token), true);
   assert.deepEqual(h.store.persistCalls, [['session', sha256(token)]], 'the logout is written on the repeat');
   h.store.persistCalls.length = 0;
-  assert.equal(await h.auth.revokeAgentKey(user), true);
+  assert.equal(await h.auth.revokeAgentKey(user, kid), true);
   assert.equal(h.store.persistCalls.length, 1, 'and so is the revoke');
   assert.equal(h.store.persistCalls[0][0], 'agentkey');
 });
@@ -2367,35 +2714,38 @@ async function asBrowser(h, cookie, fn) {
 test('the pages talk to the real server: /api/me, the agent key panel, UI.request with no body, and sign out, all as the scripts use them', T, async (t) => {
   const h = await boot(t);
   const out = await asBrowser(h, null, () => BrowserUI.request('GET', '/api/me'));
-  assert.deepEqual(AccountView.parseMe(out.data), { signin: 'github', user: null, agentKey: null });
+  assert.deepEqual(AccountView.parseMe(out.data), { signin: 'github', user: null, agentKeys: [] });
   assert.equal(AccountView.slot(AccountView.parseMe(out.data), '/connect').kind, 'signed-out');
   assert.equal((await asBrowser(h, null, () => BrowserUI.loadConfig())).signin, 'github');
 
   const s = await signIn(h, { next: '/connect' });
   await asBrowser(h, s.cookie, async () => {
     const me = AccountView.parseMe((await BrowserUI.request('GET', '/api/me')).data);
-    assert.deepEqual(me, { signin: 'github', user: { login: 'octocat' }, agentKey: null });
+    assert.deepEqual(me, { signin: 'github', user: { login: 'octocat' }, agentKeys: [] });
     assert.deepEqual(AccountView.slot(me, '/connect'), { kind: 'signed-in', who: 'octocat', hint: 'Signed in as ', signOut: 'Sign out' });
     assert.equal(AccountView.keyPanel(me, null, '/connect').state, 'no-key');
 
-    // Make a key with no body: the library alone says it is JSON, which the server's guard needs.
-    const made = await BrowserUI.request('POST', '/api/me/agent-key', {});
+    // Make a key the way connect.js does: the name is always sent, '' for none (a body without it is refused).
+    assert.equal((await BrowserUI.request('POST', '/api/me/agent-key', {})).status, 400);
+    const made = await BrowserUI.request('POST', '/api/me/agent-key', { name: '' });
     assert.equal(made.status, 201, JSON.stringify(made));
     assert.match(made.data.key, /^bh_/);
     assert.equal(typeof made.data.createdAt, 'number');
+    assert.match(made.data.kid, /^[0-9a-f]{12}$/);
     const after = AccountView.parseMe((await BrowserUI.request('GET', '/api/me')).data);
+    assert.deepEqual(after.agentKeys, [{ kid: made.data.kid, name: null, createdAt: made.data.createdAt, lastUsedAt: null }]);
     const panel = AccountView.keyPanel(after, null, '/connect');
     assert.equal(panel.state, 'has-key');
-    assert.ok(panel.lead.startsWith('You created an agent key on ' + AccountView.formatDate(made.data.createdAt) + '.'), panel.lead);
+    assert.deepEqual(panel.keys.map((k) => [k.kid, k.label, k.lastUsed]), [[made.data.kid, 'Agent key (created ' + AccountView.formatDate(made.data.createdAt) + ', ' + made.data.kid.slice(0, 4) + ')', 'Not used yet']]);
     assert.equal(AccountView.keyPanel(after, made.data, '/connect').state, 'new-key');
     // The command the page shows for that key carries the header MCP reads, and the server knows the key.
     assert.match(RoomView.mcpCommand('https://behalf.test', made.data.key), /--header "Authorization: Bearer bh_/);
     assert.deepEqual(h.app.auth.userForAgentKey(made.data.key), { id: '1001', login: 'octocat' });
 
-    const revoked = await BrowserUI.request('POST', '/api/me/agent-key/revoke', {});
+    const revoked = await BrowserUI.request('POST', '/api/me/agent-key/revoke', { kid: made.data.kid });
     assert.deepEqual(revoked, { ok: true, status: 204, data: {} });
     assert.equal(h.app.auth.userForAgentKey(made.data.key), null);
-    assert.equal(AccountView.parseMe((await BrowserUI.request('GET', '/api/me')).data).agentKey, null);
+    assert.deepEqual(AccountView.parseMe((await BrowserUI.request('GET', '/api/me')).data).agentKeys, []);
 
     const loggedOut = await BrowserUI.request('POST', '/auth/logout', {});
     assert.deepEqual(loggedOut, { ok: true, status: 204, data: {} });
@@ -2439,14 +2789,25 @@ test('every coded refusal the server source names for a web action is provoked o
   h.gh.id = 1003; h.gh.login = 'third';
   const s3 = await signIn(h);
   check('create', await h.post('/api/rooms', { cookie: s3.cookie, body: roomBody }));
-  // minting is the one rate-limited route
-  for (let i = 0; i < 10; i++) assert.equal((await h.post('/api/me/agent-key', { cookie: s3.cookie })).status, 201);
+  // minting is the one rate-limited route (a refused name or count is answered before the rate is asked)
+  const kids = [];
+  for (let i = 0; i < 10; i++) { const r = await h.post('/api/me/agent-key', { cookie: s3.cookie }); assert.equal(r.status, 201); kids.push(r.json.kid); }
+  assert.equal((await revokeKid(h, s3, kids[0])).status, 204);
   check('keyCreate', await h.post('/api/me/agent-key', { cookie: s3.cookie }));
+  // ten live keys is as many as one account keeps (the rate window has to pass first)
+  h.clock.t += 11 * 60 * 1000;
+  assert.equal((await h.post('/api/me/agent-key', { cookie: s3.cookie })).status, 201);
+  check('keyCreate', await h.post('/api/me/agent-key', { cookie: s3.cookie }));
+  // the name: too long, and one the account already has
+  check('keyCreate', await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'x'.repeat(41) } }));
+  assert.equal((await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'Claude Code' } })).status, 201);
+  check('keyCreate', await h.post('/api/me/agent-key', { cookie: s.cookie, body: { name: 'claude code' } }));
+  const own = await mintMade(h, s2);
   // saving has been failing: each action that has to save says so
   h.store.failing = true;
   check('create', await h.post('/api/rooms', { cookie: s2.cookie, body: roomBody }));
   check('keyCreate', await h.post('/api/me/agent-key', { cookie: s2.cookie }));
-  check('keyRevoke', await h.post('/api/me/agent-key/revoke', { cookie: s2.cookie }));
+  check('keyRevoke', await revokeKid(h, s2, own.kid));
   check('logout', await h.post('/auth/logout', { cookie: s2.cookie }));
   // the address's own limit exists only with sign-in off
   const off = await boot(t, { signin: 'off', extra: { PER_IP_DAILY: '1' } });
@@ -2465,16 +2826,20 @@ test('the real page scripts, over real HTTP: the key buttons and sign-out work (
     const page = loadPage({ request: (m, u, b) => BrowserUI.request(m, u, b), config: { live: true, passcode: false, signin: 'github' }, origin: PUBLIC });
     await page.flush();
     assert.ok(page.byId('key-create'), 'signed in, no key');
+    page.byId('key-name').value = 'Claude Code';
+    page.byId('key-name').fire('input');
     page.byId('key-create').click();
     await page.flush();
     const key = page.byId('agent-key').value;
     assert.match(key, /^bh_/);
     assert.deepEqual(h.app.auth.userForAgentKey(key), { id: '1001', login: 'octocat' }, 'the server made it');
-    page.byId('key-revoke').click();
+    const [{ kid, name }] = h.app.auth.agentKeysInfo({ id: '1001' });
+    assert.equal(name, 'Claude Code', 'with the name that was typed');
+    page.byId('key-delete-' + kid).click();
     await page.flush();
     assert.equal(h.app.auth.userForAgentKey(key), null, 'the server deleted it');
     assert.ok(!page.panelHtml().includes('id="agent-key"'));
-    assert.deepEqual(page.toasts, [['Your agent key no longer works.', 'ok']]);
+    assert.deepEqual(page.toasts, [['Claude Code no longer works.', 'ok']]);
     page.byId('sign-out').click();
     await page.flush();
     assert.equal(h.app.auth.userForSession(s.session), null, 'the server ended the session');

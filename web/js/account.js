@@ -2,7 +2,7 @@
  * Who is signed in. Asks /api/me once, in parallel with the server's settings (with sign-in off the settings decide and its answer is ignored), fills the
  * header's account slot when the page has one, and tells the page scripts that subscribed when the answer changes.
  *
- * window.Account: load() resolves the last answer that could be read ({signin, user, agentKey}), or null only
+ * window.Account: load() resolves the last answer that could be read ({signin, user, agentKeys}), or null only
  * before the first one; current() is that answer, without waiting; refresh() asks again and, when it got an answer, tells every onChange listener (a failed
  * refresh tells nobody and keeps the last answer, so a page never goes back to "unknown"); onChange(fn) adds a listener.
  * The connect page subscribes, to follow a sign-out and the key panel. The start page has no slot and no listener:
@@ -19,7 +19,7 @@
   var listeners = [];
   var pending = null;
   var last = null; // the last good answer
-  var OFF = { signin: 'off', user: null, agentKey: null };
+  var OFF = { signin: 'off', user: null, agentKeys: [] };
 
   // The answer from the server, or null when it couldn't be read. With sign-in off there is nobody to ask about.
   // /api/me is asked at once, in parallel with the settings: asking one after the other doubled the wait before the start page

@@ -3,7 +3,8 @@
  * origin, so the page is right on any host. Copy buttons are wired by ui.js through data-copy.
  *
  * With sign-in on it also shows the agent key panel (wording from account-view.js): a sign-in link when signed
- * out, else create, show once and delete. The key is only ever in the page for as long as it is on screen: it is
+ * out, else the list of the person's keys (each deleted on its own), an optional name for the next one, and create,
+ * which shows the new key once. The key is only ever in the page for as long as it is on screen: it is
  * never written into markup (copyField sets it as a property, the command takes it as text), a reload loses it, and
  * so does leaving the page (pagehide) or coming back to it from the back-forward cache (pageshow).
  * With sign-in off there is no panel and the command has no key in it.
@@ -21,7 +22,8 @@
 
   var panelEl = UI.byId('agent-keys');
   var noteEl = UI.byId('command-note');
-  var shown = null; // {key, createdAt} of the key just created, the only time it can be read
+  var shown = null; // {key, kid} of the key just created, the only time it can be read
+  var nameValue = ''; // what is typed in the name field, kept across a redraw
   var notice = null; // the sentence about what just failed, shown in the panel until the next action
   var busy = false;
   var focusNext = null; // where focus goes after the next render: 'key' (a new key) or 'action' (a button or link)
@@ -54,11 +56,21 @@
       <p class="text-muted">${panel.lead}</p>
       ${field ? field.html : false}
       ${panel.warning ? UI.callout('warn', html`<p>${panel.warning}</p>`) : false}
+      ${panel.keys.length ? html`<ul class="list-reset stack stack--sm" id="key-list" aria-labelledby="key-title">${panel.keys.map(function (k) {
+        return html`<li class="stack stack--sm" data-kid="${k.kid}">
+          <strong>${k.label}</strong>
+          <span class="text-caption">${k.created ? k.created + '. ' : ''}${k.lastUsed}</span>
+          <div><button class="btn btn--link btn--flush" type="button" id="key-delete-${k.kid}" aria-label="${k.removeName}">${k.remove}</button></div>
+        </li>`;
+      })}</ul>` : false}
       ${notice ? UI.alertBox(notice, 'danger') : false}
       ${panel.signin ? html`<div><a class="btn btn--secondary" id="key-signin" href="${UI.url(panel.signin.href)}">${panel.signin.text}</a></div>` : false}
-      ${panel.create ? html`<div class="cluster">
+      ${panel.create ? html`<div class="field">
+        <label class="field__label" for="key-name">${panel.nameField.label}</label>
+        <input class="input" id="key-name" type="text" autocomplete="off">
+      </div>
+      <div class="cluster">
         <button class="btn btn--secondary" type="button" id="key-create">${panel.create}</button>
-        ${panel.revoke ? html`<button class="btn btn--link" type="button" id="key-revoke">${panel.revoke}</button>` : false}
       </div>` : false}
     `);
     // The panel starts hidden, so the browser can't scroll to #agent-keys itself: do it when the panel first appears. It is
@@ -71,9 +83,16 @@
       UI.byId('agent-key').setAttribute('autocomplete', 'off'); // keep the key out of any form history
     }
     var create = UI.byId('key-create');
-    if (create) create.addEventListener('click', function () { act('keyCreate', create, makeKey); });
-    var revoke = UI.byId('key-revoke');
-    if (revoke) revoke.addEventListener('click', function () { act('keyRevoke', revoke, deleteKey); });
+    var nameInput = UI.byId('key-name');
+    if (nameInput) {
+      nameInput.value = nameValue; // what was typed survives a redraw (a refused create, a deleted key)
+      nameInput.addEventListener('input', function () { nameValue = nameInput.value; });
+    }
+    if (create) create.addEventListener('click', function () { act('keyCreate', create, makeKey, keyMade); });
+    panel.keys.forEach(function (k) {
+      var button = UI.byId('key-delete-' + k.kid);
+      if (button) button.addEventListener('click', function () { act('keyRevoke', button, function () { return deleteKey(k.kid); }, function () { keyDeleted(k.kid, k.label); }); });
+    });
     // Focus never falls to the page: the key field right after creating one, else the panel's own control.
     var want = focusNext;
     focusNext = null;
@@ -81,14 +100,39 @@
     if (target) target.focus();
   }
 
-  function makeKey() { return UI.request('POST', '/api/me/agent-key', {}); }
+  function makeKey() {
+    var name = nameValue.trim();
+    return UI.request('POST', '/api/me/agent-key', { name: name }); // always sent: '' says none (the server refuses a body without it)
+  }
 
-  function deleteKey() { return UI.request('POST', '/api/me/agent-key/revoke', {}); }
+  function deleteKey(kid) { return UI.request('POST', '/api/me/agent-key/revoke', { kid: kid }); }
+
+  // A key was made: keep it on screen once, if the answer is a key.
+  function keyMade(res) {
+    var key = res.data && res.data.key;
+    var newKid = res.data && res.data.kid;
+    if (typeof key === 'string' && AccountView.KEY_PATTERN.test(key) && typeof newKid === 'string') {
+      shown = { key: key, kid: newKid };
+      nameValue = '';
+      focusNext = 'key';
+    } else {
+      // A 201 with something else in it is not a key: say so rather than show it.
+      notice = AccountView.errorMessage('keyCreate', 500);
+    }
+  }
+
+  // A key was deleted. Deleting one key leaves the others, the one on screen included, unless it is the one deleted. The toast
+  // names it by the label the panel gave it.
+  function keyDeleted(kid, label) {
+    if (shown && shown.kid === kid) shown = null;
+    UI.toast(AccountView.keyDeleted(label), 'ok');
+  }
 
   // One request at a time. Whatever answer comes back, the page asks the server again and shows that: a refusal can
-  // still have changed things (creating a key puts the old one out first, and a 401 means the session is gone). Only
+  // still have changed things (a 401 means the session is gone, and a refused delete may have gone through in memory). Only
   // a network failure gets no answer, and then the page stays as it was.
-  function act(action, button, send) {
+  // onOk(res) runs when the server accepted it.
+  function act(action, button, send, onOk) {
     if (busy) return;
     busy = true;
     notice = null;
@@ -100,23 +144,10 @@
         notice = AccountView.errorMessage(action, 0);
         return render(Account.current());
       }
-      if (res.ok && action === 'keyCreate') {
-        var key = res.data && res.data.key;
-        if (typeof key === 'string' && AccountView.KEY_PATTERN.test(key)) {
-          shown = { key: key, createdAt: res.data.createdAt };
-          focusNext = 'key';
-        } else {
-          // A 201 with something else in it is not a key: say so rather than show it.
-          shown = null;
-          notice = AccountView.errorMessage('keyCreate', 500);
-        }
-      } else if (res.ok) {
-        shown = null;
-        UI.toast(AccountView.KEY_DELETED, 'ok');
+      if (res.ok) {
+        onOk(res);
       } else {
-        // Whatever was on screen is not to be trusted after a refusal that got an answer (a create put the old key out first; a
-        // refused delete may or may not have): the server's next answer says what exists.
-        shown = null;
+        // A refusal changes nothing on screen: the server's next answer (a 401 means the session is gone) says what exists.
         notice = AccountView.errorMessage(action, res.status, (res.data || {}).code);
       }
       return Account.refresh().then(function () {
@@ -142,10 +173,10 @@
     Account.refresh();
   });
 
-  // An answer from the server settles which key exists: the one on screen stays only while the server has a key with that
-  // creation time for a signed-in user (a sign-out takes the key with the session).
+  // An answer from the server settles which keys exist: the one on screen stays only while the server still lists a key with
+  // that kid for a signed-in user (a sign-out takes the keys with the session).
   function reconcile(me) {
-    if (shown && me && (!me.user || !me.agentKey || me.agentKey.createdAt !== shown.createdAt)) shown = null;
+    if (shown && me && (!me.user || !me.agentKeys.some(function (k) { return k.kid === shown.kid; }))) shown = null;
   }
 
   Account.onChange(function (me) { reconcile(me); render(me); });

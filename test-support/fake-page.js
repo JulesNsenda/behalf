@@ -17,7 +17,7 @@ const Links = require('../web/js/links.js');
 // The answers a scripted server gives, as UI.request resolves them.
 const ok = (status, data) => ({ ok: true, status, data: data || {} });
 const refused = (status, code) => ({ ok: false, status, data: code ? { error: 'text from the server', code } : {} });
-const ME = (over) => ({ signin: 'github', user: { login: 'octocat' }, agentKey: null, ...over });
+const ME = (over) => ({ signin: 'github', user: { login: 'octocat' }, agentKeys: [], ...over });
 
 const flush = async () => { for (let i = 0; i < 12; i++) await new Promise((r) => setImmediate(r)); };
 const plain = (html) => html.split('&#39;').join("'");
