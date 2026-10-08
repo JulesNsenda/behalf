@@ -108,12 +108,12 @@ Secrets are never in the config object.
 
 **`lib/http.js`** is the HTTP layer:
 - security headers and the CSP;
-- routing and the REST API;
+- routing and the REST API (`/key` is a short link: GET/HEAD with sign-in on answers 302 to `/connect#agent-keys`, otherwise it gets the normal 404);
 - static pages, served from one data table, by `lib/static.js`;
 - the SSE hub, which hears `onChange` and caps connections per room;
 - the `/health` build fingerprint.
 
-It never listens and never touches the store or the turn loop. The client IP comes from `lib/net.js`: `clientIp(req, trust)` returns a canonical address. It uses the last `X-Forwarded-For` entry only when `makeTrustProxy(TRUST_PROXY)` trusts the socket peer and the entry is a valid IP; otherwise it uses the socket address. `canonicalIp` is the single address grammar for both trust decisions and rate-limit keys. Static files resolve through `resolveStatic()`, which refuses any path that escapes `web/`. **`lib/errors.js`** holds the error classes (`ApiError` is an HTTP status, a client-safe message and an optional machine `apiCode`; also `ProxyError`, `BudgetError` and `AuthError`), factories for the shared refusals (`savingUnavailable`, `signinRequired`, …) and the fixed MCP agent-key sentences.
+It never listens and never touches the store or the turn loop. The client IP comes from `lib/net.js`: `clientIp(req, trust)` returns a canonical address. It uses the last `X-Forwarded-For` entry only when `makeTrustProxy(TRUST_PROXY)` trusts the socket peer and the entry is a valid IP; otherwise it uses the socket address. `canonicalIp` is the single address grammar for both trust decisions and rate-limit keys. Static files resolve through `resolveStatic()`, which refuses any path that escapes `web/`. **`lib/errors.js`** holds the error classes (`ApiError` is an HTTP status, a client-safe message and an optional machine `apiCode`; also `ProxyError`, `BudgetError` and `AuthError`), factories for the shared refusals (`savingUnavailable`, `signinRequired`, …) and the MCP agent-key sentences, which are fixed per deploy (they name `<PUBLIC_URL>/key`, built by `keyPageUrl(publicUrl)`, which the MCP sign-in text uses too).
 
 **Sign-in** (`SIGNIN=github`) is two modules:
 - **`lib/auth.js`** works on plain values: no request, no response, no cookie. GitHub OAuth with PKCE S256 and no scope; a state works once; the GitHub token is used for one profile read and dropped. Records: `user` by GitHub id; `session` and `agentkey` by the SHA-256 of their token, which is never stored. A session lasts 7 days idle and 30 at most; an agent key ends after 90 days unused. Callbacks are rate-limited per address, and minting keys per user. Blocked ids (`GITHUB_BLOCKED_IDS`) count as absent everywhere.
@@ -140,7 +140,7 @@ Prompts:
 - **Spend hook.** `beforeCall(room, kind)` runs before every attempt. It is the spend hook, and whatever it throws passes through unchanged.
 - **Errors.** Every failure is a `ProxyError`. Its message comes only from the HTTP status and an allowlisted Claude error type. The key, the request and Claude's free-text error message never appear in an error or a log.
 
-**`lib/mcp.js`** is a stateless Streamable-HTTP MCP server at `/mcp`. It returns JSON responses only and has no server-initiated stream (GET returns 405). The seat link (`/room/ID?seat=A&t=TOKEN`) is the credential for everything in a room. With sign-in on, `create_room` also needs the person's agent key as `Authorization: Bearer <key>` (the scheme is case-insensitive). It is resolved on every request and refused before the domain with a fixed sentence (`AGENT_KEY_MISSING` / `AGENT_KEY_REJECTED`). The `INSTRUCTIONS` and tool text depend on the mode; with sign-in off they are unchanged. `wait_for_turn` long-polls for at most 25s. A JSON-RPC batch is capped at `MAX_BATCH` (20): a larger batch gets HTTP 400 with `-32600`, and none of its messages are dispatched. MCP session IDs exist only to remember the client's name for the seat label.
+**`lib/mcp.js`** is a stateless Streamable-HTTP MCP server at `/mcp`. It returns JSON responses only and has no server-initiated stream (GET returns 405). The seat link (`/room/ID?seat=A&t=TOKEN`) is the credential for everything in a room. With sign-in on, `create_room` also needs the person's agent key as `Authorization: Bearer <key>` (the scheme is case-insensitive). It is resolved on every request and refused before the domain with a sentence that is fixed per deploy (`AGENT_KEY_MISSING` / `AGENT_KEY_REJECTED`; each names `<PUBLIC_URL>/key`, as do the sign-in `INSTRUCTIONS` and the `create_room` text). The `INSTRUCTIONS` and tool text depend on the mode; with sign-in off they are unchanged. `wait_for_turn` long-polls for at most 25s. A JSON-RPC batch is capped at `MAX_BATCH` (20): a larger batch gets HTTP 400 with `-32600`, and none of its messages are dispatched. MCP session IDs exist only to remember the client's name for the seat label.
 
 **`lib/demo.js`** holds the scripted "hallucination cascade" scenario. Its scripted raw outputs pass through the same `buildEnvelope` enforcement as live turns. The escalation answer chooses a branch (`dedupe` / `accept`), and that branch's script then replaces `room.script`.
 
@@ -230,10 +230,10 @@ The client-facing error sentences live in `lib/rooms.js`:
 Sign-in has three pairs to keep together:
 - the MCP agent-key header, the mode-dependent `INSTRUCTIONS` in `lib/mcp.js`, and `spec/SPEC.md` §8;
 - the refusal sentences in `lib/errors.js` factories and `errorMessage`'s codes;
-- `SIGNIN_NEXT` in `web/js/account-view.js` and the paths `beginLogin` allows in `lib/auth.js` (a test compares them).
+- `SIGNIN_NEXT` in `web/js/account-view.js` and the paths `beginLogin` allows in `lib/auth.js` (`NEXT_PATHS`: `/`, `/start`, `/connect`, `/key`; a test compares them).
 
 Deploy and configuration have more places to keep together:
-- the deploy hostname `behalf.dropkit.sh`: the `PUBLIC_URL` default in `lib/config.js`, `drop.yaml` (the `env` value and the secret description), the README (the `PUBLIC_URL` row, deploy steps 1 and 3, and the `claude mcp add` line), `server.json` (the MCP Registry entry) and, outside the repo, the callback URL of the GitHub OAuth app. A redeploy that changes the URL touches all of them;
+- the deploy hostname `behalf.dropkit.sh`: the `PUBLIC_URL` default in `lib/config.js`, `drop.yaml` (the `env` value and the secret description), the README (the `PUBLIC_URL` row, deploy steps 1 and 3, and the `claude mcp add` line), `server.json` (the MCP Registry entry), the MCP refusals and sign-in instructions (they name `PUBLIC_URL/key`, built per call from the config) and, outside the repo, the callback URL of the GitHub OAuth app. A redeploy that changes the URL touches all of them;
 - the secrets: `SECRET_NAMES` and the `loadSecrets` fields in `lib/config.js`, `redacted()`, the `secrets:` in `drop.yaml`, `checkSignin`, `checkMail`, and the README rows;
 - the mail settings: `loadConfig` and `checkMail` in `lib/config.js`, the README rows and refusal codes, `MAIL.md`, and `MAIL_TRANSPORT` in `drop.yaml`;
 - the database guard: the `REQUIRE_DATABASE` default in `lib/config.js`, `drop.yaml` `env:`, the README row, deploy paragraph and *Rolling back*, and `baseEnv` in `test-support/server.js`;

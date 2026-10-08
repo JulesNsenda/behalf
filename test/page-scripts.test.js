@@ -44,7 +44,7 @@ const withKey = async (t) => {
 
 test('signed in with no key: the panel offers to create one, and the command has no header', async () => {
   const { page } = await open(ME());
-  assert.equal(page.byId('key-panel').hidden, false);
+  assert.equal(page.byId('agent-keys').hidden, false);
   assert.ok(page.byId('key-create'));
   assert.equal(page.byId('key-revoke'), null);
   assert.equal(page.command(), 'claude mcp add --transport http behalf https://behalf.test/mcp');
@@ -198,7 +198,7 @@ test('sign-in off: the settings decide on the pages that fill the header or the 
   assert.equal(page.requests.length, 1, 'exactly the one question, asked with the settings, and no other request');
   assert.equal(page.meRequests(), 1);
   assert.equal(page.byId('account-slot').hidden, true);
-  assert.equal(page.byId('key-panel').hidden, true);
+  assert.equal(page.byId('agent-keys').hidden, true);
   assert.equal(page.byId('no-signin-note').hidden, false);
   assert.equal(page.command(), 'claude mcp add --transport http behalf https://behalf.test/mcp');
   // the same on a page with only the header
@@ -217,7 +217,7 @@ test('sign-in off: the header and the panel settle as soon as the settings say s
   await page.flush();
   assert.equal(page.meRequests(), 1, '/api/me is out, unanswered');
   assert.equal(page.byId('account-slot').hidden, true);
-  assert.equal(page.byId('key-panel').hidden, true);
+  assert.equal(page.byId('agent-keys').hidden, true);
   assert.equal(page.byId('no-signin-note').hidden, false);
   release();
   await page.flush();
@@ -229,8 +229,22 @@ test('signed out with sign-in on: the header holds a sign-in link back to this p
   assert.ok(page.slotHtml().includes('href="/auth/github?next=/connect"'));
   assert.ok(page.slotHtml().includes('id="account-signin"'));
   assert.ok(page.byId('key-signin'));
+  assert.ok(page.panelHtml().includes('id="key-signin" href="/auth/github?next=/key"'), 'the panel comes back through /key to itself');
   assert.equal(page.byId('no-signin-note').hidden, true);
   assert.equal(page.byId('account-slot').hidden, false);
+});
+
+test('#agent-keys: the panel is scrolled into view once, when it first shows; without the hash, never', async () => {
+  const { page } = await open(ME(), { hash: '#agent-keys' });
+  assert.equal(page.scrolled, 1);
+  page.window.Account.refresh(); // later draws do not scroll again
+  await page.flush();
+  page.byId('key-create').click();
+  await page.flush();
+  assert.equal(page.scrolled, 1);
+  for (const hash of ['', '#other', '#AGENT-KEYS']) assert.equal((await open(ME(), { hash })).page.scrolled, 0, hash || 'no hash');
+  const off = await open(ME(), { hash: '#agent-keys', config: { live: true, passcode: false, signin: 'off' } });
+  assert.equal(off.page.scrolled, 0, 'no panel, nothing to scroll to');
 });
 
 test('signing out from the header: a JSON POST, the slot and the panel follow, and the focus goes to the sign-in link', async () => {
@@ -305,7 +319,7 @@ test('header slot on home and the protocol page: signed in shows who and Sign ou
     await page.flush();
     assert.ok(page.slotText().includes('Signed in as octocat'), p);
     assert.ok(page.slotHtml().includes('id="sign-out"'), p);
-    assert.equal(page.byId('key-panel').hidden, true, p);
+    assert.equal(page.byId('agent-keys').hidden, true, p);
     assert.deepStrictEqual(page.requests.map((r) => r.url), ['/api/me'], p);
   }
 });

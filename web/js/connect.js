@@ -19,7 +19,7 @@
   var Account = window.Account;
   var html = UI.html;
 
-  var panelEl = UI.byId('key-panel');
+  var panelEl = UI.byId('agent-keys');
   var noteEl = UI.byId('command-note');
   var shown = null; // {key, createdAt} of the key just created, the only time it can be read
   var notice = null; // the sentence about what just failed, shown in the panel until the next action
@@ -40,7 +40,8 @@
   function render(me) {
     // "There is no sign-in." is true only with sign-in off; it stays hidden when the answer isn't known.
     UI.byId('no-signin-note').hidden = !(me && me.signin === 'off');
-    var panel = AccountView.keyPanel(me, shown, location.pathname);
+    // The sign-in link comes back through /key, which lands on this panel (the header's own link comes back to this page).
+    var panel = AccountView.keyPanel(me, shown, '/key');
     setCommand(panel);
     if (!panel) {
       UI.render(panelEl, html``);
@@ -60,7 +61,11 @@
         ${panel.revoke ? html`<button class="btn btn--link" type="button" id="key-revoke">${panel.revoke}</button>` : false}
       </div>` : false}
     `);
+    // The panel starts hidden, so the browser can't scroll to #agent-keys itself: do it when the panel first appears. It is
+    // never hidden again (keyPanel is null only with sign-in off, and Account never forgets an answer), so this runs once.
+    var appearing = panelEl.hidden;
     panelEl.hidden = false;
+    if (appearing && location.hash === '#agent-keys') panelEl.scrollIntoView(); // only read: the key page never writes the address
     if (field) {
       field.fill(panelEl);
       UI.byId('agent-key').setAttribute('autocomplete', 'off'); // keep the key out of any form history

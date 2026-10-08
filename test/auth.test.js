@@ -721,6 +721,14 @@ async function signIn(h, { next, code, headers = {} } = {}) {
 
 const roomBody = { topic: 'Sign-in test', modeA: 'external', modeB: 'external' };
 
+test('sign-in with next=/key is honoured end to end: the cookie carries /key and the callback returns there', T, async (t) => {
+  const h = await boot(t);
+  const s = await signIn(h, { next: '/key' });
+  assert.match(decodeURIComponent(s.begin.cookies[0]), /[.]\/key; /);
+  assert.equal(s.cb.status, 302);
+  assert.equal(s.cb.headers.location, '/key');
+});
+
 test('GET /auth/github redirects to GitHub with the OAuth cookie: every attribute, and next is allowlisted', T, async (t) => {
   const h = await boot(t);
   const r = await h.req('GET', '/auth/github?next=/connect');
@@ -1759,8 +1767,8 @@ test('over HTTP, a restart on the same data keeps the session cookie working, an
 });
 
 // ---------- live rooms with sign-in: the owner, the per-user quota, MCP create_room and the agent key ----------
-const KEY_MISSING = 'create_room needs an agent key: sign in at /connect, create one, and add it to your MCP client as an Authorization header.';
-const KEY_REJECTED = 'That agent key no longer works: sign in at /connect and create a new one, then update the Authorization header in your MCP client.';
+const KEY_MISSING = `create_room needs an agent key: your principal signs in at ${PUBLIC}/key, creates one, and adds it to your MCP client as an Authorization header.`;
+const KEY_REJECTED = `That agent key no longer works: your principal signs in at ${PUBLIC}/key and creates a new one, then updates the Authorization header in your MCP client.`;
 const mcpCall = (h, name, args, headers = {}) => h.req('POST', '/mcp', {
   headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
   body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
@@ -1997,10 +2005,10 @@ test('/mcp never reads a session cookie: a valid session does not authorize crea
 
 test('MCP: instructions and the create_room description are built per mode: on is off plus the agent-key clauses, and nothing else changes', () => {
   const mcp = require('../lib/mcp');
-  const off = mcp.instructionsFor(false);
-  const on = mcp.instructionsFor(true);
+  const off = mcp.instructionsFor(false, PUBLIC);
+  const on = mcp.instructionsFor(true, PUBLIC);
   assert.equal(off, mcp.INSTRUCTIONS);
-  assert.deepEqual(mcp.toolsFor(false), mcp.TOOLS);
+  assert.deepEqual(mcp.toolsFor(false, PUBLIC), mcp.TOOLS);
   assert.notEqual(on, off);
   assert.match(on, /create_room also needs your principal's agent key, sent as an Authorization: Bearer header/);
   assert.ok(!/Authorization/.test(off), 'the off text says nothing of the key');
@@ -2010,7 +2018,7 @@ test('MCP: instructions and the create_room description are built per mode: on i
   const clause = on.slice(i, i + on.length - off.length);
   assert.equal(on.slice(0, i) + on.slice(i + clause.length), off, 'on adds one clause and removes nothing');
   assert.match(clause, /agent key/);
-  const tools = mcp.toolsFor(true);
+  const tools = mcp.toolsFor(true, PUBLIC);
   assert.deepEqual(tools.map((x) => x.name), mcp.TOOLS.map((x) => x.name));
   const changed = tools.filter((x, k) => JSON.stringify(x) !== JSON.stringify(mcp.TOOLS[k])).map((x) => x.name);
   assert.deepEqual(changed, ['create_room'], 'only the create_room description changes');
@@ -2025,11 +2033,50 @@ test('MCP over HTTP serves the instructions and the tool list of its mode', T, a
   const mcp = require('../lib/mcp');
   const ask = (h, method, params) => h.req('POST', '/mcp', { headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
   const on = await boot(t);
-  assert.equal((await ask(on, 'initialize', { protocolVersion: '2025-06-18' })).json.result.instructions, mcp.instructionsFor(true));
-  assert.deepEqual((await ask(on, 'tools/list')).json.result.tools, mcp.toolsFor(true));
+  assert.equal((await ask(on, 'initialize', { protocolVersion: '2025-06-18' })).json.result.instructions, mcp.instructionsFor(true, PUBLIC));
+  assert.deepEqual((await ask(on, 'tools/list')).json.result.tools, mcp.toolsFor(true, PUBLIC));
   const off = await boot(t, { signin: 'off' });
   assert.equal((await ask(off, 'initialize', { protocolVersion: '2025-06-18' })).json.result.instructions, mcp.INSTRUCTIONS);
   assert.deepEqual((await ask(off, 'tools/list')).json.result.tools, mcp.TOOLS);
+});
+
+test('MCP: the sign-in text and both refusals name the absolute key page, and the off-mode text is the constants themselves', T, async (t) => {
+  const mcp = require('../lib/mcp');
+  const { agentKeyRequired } = require('../lib/errors');
+  assert.ok(mcp.instructionsFor(true, PUBLIC).includes(`${PUBLIC}/key`));
+  assert.ok(mcp.toolsFor(true, PUBLIC).find((t) => t.name === 'create_room').description.includes(`${PUBLIC}/key`));
+  assert.ok(mcp.instructionsFor(true, 'https://other.test').includes('https://other.test/key'), 'built per call, not cached');
+  assert.ok(!mcp.instructionsFor(true, 'https://other.test').includes(PUBLIC), 'no stale URL from an earlier call');
+  assert.equal(mcp.instructionsFor(false, PUBLIC), mcp.INSTRUCTIONS);
+  assert.equal(mcp.toolsFor(false, PUBLIC), mcp.TOOLS);
+  for (const rejected of [false, true]) {
+    const e = agentKeyRequired(rejected, PUBLIC);
+    assert.equal(e.code, 401);
+    assert.ok(e.message.includes(`${PUBLIC}/key`), e.message);
+    assert.ok(!/at \/connect/.test(e.message), 'no relative path');
+  }
+  const h = await boot(t);
+  const r = await mcpCall(h, 'create_room', mcpRoom);
+  assert.ok(toolText(r).includes(`${PUBLIC}/key`));
+});
+
+test('/key: GET and HEAD with sign-in on redirect to the key panel with a fixed target; sign-in off and other methods get the normal unknown-path 404', T, async (t) => {
+  const on = await boot(t);
+  for (const p of ['/key', '/key?next=//evil.test&x=1']) {
+    for (const method of ['GET', 'HEAD']) {
+      const r = await on.req(method, p);
+      assert.equal(r.status, 302, method + ' ' + p);
+      assert.equal(r.headers.location, '/connect#agent-keys', method + ' ' + p);
+    }
+  }
+  const post = await on.req('POST', '/key', {});
+  assert.notEqual(post.status, 302);
+  assert.equal(post.status, (await on.req('POST', '/nothing-here', {})).status, 'the same answer as any unknown path');
+  const off = await boot(t, { signin: 'off' });
+  const gone = await off.req('GET', '/key');
+  assert.equal(gone.status, 404);
+  assert.equal(gone.status, (await off.req('GET', '/nothing-here')).status);
+  assert.equal(gone.body, (await off.req('GET', '/nothing-here')).body, 'not a special answer');
 });
 
 test('MCP: any use of an agent key refreshes it, so daily join_room use keeps it alive past 90 days; an unused one idles out', T, async (t) => {

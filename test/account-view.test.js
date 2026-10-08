@@ -28,6 +28,7 @@ test('signinHref: the page the person is on comes back after sign-in when it is 
   assert.strictEqual(AV.signinHref('/'), '/auth/github?next=/');
   assert.strictEqual(AV.signinHref('/start'), '/auth/github?next=/start');
   assert.strictEqual(AV.signinHref('/connect'), '/auth/github?next=/connect');
+  assert.strictEqual(AV.signinHref('/key'), '/auth/github?next=/key');
   for (const p of ['/spec', '/room/abc', '/start/', '/connect?x=1', '', undefined, null, 7, '//evil.test', 'https://evil.test', '/\\evil.test', '/ui/']) {
     assert.strictEqual(AV.signinHref(p), '/auth/github', String(p));
   }
@@ -50,7 +51,8 @@ test('signinHref and the server agree on which pages a sign-in can return to', (
     assert.strictEqual(auth.beginLogin(next).next, AV.SIGNIN_NEXT.includes(p) ? p : '/', p);
     assert.strictEqual(auth.beginLogin(p).next === p, AV.SIGNIN_NEXT.includes(p), `the server's own list, for ${p}`);
   }
-  assert.deepStrictEqual([...AV.SIGNIN_NEXT].sort(), ['/', '/connect', '/start']);
+  assert.deepStrictEqual([...AV.SIGNIN_NEXT].sort(), ['/', '/connect', '/key', '/start'], 'widening where a sign-in may return is a reviewed change');
+  assert.deepStrictEqual([...AV.SIGNIN_NEXT].sort(), [...require('../lib/auth').NEXT_PATHS].sort(), 'the two lists are the same');
 });
 
 // ---------- parseMe ----------
@@ -112,9 +114,10 @@ test('keyPanel: no panel with sign-in off or an unreadable answer', () => {
 
 test('keyPanel: signed out is a sign-in link and nothing to make or revoke, whatever key was held', () => {
   for (const held of [null, NEW_KEY]) {
-    const p = AV.keyPanel(ME_OUT, held, '/connect');
+    const p = AV.keyPanel(ME_OUT, held, '/key');
     assert.strictEqual(p.state, 'signed-out');
-    assert.deepStrictEqual(p.signin, { text: 'Sign in with GitHub', href: '/auth/github?next=/connect' });
+    assert.strictEqual(p.title, 'Get an agent key');
+    assert.deepStrictEqual(p.signin, { text: 'Sign in with GitHub', href: '/auth/github?next=/key' }, 'signing in comes back through /key to the panel');
     assert.deepStrictEqual([p.create, p.revoke, p.field, p.warning, p.commandNote], [null, null, null, null, null]);
     assert.match(p.lead, /sign in first/);
     assert.ok(!JSON.stringify(p).includes(NEW_KEY.key));
@@ -124,11 +127,12 @@ test('keyPanel: signed out is a sign-in link and nothing to make or revoke, what
 test('keyPanel: signed in with no key offers to make one, and explains what an agent key is once', () => {
   const p = AV.keyPanel(ME_IN, null, '/connect');
   assert.strictEqual(p.state, 'no-key');
-  assert.strictEqual(p.title, 'Your agent key');
+  assert.strictEqual(p.title, 'Get an agent key');
   assert.strictEqual(p.create, 'Create an agent key');
   assert.strictEqual(p.revoke, null);
   assert.strictEqual(p.signin, null);
-  assert.match(p.lead, /^An agent key is a secret code that lets your own AI agent open rooms for you\./);
+  assert.match(p.lead, / Create one, then add it to your app\.$/);
+  assert.match(p.lead, /^An agent key lets your own AI app, like Claude Desktop or Claude Code, start rooms on Behalf for you\./);
   assert.strictEqual(p.commandNote, null, 'the command has no header when there is no key');
   assert.strictEqual(p.commandKey, null);
 });
@@ -136,6 +140,7 @@ test('keyPanel: signed in with no key offers to make one, and explains what an a
 test('keyPanel: a key that exists says when it was made and that it cannot be shown again, and offers a new one or revoking it', () => {
   const p = AV.keyPanel(ME_KEY, null, '/connect');
   assert.strictEqual(p.state, 'has-key');
+  assert.strictEqual(p.title, 'Your agent key');
   assert.match(p.lead, /^You created an agent key on 3 Oct 2026\. We can't show it again\./);
   assert.strictEqual(p.create, 'Create a new key');
   assert.strictEqual(p.revoke, 'Delete key');
@@ -149,6 +154,7 @@ test('keyPanel: a key that exists says when it was made and that it cannot be sh
 test('keyPanel: the new key is shown once, in a copy field with a warning, and is never part of what this module returns', () => {
   const p = AV.keyPanel(ME_IN, NEW_KEY, '/connect');
   assert.strictEqual(p.state, 'new-key');
+  assert.strictEqual(p.title, 'Your agent key');
   assert.deepStrictEqual(p.field, { label: 'Your key', note: "Anyone with this key can open rooms as you. It is saved in your app's settings and your command history, so treat it like a password.", button: 'Copy key' });
   assert.strictEqual(p.lead, 'Your new key is below, and the command in step 1 now includes it.');
   assert.strictEqual(p.warning, "Copy it now. We can't show it again.");

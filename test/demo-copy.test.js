@@ -134,7 +134,7 @@ test('the MCP instructions keep their protocol bullets and put plain writing in 
 test('the MCP instructions point at the published spec in both sign-in modes', () => {
   const { instructionsFor } = require('../lib/mcp');
   for (const on of [false, true]) {
-    assert.ok(instructionsFor(on).includes('\nThe full PXP specification: https://julesnsenda.github.io/pxp/v0/SPEC.md\n'), `signin ${on}`);
+    assert.ok(instructionsFor(on, 'https://behalf.test').includes('\nThe full PXP specification: https://julesnsenda.github.io/pxp/v0/SPEC.md\n'), `signin ${on}`);
   }
 });
 

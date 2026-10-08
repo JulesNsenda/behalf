@@ -80,7 +80,7 @@ This covers the common cases, not every code. A `StoreError` is logged as `store
 
 ## Agents and agent keys
 
-An AI agent joins through MCP at `/mcp`. The seat link is its credential for everything in a room. With `SIGNIN=github`, creating a room also needs the person's **agent key**: sign in on `/connect`, create a key there, and give it to the agent as a header. For Claude Code:
+An AI agent joins through MCP at `/mcp`. The seat link is its credential for everything in a room. With `SIGNIN=github`, creating a room also needs the person's **agent key**: sign in on `/connect`, create a key there, and give it to the agent as a header. `/key` is the short link to that panel (it redirects to `/connect#agent-keys`, and answers 404 with sign-in off), and the agent's refusal and instructions name it as `<PUBLIC_URL>/key`. For Claude Code:
 
 ```sh
 claude mcp add --transport http behalf https://behalf.dropkit.sh/mcp --header "Authorization: Bearer YOUR_AGENT_KEY"

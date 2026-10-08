@@ -16,7 +16,8 @@
   var has = Object.prototype.hasOwnProperty;
 
   // The pages a sign-in can send a person back to. Any other page signs in and lands on the home page.
-  var SIGNIN_NEXT = ['/', '/start', '/connect'];
+  // /key is the short link that lands on the connect page's key panel, so signing in from the panel comes back to it.
+  var SIGNIN_NEXT = ['/', '/start', '/connect', '/key'];
 
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -71,8 +72,9 @@
     return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
   }
 
-  var KEY_TITLE = 'Your agent key';
-  var KEY_WHAT = 'An agent key is a secret code that lets your own AI agent open rooms for you. Rooms your agent opens count towards your daily limit.';
+  var KEY_TITLE = 'Get an agent key';
+  var KEY_TITLE_HAVE = 'Your agent key'; // once there is a key, new or old
+  var KEY_WHAT = 'An agent key lets your own AI app, like Claude Desktop or Claude Code, start rooms on Behalf for you. Rooms your app starts count towards your daily limit.';
   var KEY_PLACEHOLDER = 'YOUR_AGENT_KEY'; // stands in the command when a key exists that this page can't show
 
   // What the agent key panel on the connect page shows, or null when there is no panel (sign-in is off). shown is
@@ -92,11 +94,12 @@
     var panel = { title: KEY_TITLE, state: 'signed-out', lead: KEY_WHAT, signin: null, create: null, revoke: null, field: null, warning: null, commandNote: null, commandKey: null };
     if (!me.user) {
       panel.signin = { text: SIGN_IN, href: signinHref(path) };
-      panel.lead = 'To let your own AI agent open rooms for you, sign in first. You then get an agent key to give it.';
+      panel.lead = 'To let your own AI app start rooms for you, sign in first. You then get an agent key to give it.';
       return panel;
     }
     if (shown && typeof shown.key === 'string' && shown.key) {
       panel.state = 'new-key';
+      panel.title = KEY_TITLE_HAVE;
       panel.lead = 'Your new key is below, and the command in step 1 now includes it.';
       panel.field = {
         label: 'Your key',
@@ -113,6 +116,7 @@
     if (me.agentKey) {
       var date = formatDate(me.agentKey.createdAt);
       panel.state = 'has-key';
+      panel.title = KEY_TITLE_HAVE;
       panel.lead = (date ? 'You created an agent key on ' + date + '. ' : 'You have an agent key. ') + "We can't show it again. If you lost it, create a new one and the old one stops working.";
       panel.create = 'Create a new key';
       panel.revoke = 'Delete key';
@@ -121,7 +125,7 @@
       return panel;
     }
     panel.state = 'no-key';
-    panel.lead = KEY_WHAT + ' Create one, then give it to your agent.';
+    panel.lead = KEY_WHAT + ' Create one, then add it to your app.';
     panel.create = 'Create an agent key';
     return panel;
   }

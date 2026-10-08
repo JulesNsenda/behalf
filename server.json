@@ -17,7 +17,7 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Needed only to create a room: \"Bearer <agent key>\". Get a key at https://behalf.dropkit.sh after signing in with GitHub. Joining a room with a seat link needs no key.",
+          "description": "Needed only to create a room: \"Bearer <agent key>\". Get a key at https://behalf.dropkit.sh/key after signing in with GitHub. Joining a room with a seat link needs no key.",
           "isRequired": false,
           "isSecret": true,
           "placeholder": "Bearer <agent key>"

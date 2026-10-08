@@ -37,7 +37,8 @@ function codesInServer() {
   }
   for (const value of Object.values(errors)) {
     if (typeof value === 'string') found.add(value);
-    else if (typeof value === 'function' && !isClass(value)) for (const e of [value(false), value(true)]) if (e.apiCode) found.add(e.apiCode);
+    // A factory may take the deploy's public URL (agentKeyRequired names it in its sentence), so every call passes a dummy one.
+    else if (typeof value === 'function' && !isClass(value)) for (const e of [value(false, 'https://x.test'), value(true, 'https://x.test')]) if (e instanceof errors.ApiError && e.apiCode) found.add(e.apiCode); // a helper that is not a refusal adds nothing
   }
   return found;
 }

@@ -64,7 +64,7 @@ function runScripts(ctx, names) {
 //   request   (method, url, body) -> an answer (see ok, refused), or a promise of one
 //   config    what UI.loadConfig resolves (default: sign-in on), or null for settings that can't be read
 //   scripts   the scripts to run (default account.js and connect.js)
-//   pathname, search, origin   where the page is
+//   pathname, search, hash, origin   where the page is
 //   lazy      true: any id asked for is an element (the start page's form); false: only the connect page's own elements and what was rendered
 //   setTimeout  stands in for the page's timer (a test that runs a deadline by hand)
 //   hidden    ids of lazy elements that start hidden, as in the page's markup (the start page's form and sign-in)
@@ -74,15 +74,17 @@ function loadPage(opts) {
   for (const id of ['mcp-url', 'mcp-command', 'command-note', 'no-signin-note']) named[id] = makeEl(page, id);
   named['no-signin-note'].hidden = true;
   named['command-note'].hidden = true;
-  const panel = container(page, 'key-panel');
+  const panel = container(page, 'agent-keys');
   const slot = container(page, 'account-slot');
   panel.hidden = true;
   slot.hidden = true;
+  page.scrolled = 0; // how many times the key panel was scrolled into view
+  panel.scrollIntoView = () => { page.scrolled++; };
   const lazy = new Map();
   for (const id of opts.hidden || []) { const e = makeEl(page, id); e.hidden = true; lazy.set(id, e); }
   const byId = (id) => {
     if (named[id]) return named[id];
-    if (id === 'key-panel') return panel;
+    if (id === 'agent-keys') return panel;
     if (id === 'account-slot') return slot;
     for (const c of [panel, slot]) { const e = c.find(id); if (e) return e; }
     if (!opts.lazy) return null;
@@ -110,7 +112,7 @@ function loadPage(opts) {
   const store = new Map();
   const ctx = {
     window: win, URLSearchParams, URL, Promise, Date, setTimeout: opts.setTimeout || setTimeout,
-    location: { origin: opts.origin || 'https://behalf.test', pathname: opts.pathname || '/connect', search: opts.search || '', assign() {} },
+    location: { origin: opts.origin || 'https://behalf.test', pathname: opts.pathname || '/connect', search: opts.search || '', hash: opts.hash || '', assign() {} },
     history: { replaceState: (a, b, u) => { page.replaced.push(u); } },
     document: { activeElement: null, title: '' },
     localStorage: { get length() { return store.size; }, key: (i) => [...store.keys()][i], getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) },

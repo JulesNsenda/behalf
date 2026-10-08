@@ -837,8 +837,8 @@ test('connect.js: the key is never written into markup, and the sign-in scripts 
   }
   // The panel sits above step 1 (whose command uses the key), and the panel and the notes start hidden: sign-in off leaves the page as it was.
   const html = read(path.join(WEB, 'connect.html'));
-  assert.ok(html.indexOf('id="key-panel"') > 0 && html.indexOf('id="key-panel"') < html.indexOf('<ol class="steps">'), 'the key panel is above the steps');
-  assert.match(html, /<section class="card stack" id="key-panel" aria-labelledby="key-title" hidden><\/section>/);
+  assert.ok(html.indexOf('id="agent-keys"') > 0 && html.indexOf('id="agent-keys"') < html.indexOf('<ol class="steps">'), 'the key panel is above the steps');
+  assert.match(html, /<section class="card stack" id="agent-keys" aria-labelledby="key-title" hidden><\/section>/);
   assert.match(html, /<p class="text-caption" id="command-note" hidden><\/p>/);
   // "There is no sign-in." stays for sign-in off, in a span that starts hidden (the scripts show it only for sign-in off).
   assert.match(html, /<span id="no-signin-note" hidden>There is no sign-in\. <\/span>/);
@@ -882,13 +882,24 @@ test('the header only wraps where it holds the nav; the room, start and agreemen
   assert.match(css, /\.site-header__account \{[^}]*margin-inline-start: auto;/, 'the slot keeps to the right of the nav');
   assert.ok(!/(?<![\w-])\.account(?:__|\b)/.test(css.replace(/\.site-header__account/g, '')), 'the old class names are gone');
 });
+test('the home hero offers "Use your own AI agent" (the nav label) to /connect next to the primary call to action', () => {
+  const html = read(path.join(WEB, 'index.html'));
+  assert.match(html, /<a class="btn btn--primary" href="\/start">Start a room<\/a>\s*<a class="btn btn--secondary" href="\/connect">Use your own AI agent<\/a>/);
+  assert.match(html, /<a class="hide-sm" href="\/connect">Use your own AI agent<\/a>/, 'the same label as the nav');
+});
+
+const LOCATION_WRITE = new RegExp(/location\s*\.\s*(?:hash|search|href)/.source + ASSIGN_OP); // the assignment grammar of URL_SINKS
+
 test('the agent key never reaches storage, the address bar or a cookie: no account script touches them', () => {
   for (const name of ['account.js', 'account-view.js', 'connect.js']) {
     const src = read(path.join(WEB, 'js', name)).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    for (const bad of [/\blocalStorage\b/, /\bsessionStorage\b/, /document\.cookie/, /\bindexedDB\b/, /\breplaceState\b/, /\bpushState\b/, /location\.(hash|search|href)\s*=/, /\bconsole\./]) {
+    for (const bad of [/\blocalStorage\b/, /\bsessionStorage\b/, /document\.cookie/, /\bindexedDB\b/, /\breplaceState\b/, /\bpushState\b/, LOCATION_WRITE, /\bconsole\./]) {
       assert.ok(!bad.test(src), name + ' uses ' + bad);
     }
   }
+  // The address-bar check catches a write, not a comparison: reading the hash is fine.
+  for (const w of ['location.hash = x', 'location.href=x', 'location.search += x']) assert.ok(LOCATION_WRITE.test(w), w);
+  for (const r of ["location.hash === '#a'", 'location.hash == x', "location.hash !== ''"]) assert.ok(!LOCATION_WRITE.test(r), r);
 });
 
 test('the room scripts pass a refusal\'s machine code on to errorMessage, like start.js', () => {
