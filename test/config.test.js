@@ -31,6 +31,7 @@ test('defaults with an empty environment', () => {
     requireDatabase: false,
     mailTransport: 'dev',
     mailFrom: null,
+    adminEmail: null,
     smtpHost: '',
     smtpPort: 0,
     smtpSecure: '',

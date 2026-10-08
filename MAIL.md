@@ -1,7 +1,7 @@
 # Email
 
 Behalf sends a small number of emails on behalf of a signed-in person: invites, "new questions", "ready to approve", "approved",
-one reminder, and sign-in links. They go out through **your own SMTP server**. This page covers the settings, the DNS records to
+one reminder, and sign-in links, plus a short note to the owner when someone asks to use our AI (see **Admin note** below). They go out through **your own SMTP server**. This page covers the settings, the DNS records to
 check for the sending domain, and what to do when something goes wrong.
 
 All sending goes through `lib/mail.js` (`sendMail({ to, toName, replyTo, subject, text, html, tag })`). Only `lib/mail-smtp.js`
@@ -24,6 +24,7 @@ loads nodemailer.
 | `SMTP_PORT` | yes | Usually `587` (STARTTLS) or `465` (TLS from the start) |
 | `SMTP_SECURE` | no | `true` or `false`; unset follows the port (`465` → `true`, anything else → `false`). `465` with `false` and `587` with `true` are refused at startup |
 | `SMTP_USER`, `SMTP_PASS` | yes | Secrets. Set them in the Drop dashboard, never in `drop.yaml`. The server reads them once and removes them from its environment |
+| `ADMIN_EMAIL` | no | Where the **Admin note** paragraph below goes. A bare address; dashboard only, never `drop.yaml`. An invalid one stops startup with `BAD_ADMIN_EMAIL` |
 | `PUBLIC_URL` | | The base of every link in an email (the deploy's own URL) |
 
 How the connection is made:
@@ -45,6 +46,8 @@ panel says email is unavailable. `/health` shows `mail` (`dev` or `smtp`) and `m
 about 2, 8 and 30 seconds. A permanent failure (an SMTP `5xx` reply, a rejected recipient, a failed login, a TLS error) is not
 retried: the send is marked failed and shows in the sender's invite status. Neither is a send that timed out halfway, because
 the server may already have accepted it and a retry could deliver it twice.
+
+**Admin note.** With `ADMIN_EMAIL` set, the tag `access_request` is sent once for each new "Use our AI" request (not for a change to the note). The subject is always "Someone asked to use our AI on Behalf"; the body names the requester as a GitHub user and links to `/admin`, and never includes their note. It is capped at 20 an hour and 50 a day; each one says how many requests are waiting now (the new one included); one held back by a cap is not sent. It goes out only where it can be delivered: with `smtp`, or with the dev transport off the platform. On the platform the dev transport doesn't count, and with sign-in off there are no requests, so in both cases boot logs `mail.admin_email_unused`. With `smtp` that has not been verified (yet, or it failed), a notice is skipped and `mail.notice_skipped` is logged once.
 
 **Logs** carry the kind of email (`tag`), the transport and a code (`SMTP_550`, `EAUTH`, `ETLS`, ...). Never an address, a
 subject, a body or the server's reply text.
