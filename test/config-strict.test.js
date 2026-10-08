@@ -155,9 +155,12 @@ test('the GitHub secrets are redacted, kept out of the config, and removed from 
   for (const text of [JSON.stringify(s), util.inspect(s, { showHidden: true }), util.format('%o', s)]) assert.ok(!text.includes('VALUE'), text);
 });
 
-test('REQUIRE_DATABASE is strict, 1 or 0, and defaults to 0', () => {
+test('REQUIRE_DATABASE is strict, 1 or 0, and defaults to 0 off the platform and 1 on it (DROP_DATA_DIR set)', () => {
   for (const blank of [undefined, '', '  ']) assert.equal(loadConfig({ REQUIRE_DATABASE: blank }).requireDatabase, false);
   assert.equal(loadConfig({}).requireDatabase, false);
+  assert.equal(loadConfig({ DROP_DATA_DIR: '', SIGNIN: 'off' }).requireDatabase, false);
+  for (const blank of [undefined, '', '  ']) assert.equal(loadConfig({ DROP_DATA_DIR: '/data', SIGNIN: 'off', REQUIRE_DATABASE: blank }).requireDatabase, true);
+  assert.equal(loadConfig({ DROP_DATA_DIR: '/data', SIGNIN: 'off', REQUIRE_DATABASE: '0' }).requireDatabase, false, 'an explicit 0 still turns it off');
   assert.equal(loadConfig({ REQUIRE_DATABASE: '0' }).requireDatabase, false);
   assert.equal(loadConfig({ REQUIRE_DATABASE: '1' }).requireDatabase, true);
   assert.equal(loadConfig({ REQUIRE_DATABASE: ' 1 ' }).requireDatabase, true);
