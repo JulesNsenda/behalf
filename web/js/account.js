@@ -2,12 +2,12 @@
  * Who is signed in. Asks /api/me once, in parallel with the server's settings (with sign-in off the settings decide and its answer is ignored), fills the
  * header's account slot when the page has one, and tells the page scripts that subscribed when the answer changes.
  *
- * window.Account: load() resolves the last answer that could be read ({signin, user, agentKey}), or null only
+ * window.Account: load() resolves the last answer that could be read ({signin, user, agentKeys, ai, admin}), or null only
  * before the first one; current() is that answer, without waiting; refresh() asks again and, when it got an answer, tells every onChange listener (a failed
  * refresh tells nobody and keeps the last answer, so a page never goes back to "unknown"); onChange(fn) adds a listener.
  * The connect page subscribes, to follow a sign-out and the key panel. The start page has no slot and no listener:
  * it only reads load() once. The slot is a sibling of the main nav: it holds the signed-out sign-in link in the page's own markup (so it shows at once, and a test
- * holds that markup to account-view.js), is emptied and hidden with sign-in off, keeps the link when signed out, and "Signed in as ..." with a Sign out button when signed in. Wording comes from account-view.js.
+ * holds that markup to account-view.js), is emptied and hidden with sign-in off, keeps the link when signed out, and "Signed in as ..." with a Sign out button when signed in (and an Admin link before it, for an admin). Wording comes from account-view.js.
  */
 (function () {
   'use strict';
@@ -19,7 +19,7 @@
   var listeners = [];
   var pending = null;
   var last = null; // the last good answer
-  var OFF = { signin: 'off', user: null, agentKey: null };
+  var OFF = { signin: 'off', user: null, agentKeys: [], ai: 'none', admin: false };
 
   // The answer from the server, or null when it couldn't be read. With sign-in off there is nobody to ask about.
   // /api/me is asked at once, in parallel with the settings: asking one after the other doubled the wait before the start page
@@ -106,7 +106,7 @@
       // One of the two labels is display:none at any width, so a screen reader hears only the one on screen.
       UI.render(el, html`<a class="btn btn--secondary btn--small" id="account-signin" href="${UI.url(d.href)}">${UI.icon('github')}<span class="site-header__account-long">${d.text}</span><span class="site-header__account-short">${d.short}</span></a>`);
     } else {
-      UI.render(el, html`<span class="site-header__account-who">${d.hint ? html`<span class="sr-only">${d.hint}</span>` : false}<span class="site-header__account-login">${d.who}</span></span><button class="btn btn--link" type="button" id="sign-out">${d.signOut}</button>`);
+      UI.render(el, html`<span class="site-header__account-who">${d.hint ? html`<span class="sr-only">${d.hint}</span>` : false}<span class="site-header__account-login">${d.who}</span></span>${d.admin ? html`<a class="btn btn--link" id="account-admin" href="${UI.url(d.admin.href)}">${d.admin.text}</a>` : false}<button class="btn btn--link" type="button" id="sign-out">${d.signOut}</button>`);
       var button = UI.byId('sign-out');
       button.addEventListener('click', function () { signOut(button); });
     }

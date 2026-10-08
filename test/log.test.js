@@ -187,8 +187,8 @@ test('errorFields survives odd inputs, hostile names and throwing getters', () =
 
 test('kind accepts only a store record kind, and a login, a user id or a token cannot ride in it', () => {
   const { lines, log } = capture();
-  for (const k of ['room', 'user', 'session', 'agentkey', 'usage', 'meta']) log.info('x', { kind: k });
-  assert.deepEqual(lines, ['room', 'user', 'session', 'agentkey', 'usage', 'meta'].map((k) => `level=info event="x" kind="${k}"\n`));
+  for (const k of ['room', 'user', 'session', 'agentkey', 'aiaccess', 'usage', 'meta']) log.info('x', { kind: k });
+  assert.deepEqual(lines, ['room', 'user', 'session', 'agentkey', 'aiaccess', 'usage', 'meta'].map((k) => `level=info event="x" kind="${k}"\n`));
   lines.length = 0;
   for (const bad of ['octocat', '12345', 'Session', 'bh_abc', '', 7, null, {}]) log.info('x', { kind: bad });
   assert.ok(lines.every((l) => l === 'level=info event="x"\n'), lines.join(''));

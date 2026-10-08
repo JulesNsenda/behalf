@@ -1,5 +1,5 @@
 'use strict';
-// The one harness for running the real page scripts (web/js/account.js, connect.js, start.js, room-kit.js) in a vm against a small
+// The one harness for running the real page scripts (web/js/account.js, connect.js, start.js, admin.js, room-kit.js) in a vm against a small
 // fake of the page: just enough DOM for UI.render, UI.copyField and the controls they make, with the real ui.js and the real view modules.
 // Requests go through `request(method, url, body)`, which a test supplies (a script of answers, or the real ui.js over HTTP). What the
 // tests look at is what a person would: the markup a container was last given, the text of the command, the toasts, which control has
@@ -11,13 +11,14 @@ const { WEB } = require('./paths');
 
 const realUI = require('../web/ui/ui.js');
 const AccountView = require('../web/js/account-view.js');
+const AdminView = require('../web/js/admin-view.js');
 const RoomView = require('../web/js/room-view.js');
 const Links = require('../web/js/links.js');
 
 // The answers a scripted server gives, as UI.request resolves them.
 const ok = (status, data) => ({ ok: true, status, data: data || {} });
 const refused = (status, code) => ({ ok: false, status, data: code ? { error: 'text from the server', code } : {} });
-const ME = (over) => ({ signin: 'github', user: { login: 'octocat' }, agentKey: null, ...over });
+const ME = (over) => ({ signin: 'github', user: { login: 'octocat' }, agentKeys: [], ai: 'none', admin: false, ...over });
 
 const flush = async () => { for (let i = 0; i < 12; i++) await new Promise((r) => setImmediate(r)); };
 const plain = (html) => html.split('&#39;').join("'");
@@ -64,27 +65,34 @@ function runScripts(ctx, names) {
 //   request   (method, url, body) -> an answer (see ok, refused), or a promise of one
 //   config    what UI.loadConfig resolves (default: sign-in on), or null for settings that can't be read
 //   scripts   the scripts to run (default account.js and connect.js)
-//   pathname, search, origin   where the page is
+//   pathname, search, hash, origin   where the page is
 //   lazy      true: any id asked for is an element (the start page's form); false: only the connect page's own elements and what was rendered
 //   setTimeout  stands in for the page's timer (a test that runs a deadline by hand)
 //   hidden    ids of lazy elements that start hidden, as in the page's markup (the start page's form and sign-in)
 function loadPage(opts) {
   const page = { focused: null, toasts: [], requests: [], replaced: [], fieldErrors: [], windowListeners: {} };
   const named = {};
-  for (const id of ['mcp-url', 'mcp-command', 'command-note', 'no-signin-note']) named[id] = makeEl(page, id);
+  for (const id of ['mcp-url', 'mcp-command', 'command-note', 'no-signin-note', 'ai-access-line']) named[id] = makeEl(page, id);
   named['no-signin-note'].hidden = true;
+  named['ai-access-line'].hidden = true;
   named['command-note'].hidden = true;
-  const panel = container(page, 'key-panel');
+  const panel = container(page, 'agent-keys');
   const slot = container(page, 'account-slot');
+  const adminView = container(page, 'admin-view'); // the admin page's list
+  const inviteView = container(page, 'invite-view'); // the start page's invite step: the ids it renders are elements too
   panel.hidden = true;
   slot.hidden = true;
+  page.scrolled = 0; // how many times the key panel was scrolled into view
+  panel.scrollIntoView = () => { page.scrolled++; };
   const lazy = new Map();
   for (const id of opts.hidden || []) { const e = makeEl(page, id); e.hidden = true; lazy.set(id, e); }
   const byId = (id) => {
     if (named[id]) return named[id];
-    if (id === 'key-panel') return panel;
+    if (id === 'agent-keys') return panel;
     if (id === 'account-slot') return slot;
-    for (const c of [panel, slot]) { const e = c.find(id); if (e) return e; }
+    if (id === 'admin-view') return adminView;
+    if (id === 'invite-view' && opts.lazy) return inviteView;
+    for (const c of [panel, slot, adminView, ...(opts.lazy ? [inviteView] : [])]) { const e = c.find(id); if (e) return e; }
     if (!opts.lazy) return null;
     if (!lazy.has(id)) lazy.set(id, makeEl(page, id));
     return lazy.get(id);
@@ -102,7 +110,7 @@ function loadPage(opts) {
     fieldError: (input, errEl, message) => { page.fieldErrors.push([input.id, message]); },
   });
   const win = {
-    UI, RoomView, AccountView, Links,
+    UI, RoomView, AccountView, AdminView, Links,
     scrollTo() {},
     addEventListener(type, fn) { (page.windowListeners[type] = page.windowListeners[type] || []).push(fn); },
   };
@@ -110,7 +118,7 @@ function loadPage(opts) {
   const store = new Map();
   const ctx = {
     window: win, URLSearchParams, URL, Promise, Date, setTimeout: opts.setTimeout || setTimeout,
-    location: { origin: opts.origin || 'https://behalf.test', pathname: opts.pathname || '/connect', search: opts.search || '', assign() {} },
+    location: { origin: opts.origin || 'https://behalf.test', pathname: opts.pathname || '/connect', search: opts.search || '', hash: opts.hash || '', assign() {} },
     history: { replaceState: (a, b, u) => { page.replaced.push(u); } },
     document: { activeElement: null, title: '' },
     localStorage: { get length() { return store.size; }, key: (i) => [...store.keys()][i], getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) },
@@ -120,6 +128,7 @@ function loadPage(opts) {
   page.el = byId;
   page.window = win;
   page.panelHtml = () => plain(panel.innerHTML);
+  page.adminHtml = () => plain(adminView.innerHTML);
   page.slotHtml = () => slot.innerHTML;
   page.slotText = () => slot.innerHTML.replace(/<[^>]*>/g, ''); // what is read out: the markup without its tags
   page.command = () => named['mcp-command'].textContent;

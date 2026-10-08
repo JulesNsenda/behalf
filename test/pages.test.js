@@ -402,7 +402,8 @@ function fragments(html) {
 function fragmentDrift(pages) {
   const bad = [];
   for (const kind of ['account', 'nav', 'header', 'full', 'slim']) {
-    const all = pages.flatMap(([, html]) => fragments(html)[kind]);
+    // The slot is compared across the pages that have the nav; a task page's slot (admin.html) is a bare, JS-filled one.
+    const all = pages.filter(([, html]) => kind !== 'account' || fragments(html).nav.length > 0).flatMap(([, html]) => fragments(html)[kind]);
     if (new Set(all).size > 1) bad.push(kind);
   }
   return bad;
@@ -412,6 +413,7 @@ const fragmentPages = uiPages.filter((f) => f !== guide).map((f) => [rel(f), rea
 // Footer column of the page-migration plan. true = exactly one, false = none, 'maybe' = any number.
 // nav: whether the page has the main nav (reading pages do; task pages show a step label or status instead).
 // start.html: no footer on Start, a slim one on the Invite step (never a full one).
+// slot: a task page that has the account slot with no nav beside it (admin.html): the slot starts hidden and empty, and account.js fills it.
 const FOOTERS = {
   'index.html': { full: true, slim: false, nav: true },
   'start.html': { full: false, slim: 'maybe', nav: false },
@@ -419,6 +421,7 @@ const FOOTERS = {
   'agreement.html': { full: false, slim: true, nav: false },
   'connect.html': { full: true, slim: false, nav: true },
   'spec.html': { full: true, slim: false, nav: true },
+  'admin.html': { full: false, slim: false, nav: false, slot: true },
 };
 const countOk = (want, n) => (want === 'maybe' ? true : want ? n === 1 : n === 0);
 // What is wrong with one page that should be on the UI library.
@@ -434,7 +437,8 @@ function pageProblems(html, want) {
   }
   // The account slot goes with the nav: one on every page that has the nav, none elsewhere, and in the right place.
   if (want.nav !== undefined) {
-    if (f.account.length !== (want.nav ? 1 : 0)) problems.push('account slot: expected ' + (want.nav ? 'one' : 'none') + ', found ' + f.account.length);
+    const wantSlot = want.nav || want.slot === true;
+    if (f.account.length !== (wantSlot ? 1 : 0)) problems.push('account slot: expected ' + (wantSlot ? 'one' : 'none') + ', found ' + f.account.length);
     else if (want.nav && !slotBeforeNav(html)) problems.push('account slot: must come right before the main nav, not sit inside it');
   }
   return problems;
@@ -546,6 +550,22 @@ test('the page manifest check requires the main nav where the page has one and f
   for (const [name, want] of Object.entries(FOOTERS)) assert.strictEqual(typeof want.nav, 'boolean', name + ' states its nav');
 });
 
+test('a task page may hold the account slot with no nav (slot: true): one hidden, empty slot, and the nav pages still need theirs', () => {
+  const css = '<link rel="stylesheet" href="/ui/ui.css">';
+  const head = (end) => '<header class="site-header"><div class="site-header__inner"><div class="site-header__end">' + end + '</div></div></header>';
+  const bare = '<div class="site-header__account" id="account-slot" hidden></div>';
+  const want = { full: false, slim: false, nav: false, slot: true };
+  assert.deepStrictEqual(pageProblems(css + head(bare), want), []);
+  assert.deepStrictEqual(pageProblems(css + head('<span>x</span>'), want), ['account slot: expected one, found 0']);
+  assert.deepStrictEqual(pageProblems(css + head(bare + bare), want), ['account slot: expected one, found 2']);
+  assert.deepStrictEqual(pageProblems(css + head(bare), { ...want, slot: false }), ['account slot: expected none, found 1']);
+  assert.deepStrictEqual(FOOTERS['admin.html'], want, 'the admin page is in the manifest as a task page with the slot');
+  // its bare slot is not drift against the nav pages' slot
+  const nav = '<nav class="site-header__nav" aria-label="Main"><a href="/">x</a></nav>';
+  const slot = '<div class="site-header__account" id="account-slot"><a id="account-signin" href="/auth/github">Sign in</a></div>';
+  assert.deepStrictEqual(fragmentDrift([['a', css + head(slot + nav)], ['admin', css + head(bare)]]), []);
+});
+
 test('the page manifest check wants the account slot right before the nav, never inside it, and never twice', () => {
   const css = '<link rel="stylesheet" href="/ui/ui.css">';
   const head = (end) => '<header class="site-header"><div class="site-header__inner"><div class="site-header__end">' + end + '</div></div></header>';
@@ -576,17 +596,24 @@ test('every page with the main nav carries the same account slot, and no other p
   assert.ok(!/^<div[^>]*\shidden\b/.test(slots[0][0]), 'the slot shows with the page');
   // The static link is exactly what account-view.js renders for a signed-out person (the words, and a href that works with no script).
   const AccountView = require('../web/js/account-view.js');
-  const d = AccountView.slot({ signin: 'github', user: null, agentKey: null }, '/spec');
+  const d = AccountView.slot({ signin: 'github', user: null, agentKeys: [] }, '/spec');
   const m = /^<div class="site-header__account" id="account-slot"><a class="btn btn--secondary btn--small" id="account-signin" href="([^"]*)"><svg[\s\S]*?<\/svg><span class="site-header__account-long">([^<]*)<\/span><span class="site-header__account-short">([^<]*)<\/span><\/a><\/div>$/.exec(slots[0][0]);
   assert.ok(m, slots[0][0]);
   assert.deepStrictEqual([m[1], m[2], m[3]], [d.href, d.text, d.short], 'static sign-in link drifted from account-view.js');
   assert.strictEqual(m[1], '/auth/github');
-  for (const [n, h] of fragmentPages.filter(([, h]) => fragments(h).nav.length === 0)) assert.deepStrictEqual(fragments(h).account, [], n);
+  // The manifest's slot flag says which nav-less pages hold the bare slot; every other one has none.
+  const isBare = (n) => Boolean(FOOTERS[n] && FOOTERS[n].slot === true);
+  for (const [n, h] of fragmentPages.filter(([n, h]) => fragments(h).nav.length === 0 && !isBare(n))) assert.deepStrictEqual(fragments(h).account, [], n);
+  // The bare slots are one fragment across the pages that have one, so they cannot drift apart.
+  const bare = fragmentPages.filter(([n]) => isBare(n));
+  assert.ok(bare.length >= 1, 'at least the admin page');
+  for (const [n, h] of bare) assert.strictEqual(fragments(h).account.length, 1, n);
+  assert.strictEqual(new Set(bare.flatMap(([, h]) => fragments(h).account)).size, 1, 'the bare slot drifted between slot pages');
   for (const [n, h] of withNav) assert.ok(slotBeforeNav(h), n);
 });
 
 test('the pages that fill the account slot, and start, load the sign-in scripts in order and before their own script; spec.html needs no room-view.js', () => {
-  const wanted = { 'index.html': 'home.js', 'connect.html': 'connect.js', 'spec.html': 'protocol.js', 'start.html': 'start.js' };
+  const wanted = { 'index.html': 'home.js', 'connect.html': 'connect.js', 'spec.html': 'protocol.js', 'start.html': 'start.js', 'admin.html': 'admin.js' };
   for (const [page, own] of Object.entries(wanted)) {
     const srcs = scriptSrcs(read(path.join(WEB, page)));
     const at = (s) => srcs.indexOf(s);
@@ -595,7 +622,7 @@ test('the pages that fill the account slot, and start, load the sign-in scripts 
     assert.ok(at('/js/account.js') < at('/js/' + own), page + ' account.js before ' + own);
   }
   // room-view.js only where the page itself words rooms (the account scripts take their words from account-view.js)
-  const needsRoomView = { 'index.html': true, 'connect.html': true, 'start.html': true, 'spec.html': false };
+  const needsRoomView = { 'index.html': true, 'connect.html': true, 'start.html': true, 'spec.html': false, 'admin.html': false };
   for (const [page, needs] of Object.entries(needsRoomView)) assert.strictEqual(scriptSrcs(read(path.join(WEB, page))).includes('/js/room-view.js'), needs, page);
   assert.ok(!/RoomView/.test(read(path.join(WEB, 'js', 'account.js'))), 'account.js does not use room-view.js');
   for (const page of ['room.html', 'agreement.html']) assert.ok(!/account/.test(scriptSrcs(read(path.join(WEB, page))).join()), page + ' has no sign-in scripts');
@@ -726,7 +753,9 @@ test('start.js: the form is replaced, not just covered; sign-in on comes from th
   assert.match(src, /signinView\.hidden = false;\s*form\.hidden = true;/);
   assert.match(src, /me && me\.signin === 'github' && !me\.user/);
   assert.match(src, /configLoaded\.then\(function \(c\) \{ return c && c\.signin === 'github' \? Account\.load\(\) : null; \}\)/, 'sign-in on comes from the settings only');
-  assert.ok(!/UI\.request\([^)]*api\/me/.test(src),'start.js never asks /api/me itself: Account does');
+  assert.ok(!/UI\.request\(\s*'GET',\s*['"`]\/api\/me(?:[?'"`])/.test(src), 'start.js never asks /api/me itself: Account does');
+  assert.ok(!/UI\.request\([^)]*['"`]\/api\/me['"`?]/.test(src.replace(/['"`]\/api\/me\/ai-access['"`]/g, '')), 'no other way of asking /api/me either');
+  assert.match(src, /UI\.request\(\s*'POST',\s*'\/api\/me\/ai-access'/, 'the access request is the one /api/me call');
   assert.match(read(path.join(WEB, 'start.html')), /<div class="stack stack--md" id="signin-view" hidden><\/div>/);
 });
 
@@ -837,19 +866,20 @@ test('connect.js: the key is never written into markup, and the sign-in scripts 
   }
   // The panel sits above step 1 (whose command uses the key), and the panel and the notes start hidden: sign-in off leaves the page as it was.
   const html = read(path.join(WEB, 'connect.html'));
-  assert.ok(html.indexOf('id="key-panel"') > 0 && html.indexOf('id="key-panel"') < html.indexOf('<ol class="steps">'), 'the key panel is above the steps');
-  assert.match(html, /<section class="card stack" id="key-panel" aria-labelledby="key-title" hidden><\/section>/);
+  assert.ok(html.indexOf('id="agent-keys"') > 0 && html.indexOf('id="agent-keys"') < html.indexOf('<ol class="steps">'), 'the key panel is above the steps');
+  assert.match(html, /<section class="card stack" id="agent-keys" aria-labelledby="key-title" hidden><\/section>/);
   assert.match(html, /<p class="text-caption" id="command-note" hidden><\/p>/);
   // "There is no sign-in." stays for sign-in off, in a span that starts hidden (the scripts show it only for sign-in off).
   assert.match(html, /<span id="no-signin-note" hidden>There is no sign-in\. <\/span>/);
 });
 
-test('every POST the account and connect scripts make passes {}: a bodyless one has no JSON content type and the server answers 415', () => {
+test('every POST the account and connect scripts make passes a body (at least {}): a bodyless one has no JSON content type and the server answers 415', () => {
+  const bodies = { 'account.js': [', {}'], 'connect.js': [', { name: name }', ', { kid: kid }'] };
   for (const name of ['account.js', 'connect.js']) {
     const src = read(path.join(WEB, 'js', name));
     const posts = [...src.matchAll(/UI\.request\('POST', ('[^']+')(, [^)]*)?\)/g)];
     assert.ok(posts.length >= 1, name);
-    for (const m of posts) assert.strictEqual(m[2], ', {}', `${name}: ${m[0]}`);
+    assert.deepStrictEqual(posts.map((m) => m[2]), bodies[name], name);
   }
   assert.strictEqual([...read(path.join(WEB, 'js', 'connect.js')).matchAll(/UI\.request\('POST'/g)].length, 2);
 });
@@ -882,13 +912,24 @@ test('the header only wraps where it holds the nav; the room, start and agreemen
   assert.match(css, /\.site-header__account \{[^}]*margin-inline-start: auto;/, 'the slot keeps to the right of the nav');
   assert.ok(!/(?<![\w-])\.account(?:__|\b)/.test(css.replace(/\.site-header__account/g, '')), 'the old class names are gone');
 });
+test('the home hero offers "Use your own AI agent" (the nav label) to /connect next to the primary call to action', () => {
+  const html = read(path.join(WEB, 'index.html'));
+  assert.match(html, /<a class="btn btn--primary" href="\/start">Start a room<\/a>\s*<a class="btn btn--secondary" href="\/connect">Use your own AI agent<\/a>/);
+  assert.match(html, /<a class="hide-sm" href="\/connect">Use your own AI agent<\/a>/, 'the same label as the nav');
+});
+
+const LOCATION_WRITE = new RegExp(/location\s*\.\s*(?:hash|search|href)/.source + ASSIGN_OP); // the assignment grammar of URL_SINKS
+
 test('the agent key never reaches storage, the address bar or a cookie: no account script touches them', () => {
   for (const name of ['account.js', 'account-view.js', 'connect.js']) {
     const src = read(path.join(WEB, 'js', name)).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    for (const bad of [/\blocalStorage\b/, /\bsessionStorage\b/, /document\.cookie/, /\bindexedDB\b/, /\breplaceState\b/, /\bpushState\b/, /location\.(hash|search|href)\s*=/, /\bconsole\./]) {
+    for (const bad of [/\blocalStorage\b/, /\bsessionStorage\b/, /document\.cookie/, /\bindexedDB\b/, /\breplaceState\b/, /\bpushState\b/, LOCATION_WRITE, /\bconsole\./]) {
       assert.ok(!bad.test(src), name + ' uses ' + bad);
     }
   }
+  // The address-bar check catches a write, not a comparison: reading the hash is fine.
+  for (const w of ['location.hash = x', 'location.href=x', 'location.search += x']) assert.ok(LOCATION_WRITE.test(w), w);
+  for (const r of ["location.hash === '#a'", 'location.hash == x', "location.hash !== ''"]) assert.ok(!LOCATION_WRITE.test(r), r);
 });
 
 test('the room scripts pass a refusal\'s machine code on to errorMessage, like start.js', () => {
@@ -897,4 +938,51 @@ test('the room scripts pass a refusal\'s machine code on to errorMessage, like s
   assert.match(kit, /RV\.errorMessage\(status === A\.BLOCKED \? '' : o\.kind, status, code\)/);
   const setup = read(path.join(WEB, 'js', 'room-setup.js'));
   assert.match(setup, /function helpFail\(status, code\) \{ ui\.showError\('help-error', RV\.errorMessage\('draft', status, code\)\); \}/);
+});
+
+// ---- "Use our AI" and the admin page ----
+test('admin.html: a task page with no footer, the slot hidden until account.js fills it, noindex, and the page scripts in order', () => {
+  const html = read(path.join(WEB, 'admin.html'));
+  assert.match(html, /<div class="site-header__end"><div class="site-header__account" id="account-slot" hidden><\/div><\/div>/);
+  assert.ok(!/<footer\b/i.test(html), 'a task page has no footer');
+  assert.match(html, /<meta name="robots" content="noindex">/);
+  assert.deepStrictEqual(scriptSrcs(html).filter((x) => x.startsWith('/js/')), ['/js/account-view.js', '/js/account.js', '/js/admin-view.js', '/js/admin.js']);
+  assert.match(html, /<div id="admin-view" aria-busy="true" aria-live="polite"><\/div>/);
+  // the static title and lead are the view module's words
+  const AdminView = require('../web/js/admin-view.js');
+  assert.ok(html.includes('<h1 id="admin-title" tabindex="-1">' + AdminView.TITLE + '</h1>'));
+  assert.ok(html.includes('<p class="text-muted">' + AdminView.LEAD + '</p>'));
+  assert.ok(html.includes('<title>' + AdminView.TITLE + ' · Behalf</title>'));
+});
+
+test('admin.js: a note is only ever a text interpolation, never a link, a URL or an attribute; the buttons are plain buttons with ids from a checked user id', () => {
+  const src = read(path.join(WEB, 'js', 'admin.js'));
+  assert.match(src, /<p class="quote__text prose">\$\{r\.note\}<\/p>/);
+  assert.strictEqual((src.match(/\$\{r\.note\}/g) || []).length, 1, 'the note is interpolated once, as text');
+  assert.ok(!/="[^"]*\$\{[^}]*note/.test(src) && !/<a\b[^>]*note/.test(src) && !/linkify|autolink/i.test(src), 'never in an attribute or a link');
+  assert.strictEqual((src.match(/UI\.request\('POST'/g) || []).length, 1);
+  assert.match(src, /UI\.request\('POST', '\/api\/admin\/ai-access', \{ userId: r\.userId, decision: decision \}\)/);
+  assert.match(src, /UI\.request\('GET', '\/api\/admin\/ai-access'\)/);
+  assert.match(src, /if \(res\.status === 404\) return \(afterDecision \? Account\.refresh\(\) : Promise\.resolve\(\)\)\.then\(drawUnavailable\);/, 'a 404 is the plain not available state, after the account is asked again following a decision');
+  assert.match(src, /errorMessage\('adminDecide', res\.status, \(res\.data \|\| \{\}\)\.code\), true\)/, 'a decision reloads with the recheck on');
+  assert.ok(!/btn--primary/.test(src), 'no primary button on the list');
+});
+
+test('start.html and start.js: the Use our AI block sits outside the radio cards, hidden until the script decides; both seats are sent as their own AI without access', () => {
+  const html = read(path.join(WEB, 'start.html'));
+  assert.match(html, /<div class="card stack stack--sm" id="ai-access" hidden><\/div>/);
+  const cards = [...html.matchAll(/<label class="radio-card"[\s\S]*?<\/label>/g)].map((m) => m[0]);
+  assert.strictEqual(cards.length, 2);
+  assert.ok(cards.every((c) => !c.includes('ai-access')), 'not inside a label: the request controls would toggle the radio');
+  const src = read(path.join(WEB, 'js', 'start.js'));
+  assert.match(src, /var live = config\.live && !limited;/);
+  assert.match(src, /modeA: live && UI\.byId\('ai-builtin'\)\.checked \? 'builtin' : 'external',\s*modeB: live \? 'builtin' : 'external',/);
+  assert.match(src, /UI\.request\('POST', '\/api\/me\/ai-access', \{ note: note \}\)/);
+  assert.match(src, /UI\.describedBy\.add\(builtin, 'ai-access-lead'\)/, 'the disabled card points at the block');
+  assert.match(src, /res\.status === 403 && code === 'ai_access'/);
+  assert.ok(!/btn--primary/.test(src.slice(src.indexOf('function renderAccess'), src.indexOf('function applyAccess'))), 'the request is a secondary button');
+});
+
+test('connect.html: the access line starts hidden', () => {
+  assert.match(read(path.join(WEB, 'connect.html')), /<p class="text-muted" id="ai-access-line" hidden><\/p>/);
 });

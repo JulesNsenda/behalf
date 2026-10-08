@@ -145,6 +145,16 @@ test('GITHUB_BLOCKED_IDS is a comma-separated list of numeric ids, strict', () =
   }
 });
 
+test('ADMIN_GITHUB_IDS is parsed like GITHUB_BLOCKED_IDS, strict, under its own code', () => {
+  for (const blank of [undefined, '', '  ']) assert.deepEqual([...loadConfig({ ADMIN_GITHUB_IDS: blank }).adminGithubIds], []);
+  assert.deepEqual([...loadConfig({ ADMIN_GITHUB_IDS: ' 42 , 7,0042 ' }).adminGithubIds], ['42', '7', '42']);
+  assert.ok(Object.isFrozen(loadConfig({ ADMIN_GITHUB_IDS: '1' }).adminGithubIds));
+  assert.deepEqual([...loadConfig({ ADMIN_GITHUB_IDS: '5', GITHUB_BLOCKED_IDS: '9' }).githubBlockedIds], ['9'], 'the two lists are separate');
+  for (const bad of ['abc', '1,', ',1', '1,,2', '-1', '1.5', '0', '1e3', '0x10', '1 2', '1234567890123456', 'octocat', MARKER]) {
+    assert.throws(() => loadConfig({ ADMIN_GITHUB_IDS: bad }), (e) => e instanceof ConfigError && e.code === 'BAD_ADMIN_GITHUB_IDS' && !e.message.includes(MARKER), bad);
+  }
+});
+
 test('the GitHub secrets are redacted, kept out of the config, and removed from the environment', () => {
   const env = { GITHUB_CLIENT_ID: 'cid-VALUE', GITHUB_CLIENT_SECRET: 'csec-VALUE', KEEP: '1' };
   const config = loadConfig(env);

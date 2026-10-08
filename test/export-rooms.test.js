@@ -34,7 +34,7 @@ async function seeded({ keepOpen = false } = {}) {
   for (const id of ['room0001', 'room0002']) { const r = minimalRoom(id); r.note = 'n-' + id; s.state.rooms.set(id, r); s.save(id); }
   Object.assign(s.state.usage, { day: '2026-10-03', total: 4, byIp: { '1.2.3.4': 2 }, byUser: { u1: 2 } });
   s.saveUsage();
-  const accounts = { user: { u1: { id: 'u1', login: 'ada-lovelace-login' } }, session: { s1: { user: 'u1', at: 1 } }, agentkey: { k1: { user: 'u1', hash: 'h' } } };
+  const accounts = { user: { u1: { id: 'u1', login: 'ada-lovelace-login' } }, session: { s1: { user: 'u1', at: 1 } }, agentkey: { k1: { user: 'u1', hash: 'h' } }, aiaccess: { u1: { status: 'granted', note: '', requestedAt: null, decidedAt: 1 } } };
   for (const [kind, recs] of Object.entries(accounts)) {
     const col = s.collection(kind);
     for (const [id, rec] of Object.entries(recs)) { col.map.set(id, rec); col.save(id); }
@@ -48,6 +48,7 @@ function snapshot(store) {
   return {
     rooms: mapOf(store.state.rooms), usage: plain(store.state.usage),
     users: mapOf(store.collection('user').map), sessions: mapOf(store.collection('session').map), agentkeys: mapOf(store.collection('agentkey').map),
+    aiaccess: mapOf(store.collection('aiaccess').map),
   };
 }
 
@@ -58,10 +59,10 @@ test('the export loads in the file store as the same rooms, usage and accounts, 
   const before = await rows('SELECT kind, id, doc, updated_at FROM behalf_records ORDER BY kind, id');
   const out = path.join(dir, 'rooms.json');
   const res = await exportRooms({ url: db.url, out });
-  assert.deepEqual(res, { counts: { room: 2, usage: 1, user: 1, session: 1, agentkey: 1 }, skipped: 0 });
+  assert.deepEqual(res, { counts: { room: 2, usage: 1, user: 1, session: 1, agentkey: 1, aiaccess: 1 }, skipped: 0 });
   assert.deepEqual(await rows('SELECT kind, id, doc, updated_at FROM behalf_records ORDER BY kind, id'), before, 'the table is untouched');
   const doc = JSON.parse(fs.readFileSync(out, 'utf8'));
-  assert.deepEqual(Object.keys(doc), ['schemaVersion', 'rooms', 'usage', 'users', 'sessions', 'agentkeys']);
+  assert.deepEqual(Object.keys(doc), ['schemaVersion', 'rooms', 'usage', 'users', 'sessions', 'agentkeys', 'aiaccess']);
   assert.equal(doc.schemaVersion, 1);
   const file = createStore({ file: out, log: capture() });
   file.load();

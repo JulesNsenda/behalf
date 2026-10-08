@@ -35,6 +35,15 @@
   // ---------- welcome and preview ----------
 
   A.steps.welcome = (function () {
+    // The invited person chooses between our AI and their own only when their seat is one of ours to run (a built-in seat on a server
+    // that is live for this room). A seat that brings its own agent goes straight to the connect steps: nothing here could change it.
+    function seatShown() { return A.room.seat ? A.mine() : A.room.seats && A.room.seats.B; } // the preview shows what seat B will see
+
+    function choosing() {
+      var seat = seatShown();
+      return Boolean(A.room.live && seat && seat.mode === 'builtin');
+    }
+
     function whoChoice() {
       var text = A.text;
       return html`<fieldset class="stack stack--sm">
@@ -60,28 +69,30 @@
           <p class="text-muted">${text.welcomeIntro}</p>
         </div>
         <div class="stack stack--sm">${text.reassure.map(function (t) { return ui.callout('info', t); })}</div>
-        ${room.live ? whoChoice() : false}
+        ${choosing() ? whoChoice() : false}
         ${ui.connectBlock(Boolean(room.seat))}
         <div class="cluster"><button class="btn btn--primary" type="button" id="welcome-continue"></button></div>
       </div>`;
     }
 
     function wire(step) {
-      var live = Boolean(A.room.live);
+      var choose = choosing();
       var preview = step.banner === 'preview';
+      var seat = seatShown();
+      var external = Boolean(seat && seat.mode === 'external'); // brings its own agent, whatever the server can run
       var own = UI.byId('who-own');
       var builtin = UI.byId('who-builtin');
       var box = UI.byId('connect-steps');
       var go = UI.byId('welcome-continue');
       ui.fillConnect(Boolean(A.room.seat));
-      if (live) (A.ownChoice() ? own : builtin).checked = true;
+      if (choose) (A.ownChoice() ? own : builtin).checked = true;
       function sync() {
-        var wantOwn = live && own.checked;
-        box.hidden = live && !wantOwn;
+        var wantOwn = choose ? own.checked : external;
+        box.hidden = choose && !wantOwn;
         go.textContent = wantOwn ? A.text.continueOwnButton : A.text.continueButton;
       }
       sync();
-      if (live) {
+      if (choose) {
         [builtin, own].forEach(function (el) {
           el.addEventListener('change', function () {
             if (!preview) A.setOwnChoice(own.checked);

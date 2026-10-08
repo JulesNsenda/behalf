@@ -12,11 +12,14 @@ const errors = require('../lib/errors');
 const { serverSource } = require('./paths');
 
 const EXPECTED = {
-  create: [[401, 'signin_required'], [403, 'origin'], [415, 'content_type'], [429, 'user_limit'], [429, 'ip_limit'], [429, 'daily_limit'], [503, 'saving_unavailable']],
-  draft: [[503, 'shutting_down']],
+  create: [[401, 'signin_required'], [403, 'origin'], [415, 'content_type'], [429, 'user_limit'], [429, 'ip_limit'], [429, 'daily_limit'], [503, 'saving_unavailable'], [403, 'ai_access']],
+  draft: [[503, 'shutting_down'], [403, 'ai_access']],
+  invite: [[401, 'signin_required'], [403, 'origin'], [415, 'content_type'], [429, 'invite_limit'], [429, 'invite_address_limit'], [429, 'invite_daily_limit'], [503, 'mail_off'], [503, 'saving_unavailable']],
   logout: [[403, 'origin'], [415, 'content_type'], [503, 'saving_unavailable']],
-  keyCreate: [[401, 'signin_required'], [403, 'origin'], [415, 'content_type'], [429, 'rate_limited'], [503, 'saving_unavailable']],
+  keyCreate: [[400, 'key_name'], [400, 'key_name_taken'], [401, 'signin_required'], [403, 'origin'], [409, 'key_limit'], [415, 'content_type'], [429, 'rate_limited'], [503, 'saving_unavailable']],
   keyRevoke: [[401, 'signin_required'], [403, 'origin'], [415, 'content_type'], [503, 'saving_unavailable']],
+  aiRequest: [[400, 'ai_note'], [401, 'signin_required'], [403, 'origin'], [415, 'content_type'], [429, 'rate_limited'], [503, 'requests_full']],
+  adminDecide: [[403, 'origin'], [415, 'content_type'], [503, 'saving_unavailable']],
 };
 
 // Codes only an MCP client can receive, with no web action. (agentKeyRequired answers create_room with signin_required, which the web
@@ -37,7 +40,8 @@ function codesInServer() {
   }
   for (const value of Object.values(errors)) {
     if (typeof value === 'string') found.add(value);
-    else if (typeof value === 'function' && !isClass(value)) for (const e of [value(false), value(true)]) if (e.apiCode) found.add(e.apiCode);
+    // A factory may take the deploy's public URL (agentKeyRequired names it in its sentence), so every call passes a dummy one.
+    else if (typeof value === 'function' && !isClass(value)) for (const e of [value(false, 'https://x.test'), value(true, 'https://x.test')]) if (e instanceof errors.ApiError && e.apiCode) found.add(e.apiCode); // a helper that is not a refusal adds nothing
   }
   return found;
 }

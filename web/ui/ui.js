@@ -173,15 +173,16 @@
     }, function () { return { ok: false, status: 0, data: {} }; });
   }
 
-  // The server's settings as {live, passcode, signin}, or null when they couldn't be read. signin is 'github'
-  // when people must sign in to open a room, and 'off' otherwise (also when an older server doesn't say).
+  // The server's settings as {live, passcode, signin, invite}, or null when they couldn't be read. signin is 'github'
+  // when people must sign in to open a room, and 'off' otherwise (also when an older server doesn't say). invite is
+  // true only when the server says exactly that: an invite can be sent by email.
   // One request per page: a good answer is kept, a failed one is not, so the next call tries again.
   var configPromise = null;
   function loadConfig() {
     if (!configPromise) {
       configPromise = request('GET', '/api/config').then(function (res) {
         if (!res.ok || typeof res.data.live !== 'boolean') { configPromise = null; return null; }
-        return { live: res.data.live, passcode: Boolean(res.data.passcode), signin: res.data.signin === 'github' ? 'github' : 'off' };
+        return { live: res.data.live, passcode: Boolean(res.data.passcode), signin: res.data.signin === 'github' ? 'github' : 'off', invite: res.data.invite === true };
       });
     }
     return configPromise;

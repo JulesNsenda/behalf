@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Who can use our AI · Behalf</title>
+<link rel="icon" href="/ui/logo.svg">
+<script src="/ui/theme.js"></script>
+<link rel="stylesheet" href="/ui/ui.css">
+<script src="/ui/ui.js" defer></script>
+<script src="/js/account-view.js" defer></script>
+<script src="/js/account.js" defer></script>
+<script src="/js/admin-view.js" defer></script>
+<script src="/js/admin.js" defer></script>
+</head>
+<body>
+<div class="page">
+
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="brand" href="/"><img class="brand__logo" src="/ui/logo.svg" alt="">Behalf</a>
+    <div class="site-header__end"><div class="site-header__account" id="account-slot" hidden></div></div>
+  </div>
+</header>
+
+<main class="page__main">
+<div class="container container--read">
+
+  <section class="stack stack--md" aria-labelledby="admin-title">
+    <div class="stack stack--sm">
+      <h1 id="admin-title" tabindex="-1">Who can use our AI</h1>
+      <p class="text-muted">People ask for access on the start page. Grant or deny each request here.</p>
+    </div>
+
+    <div id="admin-view" aria-busy="true" aria-live="polite"></div>
+  </section>
+
+</div>
+</main>
+
+</div>
+</body>
+</html>

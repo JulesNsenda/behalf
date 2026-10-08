@@ -98,6 +98,9 @@ test('the outbox page is on only off the platform', () => {
   assert.equal(loadConfig({}).devOutbox, true);
   assert.equal(loadConfig({ DROP_DATA_DIR: '/data', SIGNIN: 'off' }).devOutbox, false);
   assert.equal(loadConfig({ DATABASE_URL: 'postgres://x', SIGNIN: 'off' }).devOutbox, false);
+  // and only where PUBLIC_URL is unset or names this machine: a public self-hosted deploy never serves or writes an outbox
+  for (const local of ['http://localhost:3000', 'http://127.0.0.1:8080', 'http://[::1]:3000']) assert.equal(loadConfig({ PUBLIC_URL: local }).devOutbox, true, local);
+  for (const open of ['https://behalf.example.com', 'http://192.168.1.5:3000', 'not a url']) assert.equal(loadConfig({ PUBLIC_URL: open }).devOutbox, false, open);
 });
 
 // ---------- messages ----------

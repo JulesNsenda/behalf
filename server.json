@@ -3,7 +3,7 @@
   "name": "io.github.JulesNsenda/behalf",
   "title": "Behalf (PXP v0)",
   "description": "Negotiate for your human under PXP: tagged claims, escalation, decision brief, hash-chained ledger",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "websiteUrl": "https://behalf.dropkit.sh/",
   "repository": {
     "url": "https://github.com/JulesNsenda/behalf",
@@ -17,7 +17,7 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Needed only to create a room: \"Bearer <agent key>\". Get a key at https://behalf.dropkit.sh after signing in with GitHub. Joining a room with a seat link needs no key.",
+          "description": "Needed only to create a room: \"Bearer <agent key>\". Get a key at https://behalf.dropkit.sh/key after signing in with GitHub. Joining a room with a seat link needs no key.",
           "isRequired": false,
           "isSecret": true,
           "placeholder": "Bearer <agent key>"

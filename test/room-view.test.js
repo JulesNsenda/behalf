@@ -860,13 +860,31 @@ test('errorMessage: fixed sentences per action, status-specific where it helps',
 
 // Which server code regions belong to which action. Codes outside these (invalid JSON 400, body too large 413, unknown room 404,
 // unknown seat 400) are shared by every route and are explicitly allowed to use the action's default sentence.
-// The region markers below rely on function order in lib/rooms.js: rollDay..sealCard, draftCard..answerEscalation and resume..startIfReady.
-function codesIn(src, startMarker, endMarker) {
+// The region markers below rely on function order in lib/rooms.js: rollDay..sealCard, draftCard..answerEscalation and resume..startIfReady,
+// and reserveInvite followed by the eviction section; the invite route in lib/http.js runs from its own match to the shared room lookup,
+// and the composed invite operation in lib/app.js runs up to the shared operations. A call to a lib/errors.js factory counts as its status.
+// The status each factory makes (a call passes a dummy public URL, as the census in test-support/refusals.js does).
+const ERRORS = require('../lib/errors');
+const FACTORY_STATUS = new Map();
+for (const [name, value] of Object.entries(ERRORS)) {
+  if (typeof value !== 'function' || /^class\b/.test(Function.prototype.toString.call(value))) continue;
+  const e = value(false, 'https://x.test');
+  if (e instanceof ERRORS.ApiError) FACTORY_STATUS.set(name, e.code);
+}
+const FACTORY_CALL = new RegExp('\\b(' + [...FACTORY_STATUS.keys()].join('|') + ')\\(', 'g');
+
+// `factories` also counts a call to a lib/errors.js factory as its status. Only the invite regions ask: the other actions' coded factory
+// refusals (a 401 sign-in, a 403 ai_access) are worded by code, and held by EXPECTED and the census in test-support/refusals.js.
+function codesIn(src, startMarker, endMarker, { factories = false } = {}) {
   const from = src.indexOf(startMarker);
   assert.ok(from >= 0, startMarker);
   const to = endMarker ? src.indexOf(endMarker, from + startMarker.length) : src.length;
   assert.ok(to > from, endMarker);
-  return new Set([...src.slice(from, to).matchAll(/(?:send\(res, |ApiError\()([45]\d{2})/g)].map(m => Number(m[1])));
+  const region = src.slice(from, to);
+  return new Set([
+    ...[...region.matchAll(/(?:send\(res, |ApiError\()([45]\d{2})/g)].map(m => Number(m[1])),
+    ...(factories ? [...region.matchAll(FACTORY_CALL)].map(m => FACTORY_STATUS.get(m[1])) : []),
+  ]);
 }
 
 test('errorMessage: every status code the server returns for an action has its own sentence', () => {
@@ -880,7 +898,14 @@ test('errorMessage: every status code the server returns for an action has its o
     seal: codesIn(src, 'function sealCard', 'function joinAsAgent'),
     answer: codesIn(src, 'function answerEscalation', 'function resume'),
     resume: codesIn(src, 'function resume', 'function startIfReady'),
+    // the domain's refusals, the route's own sends (the route is matched before the shared seat block) and the composed operation's (mail_off)
+    invite: new Set([
+      ...codesIn(src, 'function reserveInvite', '// ---------- eviction', { factories: true }),
+      ...codesIn(src, "parts[5] === 'invite'", "const room = parts[1] === 'rooms'", { factories: true }),
+      ...codesIn(src, 'function invite({', '// Shared operations, used by', { factories: true }),
+    ]),
   };
+  assert.ok([400, 403, 404, 409, 429, 503].every((c) => regions.invite.has(c)), [...regions.invite].join());
   // the answer route has its own demo branch with a 409
   for (const c of codesIn(src, "if (action === 'answer')", "if (action === 'resume')")) regions.answer.add(c);
   for (const a of ['draft', 'seal', 'answer', 'resume']) for (const c of seatGate) regions[a].add(c);
@@ -902,8 +927,9 @@ test('errorMessage: every status code the server returns for an action has its o
 // account-view.js (sign-out and the agent key), and every sentence by code has to be on the list.
 const AV = require('../web/js/account-view.js');
 const { EXPECTED, unclassifiedCodes, codesInServer } = require('../test-support/refusals');
-const ACCOUNT_ACTIONS = ['logout', 'keyCreate', 'keyRevoke'];
-const sentence = (action, status, code) => (ACCOUNT_ACTIONS.includes(action) ? AV : RV).errorMessage(action, status, code);
+const ACCOUNT_ACTIONS = ['logout', 'keyCreate', 'keyRevoke', 'aiRequest'];
+const ADMIN = require('../web/js/admin-view.js'); // the admin page's decisions are worded in admin-view.js
+const sentence = (action, status, code) => (action === 'adminDecide' ? ADMIN : ACCOUNT_ACTIONS.includes(action) ? AV : RV).errorMessage(action, status, code);
 
 test('errorMessage: every coded refusal in EXPECTED has its own sentence, and every sentence by code is for one in EXPECTED', () => {
   const allCodes = [...new Set(Object.values(EXPECTED).flatMap((pairs) => pairs.map(([, c]) => c))), 'made_up_code'];
@@ -949,7 +975,7 @@ test('errorMessage: never contains or reflects server text', () => {
 const ALL_ACTIONS = ['seal', 'draft', 'answer', 'resume', 'create', 'demo', 'load'];
 
 test('errorMessage: a code picks its own sentence before the status, for create', () => {
-  const codes = ['signin_required', 'origin', 'content_type', 'saving_unavailable', 'user_limit', 'ip_limit', 'daily_limit'];
+  const codes = ['signin_required', 'origin', 'content_type', 'saving_unavailable', 'user_limit', 'ip_limit', 'daily_limit', 'ai_access'];
   const sentences = codes.map((c) => RV.errorMessage('create', 599, c));
   assert.strictEqual(new Set(sentences).size, sentences.length, 'each code has its own sentence');
   assert.strictEqual(RV.errorMessage('create', 401, 'signin_required'), "The room wasn't opened because you're not signed in.");
@@ -987,8 +1013,20 @@ test('errorMessage: the code is untrusted: only an own sentence of that action i
   assert.strictEqual(RV.errorMessage('create', 0, 'signin_required'), "We couldn't reach the server. Check your connection and try again.", 'no connection beats a code');
 });
 
+test('errorMessage: a room or draft refused for want of access to our AI says so, in its own sentence, and a draft keeps the fields open', () => {
+  const create = RV.errorMessage('create', 403, 'ai_access');
+  assert.strictEqual(create, 'Our AI needs approval first. Ask for access below, or use your own AI agent.');
+  assert.notStrictEqual(create, RV.errorMessage('create', 403), 'not the passcode sentence');
+  assert.notStrictEqual(create, RV.errorMessage('create', 500));
+  const draft = RV.errorMessage('draft', 403, 'ai_access');
+  assert.strictEqual(draft, "Our AI isn't available for this room. You can fill in the fields yourself.");
+  assert.notStrictEqual(draft, RV.errorMessage('draft', 403), 'not the no-access sentence for a seat link');
+  assert.ok(!/passcode/i.test(create + draft));
+  assert.strictEqual(RV.errorMessage('seal', 403, 'ai_access'), RV.errorMessage('seal', 403), 'only create and draft have it');
+});
+
 test('every create and draft sentence by code is plain: no protocol jargon, a full sentence', () => {
-  for (const [a, c] of [['create', 'signin_required'], ['create', 'origin'], ['create', 'content_type'], ['create', 'saving_unavailable'], ['create', 'user_limit'], ['create', 'ip_limit'], ['create', 'daily_limit'], ['draft', 'shutting_down']]) {
+  for (const [a, c] of [['create', 'signin_required'], ['create', 'origin'], ['create', 'content_type'], ['create', 'saving_unavailable'], ['create', 'user_limit'], ['create', 'ip_limit'], ['create', 'daily_limit'], ['create', 'ai_access'], ['draft', 'shutting_down'], ['draft', 'ai_access']]) {
     const s = RV.errorMessage(a, 599, c);
     assert.ok(/[.]$/.test(s) && s.length > 20 && !JARGON.test(s), s);
   }

@@ -71,7 +71,7 @@ test('the v0 fixture loads, verifies, saves as schemaVersion 1 and reloads equal
   const store2 = createStore({ file: s.file, log: capture() });
   store2.load();
   assert.deepEqual(Object.fromEntries(store2.state.rooms), expected);
-  assert.deepEqual(plain(store2.state.usage), Object.assign({ failedByIp: {}, byUser: {} }, fixture().usage));
+  assert.deepEqual(plain(store2.state.usage), Object.assign({ failedByIp: {}, byUser: {}, invitesByUser: {}, invitesTotal: 0 }, fixture().usage));
   for (const r of store2.state.rooms.values()) assert.equal(pxp.verifyLedger(r.ledger).ok, true, r.id);
   assert.deepEqual(s.log.lines, []);
 });
@@ -94,14 +94,14 @@ test('a v1 file is not migrated again', (t) => {
   const s = setup(t, JSON.stringify({ schemaVersion: 1, rooms: { v1room01: r }, usage: { day: 'd', total: 2, byIp: { x: 2 } } }));
   s.store.load();
   assert.equal(s.store.state.rooms.get('v1room01').demo, 'kept');
-  assert.deepEqual(plain(s.store.state.usage), { day: 'd', total: 2, byIp: { x: 2 }, failedByIp: {}, byUser: {} });
+  assert.deepEqual(plain(s.store.state.usage), { day: 'd', total: 2, byIp: { x: 2 }, failedByIp: {}, byUser: {}, invitesByUser: {}, invitesTotal: 0 });
 });
 
 test('no file: empty state, and the data directory is created', (t) => {
   const s = setup(t);
   const st = s.store.load();
   assert.equal(st.rooms.size, 0);
-  assert.deepEqual(plain(st.usage), { day: '', total: 0, byIp: {}, failedByIp: {}, byUser: {} });
+  assert.deepEqual(plain(st.usage), { day: '', total: 0, byIp: {}, failedByIp: {}, byUser: {}, invitesByUser: {}, invitesTotal: 0 });
   assert.ok(realFs.existsSync(s.dir));
   assert.deepEqual(s.log.lines, []);
 });
@@ -820,9 +820,9 @@ test('parseStoreDoc does no I/O and migrates rooms in place: it validates, and r
   const doc = core.parseStoreDoc({ rooms: { a0000001: minimalRoom('a0000001'), b0000001: 'x' }, usage: { day: 'd', total: 1 }, users: { u: { a: 1 }, v: 3 } });
   assert.equal(doc.version, 0);
   assert.deepEqual(doc.records.room.map(([id]) => id), ['a0000001']);
-  assert.deepEqual(doc.skipped, { room: ['b0000001'], user: ['v'], session: [], agentkey: [] });
+  assert.deepEqual(doc.skipped, { room: ['b0000001'], user: ['v'], session: [], agentkey: [], aiaccess: [] });
   assert.equal(doc.partial, true);
-  assert.deepEqual([doc.records.user, doc.records.session, doc.records.agentkey], [[['u', { a: 1 }]], [], []]);
+  assert.deepEqual([doc.records.user, doc.records.session, doc.records.agentkey, doc.records.aiaccess], [[['u', { a: 1 }]], [], [], []]);
   assert.equal(doc.records.usage[0][1].total, 1);
   assert.deepEqual(core.parseStoreDoc([]), { error: 'ESHAPE' });
   assert.deepEqual(core.parseStoreDoc({ rooms: [] }), { error: 'ESHAPE' });
@@ -1491,7 +1491,7 @@ test('safeCode keeps only an E-code, and resetUsage empties the counters under t
   data.state.usage.total = 4; data.state.usage.byUser.x = 1;
   let saved = 0;
   core.resetUsage(data, { saveUsage: () => { saved++; } }, '2026-10-04');
-  assert.deepEqual(plain(data.state.usage), { day: '2026-10-04', total: 0, byIp: {}, failedByIp: {}, byUser: {} });
+  assert.deepEqual(plain(data.state.usage), { day: '2026-10-04', total: 0, byIp: {}, failedByIp: {}, byUser: {}, invitesByUser: {}, invitesTotal: 0 });
   assert.equal(saved, 1);
 });
 
