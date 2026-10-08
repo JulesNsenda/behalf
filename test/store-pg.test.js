@@ -829,6 +829,14 @@ test('pgError and classify: a terminated connection is ECONNRESET, a server erro
   assert.equal(pgError(new Error('Client is not queryable')).code, 'ECONNRESET');
   assert.equal(pgError(new Error('Query read timeout')).code, 'ETIMEDOUT');
   assert.equal(pgError(new Error('something else')).code, 'EPG');
+  // Failures that used to be a bare EPG now say what kind they are, as fixed codes only.
+  assert.equal(pgError(Object.assign(new Error("Cannot find module 'pg'"), { code: 'MODULE_NOT_FOUND' })).code, 'MODULE_NOT_FOUND');
+  assert.equal(pgError(Object.assign(new TypeError('Invalid URL'), { code: 'ERR_INVALID_URL' })).code, 'ERR_INVALID_URL');
+  assert.equal(pgError(new Error('SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string')).code, 'EPGAUTH');
+  assert.equal(pgError(new TypeError("Cannot read properties of undefined (reading 'x')")).code, 'EPG_TYPEERROR');
+  assert.equal(pgError(Object.assign(new Error('x'), { code: 'lower case' })).code, 'EPG', 'a code that is not a fixed upper-case name is not kept');
+  assert.equal(pgError('a string').code, 'EPG');
+  for (const c of ['MODULE_NOT_FOUND', 'EPGAUTH', 'EPG_TYPEERROR']) assert.equal(classify(new StoreError(c, 'x')).kind, 'permanent', c);
   for (const code of ['ECONNREFUSED', 'ENOENT', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNRESET', 'PG_57P03', 'PG_57P01', 'PG_57P02', 'PG_53300', 'PG_08006', 'PG_08001', 'PG_08P01', 'PG_55P03']) assert.deepEqual([classify(new StoreError(code, 'x')).kind, classify(new StoreError(code, 'x')).code], ['connection', code], code);
   for (const code of ['PG_28P01', 'PG_28000', 'PG_3D000', 'PG_42501', 'EFUTURESCHEMA', 'ELOCKED', 'EPOOLER', 'EEPOCH', 'EIMPORT', 'ETABLEOWNER', 'EACCES', 'EPG']) assert.notEqual(classify(new StoreError(code, 'x')).kind, 'connection', code);
 });
