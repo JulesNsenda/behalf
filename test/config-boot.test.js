@@ -34,14 +34,23 @@ test('REQUIRE_DATABASE=1 without DATABASE_URL exits 1 at once with BAD_REQUIRE_D
   assert.ok(!r.out.includes('app.listen_failed') && !fs.existsSync(path.join(dir, 'rooms.json')), 'it did not start: ' + r.out);
 });
 
-test('REQUIRE_DATABASE=1 is no obstacle once DATABASE_URL is set, and REQUIRE_DATABASE unset still serves from the file store', { timeout: 20000 }, async (t) => {
+test('on the platform (DROP_DATA_DIR set) the guard is on by default: REQUIRE_DATABASE unset without DATABASE_URL exits 1 with BAD_REQUIRE_DATABASE', { timeout: 20000 }, async (t) => {
+  const dir = mkTmp('require-db-default-');
+  t.after(() => rmTmp(dir));
+  const s = spawnIndex(dir, { REQUIRE_DATABASE: undefined }, [], 8000);
+  const r = await s.exited;
+  assert.equal(r.code, 1, r.out);
+  assert.equal(r.stdout, '', 'no listen line, and no placeholder bound: ' + r.out);
+  assert.ok(r.out.includes('event="app.init_failed"') && r.out.includes('code="BAD_REQUIRE_DATABASE"'), r.out);
+  assert.ok(!fs.existsSync(path.join(dir, 'rooms.json')), 'it did not start: ' + r.out);
+});
+
+test('REQUIRE_DATABASE=0 still serves from the file store on the platform', { timeout: 20000 }, async (t) => {
   const dir = mkTmp('require-db-off-');
   t.after(() => rmTmp(dir));
-  for (const env of [{}, { REQUIRE_DATABASE: '0' }]) {
-    const r = await start(path.join(ROOT, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', SIGNIN: 'off', DROP_DATA_DIR: dir, ...env });
-    try {
-      assert.ok(r.port, 'expected a listening server\n' + r.out);
-      assert.equal((await fetch(`http://127.0.0.1:${r.port}/health`)).status, 200);
-    } finally { await r.stop(); }
-  }
+  const r = await start(path.join(ROOT, 'index.js'), { PORT: '0', BIND_HOST: '127.0.0.1', SIGNIN: 'off', DROP_DATA_DIR: dir, REQUIRE_DATABASE: '0' });
+  try {
+    assert.ok(r.port, 'expected a listening server\n' + r.out);
+    assert.equal((await fetch(`http://127.0.0.1:${r.port}/health`)).status, 200);
+  } finally { await r.stop(); }
 });

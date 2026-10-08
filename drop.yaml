@@ -7,8 +7,9 @@ database: postgres
 # The base layer: anything set in the Drop dashboard overrides these.
 env:
   SIGNIN: github
-  # Drop sometimes starts the app without DATABASE_URL (a Drop quota bug). With this the process exits at once instead of serving an
-  # empty file store, so Drop's readiness probe fails and the old version keeps serving.
+  # Drop sometimes starts the app without DATABASE_URL (a Drop quota bug). The process then exits at once instead of serving an
+  # empty file store. The code already defaults this to 1 when DROP_DATA_DIR is set; this is a second layer. Never set it to 0 in
+  # the dashboard (it overrides this file) unless you mean to run on the file store.
   REQUIRE_DATABASE: "1"
   PUBLIC_URL: https://behalf.dropkit.sh
   # dev sends nothing (emails go to the outbox folder, with no page on the platform). Switch to smtp in the dashboard once

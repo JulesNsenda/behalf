@@ -6,11 +6,15 @@ const os = require('node:os');
 const path = require('node:path');
 const { ROOT } = require('./paths');
 
-// Allowlist, so a developer's own PORT, API key or passcode can't change the run.
+// Allowlist, so a developer's own PORT, API key or passcode can't change the run. The servers use DROP_DATA_DIR as a scratch folder,
+// so without a DATABASE_URL the platform's database guard is off unless a test asks for it; with one it runs as in production.
+// A key set to undefined removes it, which is how a test unsets a default here.
 function baseEnv(extra) {
-  const env = {};
+  const env = extra && extra.DATABASE_URL ? {} : { REQUIRE_DATABASE: '0' };
   for (const k of ['PATH', 'Path', 'SystemRoot', 'TEMP', 'TMP', 'HOME', 'USERPROFILE']) if (process.env[k] !== undefined) env[k] = process.env[k];
-  return Object.assign(env, extra);
+  Object.assign(env, extra);
+  for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
+  return env;
 }
 
 // If a test crashes early, don't leave a server running.
