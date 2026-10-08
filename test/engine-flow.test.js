@@ -379,7 +379,7 @@ test('demo room over REST: sealing starts the script, the escalation answer bran
 test('GET /api/config has a fixed key set', T, async () => {
   const r = await getJson('/api/config');
   assert.strictEqual(r.status, 200);
-  assert.deepStrictEqual(keys(r.json), ['live', 'maxTurns', 'mcpUrl', 'passcode', 'protocol', 'signin']);
+  assert.deepStrictEqual(keys(r.json), ['invite', 'live', 'maxTurns', 'mcpUrl', 'passcode', 'protocol', 'signin']);
   assert.strictEqual(r.json.live, false);
   assert.strictEqual(r.json.maxTurns, MAX_TURNS);
 });

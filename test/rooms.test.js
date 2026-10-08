@@ -538,7 +538,7 @@ test('the domain exposes exactly its operations', T, async (t) => {
   const { domain } = setup(t);
   assert.deepEqual(Object.keys(domain).sort(), [
     'ApiError', 'answerDemo', 'answerEscalation', 'busy', 'chargeCall', 'createDemoRoom', 'createLiveRoom', 'draftCard', 'enforceCapacity', 'evictExpired', 'externalTurn',
-    'hydrate', 'joinAsAgent', 'onChange', 'other', 'resume', 'rooms', 'sealCard', 'seatLink', 'stop',
+    'hydrate', 'joinAsAgent', 'onChange', 'other', 'reserveInvite', 'resume', 'rooms', 'sealCard', 'seatLink', 'stop',
   ]);
 });
 

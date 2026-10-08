@@ -27,7 +27,7 @@ const DAY = 24 * 3600 * 1000;
 const HOUR = 3600 * 1000;
 
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
-const secrets = () => loadSecrets({ GITHUB_CLIENT_ID: CLIENT_ID, GITHUB_CLIENT_SECRET: CLIENT_SECRET });
+const secrets = () => loadSecrets({ GITHUB_CLIENT_ID: CLIENT_ID, GITHUB_CLIENT_SECRET: CLIENT_SECRET, SMTP_USER: 'u', SMTP_PASS: 'p' });
 const cfg = (extra = {}) => loadConfig({ SIGNIN: 'github', PUBLIC_URL: PUBLIC, GITHUB_BLOCKED_IDS: '666', ...extra });
 
 // A GitHub that knows one good code. Everything it was asked is in calls; each failure mode is a field a test sets.
@@ -847,7 +847,7 @@ const cookieValue = (res, name) => {
   return line === undefined ? null : line.slice(name.length + 1).split(';')[0];
 };
 
-async function boot(t, { gh = fakeGithub(), signin = 'github', persist, extra, proxy } = {}) {
+async function boot(t, { gh = fakeGithub(), signin = 'github', persist, extra, proxy, mailer } = {}) {
   const dir = mkTmp('auth-http-');
   const { out, log } = capture();
   const config = loadConfig({ SIGNIN: signin, DROP_DATA_DIR: path.join(dir, 'data'), PUBLIC_URL: PUBLIC, GITHUB_BLOCKED_IDS: '666', PER_IP_DAILY: '100', PER_USER_DAILY: '100', DAILY_ROOM_LIMIT: '100', ...extra });
@@ -855,7 +855,7 @@ async function boot(t, { gh = fakeGithub(), signin = 'github', persist, extra, p
   base.load();
   const store = wrapStore(base, { persist });
   const clock = mkClock(Date.now());
-  const app = createApp({ config, secrets: secrets(), log, store, proxy: proxy || fakeProxy(), clock: { sleep: async () => {}, now: clock.now }, fetch: gh.fetch });
+  const app = createApp({ config, secrets: secrets(), log, store, proxy: proxy || fakeProxy(), clock: { sleep: async () => {}, now: clock.now }, fetch: gh.fetch, mailer });
   await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
   const root = `http://127.0.0.1:${app.server.address().port}`;
   t.after(async () => { await app.drain().catch(() => {}); if (app.server.closeAllConnections) app.server.closeAllConnections(); app.close(); rmTmp(dir); });
@@ -2827,6 +2827,35 @@ test('every coded refusal the server source names for a web action is provoked o
   assert.equal(closed.status, 201);
   const closedToken = new URL(closed.json.links.A, PUBLIC).searchParams.get('t');
   check('draft', await live.post('/api/rooms/' + closed.json.id + '/seats/A/draft', { origin: null, body: { token: closedToken, text: 'a brief', name: 'Ann' } }));
+  // an invitation by email: the guards, mail that cannot reach a person (the platform's dev transport), then the room's and the day's limits
+  const inviteUrl = '/api/rooms/' + closed.json.id + '/seats/A/invite';
+  const inviteBody = { token: closedToken, email: 'friend@example.com' };
+  check('invite', await live.post(inviteUrl, { cookie: liveUser.cookie, origin: 'https://evil.test', body: inviteBody }));
+  check('invite', await live.post(inviteUrl, { cookie: liveUser.cookie, type: 'text/plain', body: inviteBody }));
+  check('invite', await live.post(inviteUrl, { body: inviteBody }));
+  check('invite', await live.post(inviteUrl, { cookie: liveUser.cookie, body: inviteBody }));
+  const sentMail = [];
+  const mailer = { kind: 'fake', outbox: null, start() {}, close() {}, status: () => 'ready', available: () => true, sendMail: async (m) => { sentMail.push(m); return { status: 'sent', attempts: 1 }; } };
+  const inv = await boot(t, { mailer, extra: { DROP_DATA_DIR: '', MAIL_TRANSPORT: 'smtp', SMTP_HOST: 'smtp.example.com', SMTP_PORT: '587', MAIL_FROM: 'Behalf <invites@example.com>' } });
+  const invUser = await signIn(inv);
+  const invRooms = [];
+  for (let i = 0; i < 6; i++) {
+    const made = await inv.post('/api/rooms', { cookie: invUser.cookie, body: roomBody });
+    invRooms.push({ url: '/api/rooms/' + made.json.id + '/seats/A/invite', token: new URL(made.json.links.A, PUBLIC).searchParams.get('t') });
+  }
+  const sendTo = (r, email) => inv.post(r.url, { cookie: invUser.cookie, body: { token: r.token, email } });
+  for (let i = 0; i < 3; i++) assert.equal((await sendTo(invRooms[0], 'p' + i + '@example.com')).status, 202);
+  check('invite', await sendTo(invRooms[0], 'p9@example.com'));
+  // one address takes 3 a day from anyone, and its own refusal comes after the room's and the person's
+  assert.equal((await sendTo(invRooms[1], 'p0@example.com')).status, 202);
+  assert.equal((await sendTo(invRooms[2], 'p0@example.com')).status, 202);
+  check('invite', await sendTo(invRooms[3], 'p0@example.com'));
+  for (const [r, n] of [[invRooms[1], 2], [invRooms[3], 3]]) for (let i = 0; i < n; i++) assert.equal((await sendTo(r, 'q' + i + n + '@example.com')).status, 202);
+  check('invite', await sendTo(invRooms[4], 'late@example.com'));
+  // saving has been failing: no invitation is counted
+  inv.store.failing = true;
+  check('invite', await sendTo(invRooms[5], 'saving@example.com'));
+  inv.store.failing = false;
   // asking for "Use our AI": the guards, signed out, the note, the rate (5 per user), and a full queue (500 waiting)
   const q = await boot(t);
   const qa = await signIn(q);
@@ -2857,7 +2886,7 @@ test('every coded refusal the server source names for a web action is provoked o
   check('create', await off.post('/api/rooms', { origin: null, body: roomBody }));
   // Every coded refusal the hand-written table lists for these actions was provoked (a draft's shutting_down needs a stopping server).
   const wanted = [];
-  for (const action of ['create', 'logout', 'keyCreate', 'keyRevoke', 'aiRequest', 'adminDecide']) for (const [status, code] of EXPECTED[action]) wanted.push(`${action} ${status} ${code}`);
+  for (const action of ['create', 'logout', 'keyCreate', 'keyRevoke', 'aiRequest', 'adminDecide', 'invite']) for (const [status, code] of EXPECTED[action]) wanted.push(`${action} ${status} ${code}`);
   for (const [status, code] of EXPECTED.draft) if (code !== 'shutting_down') wanted.push(`draft ${status} ${code}`);
   assert.deepEqual([...seen].sort(), wanted.sort(), 'every coded (action, status, code) of EXPECTED was provoked');
 });

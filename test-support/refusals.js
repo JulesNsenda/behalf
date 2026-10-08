@@ -14,6 +14,7 @@ const { serverSource } = require('./paths');
 const EXPECTED = {
   create: [[401, 'signin_required'], [403, 'origin'], [415, 'content_type'], [429, 'user_limit'], [429, 'ip_limit'], [429, 'daily_limit'], [503, 'saving_unavailable'], [403, 'ai_access']],
   draft: [[503, 'shutting_down'], [403, 'ai_access']],
+  invite: [[401, 'signin_required'], [403, 'origin'], [415, 'content_type'], [429, 'invite_limit'], [429, 'invite_address_limit'], [429, 'invite_daily_limit'], [503, 'mail_off'], [503, 'saving_unavailable']],
   logout: [[403, 'origin'], [415, 'content_type'], [503, 'saving_unavailable']],
   keyCreate: [[400, 'key_name'], [400, 'key_name_taken'], [401, 'signin_required'], [403, 'origin'], [409, 'key_limit'], [415, 'content_type'], [429, 'rate_limited'], [503, 'saving_unavailable']],
   keyRevoke: [[401, 'signin_required'], [403, 'origin'], [415, 'content_type'], [503, 'saving_unavailable']],

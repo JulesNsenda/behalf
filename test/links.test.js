@@ -481,3 +481,11 @@ test('demoUrl: the demo creator\'s seat A link as a path, null unless id and tok
     assert.strictEqual(L.demoUrl(bad), null, JSON.stringify(bad));
   }
 });
+
+test('tokenOf: the t parameter of a seat link, or an empty string', () => {
+  assert.strictEqual(L.tokenOf('https://behalf.example/room/r1?seat=A&t=abc123'), 'abc123');
+  assert.strictEqual(L.tokenOf('/room/r1?seat=A&t=abc123'), 'abc123');
+  assert.strictEqual(L.tokenOf('/room/r1?seat=A'), '');
+  assert.strictEqual(L.tokenOf(''), '');
+  assert.strictEqual(L.tokenOf(undefined), '');
+});

@@ -169,6 +169,12 @@
     return (typeof origin === 'string' ? origin : '') + '/room/' + encodeURIComponent(id) + '?seat=' + seat + '&t=' + encodeURIComponent(token);
   }
 
+  // The seat token in a seat link ("?t=TOKEN"), or '' when the link has none.
+  function tokenOf(link) {
+    var u = parseUrl(link, 'http://x');
+    return (u && u.searchParams.get('t')) || '';
+  }
+
   // Where the demo's creator goes: seat A with the room's one shared token. Null unless id and token are strings.
   function demoUrl(data) {
     if (!data || !idOk(data.id) || typeof data.token !== 'string' || data.token === '') return null;
@@ -281,6 +287,7 @@
     briefPath: briefPath,
     previewPath: previewPath,
     seatLink: seatLink,
+    tokenOf: tokenOf,
     demoUrl: demoUrl
   };
 

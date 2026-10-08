@@ -298,10 +298,15 @@ test('app: the dev transport on the platform is not deliverable: nothing is sent
 test('app: the dev transport off the platform is deliverable, and a working smtp mailer boots without the warning', (t) => {
   const smtp = boot(t);
   assert.ok(!smtp.out.join('').includes('mail.admin_email_unused'));
-  const dev = boot(t, { env: { MAIL_TRANSPORT: 'dev', DROP_DATA_DIR: '', SIGNIN: 'github' } });
+  const dev = boot(t, { env: { MAIL_TRANSPORT: 'dev', DROP_DATA_DIR: '', SIGNIN: 'github', PUBLIC_URL: 'http://localhost:3000' } });
   assert.equal(dev.app.config.devOutbox, true);
   dev.app.aiAccess.request({ id: '1001', login: 'octocat' }, 'n');
   assert.equal(dev.mailer.sent.length, 1);
+  // off the platform but on a public PUBLIC_URL (a self-hosted deploy) the dev transport is not deliverable either
+  const open = boot(t, { env: { MAIL_TRANSPORT: 'dev', DROP_DATA_DIR: '', SIGNIN: 'github' } });
+  assert.equal(open.app.config.devOutbox, false);
+  open.app.aiAccess.request({ id: '1001', login: 'octocat' }, 'n');
+  assert.equal(open.mailer.sent.length, 0);
 });
 
 test('app: a mailer that turned itself off (or is not verified yet) stops the notices, with no boot warning but one skipped line', (t) => {

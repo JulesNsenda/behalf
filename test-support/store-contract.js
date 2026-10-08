@@ -74,16 +74,17 @@ function runStoreContract(name, makeStore) {
   it('usage, including byUser, round-trips; resetUsage clears the counters and persists', async ({ store, reopen }) => {
     const u = store.state.usage;
     u.day = '2026-10-03'; u.total = 5;
-    u.byIp['1.2.3.4'] = 2; u.failedByIp['5.6.7.8'] = 1; u.byUser['42'] = 3;
+    u.byIp['1.2.3.4'] = 2; u.failedByIp['5.6.7.8'] = 1; u.byUser['42'] = 3; u.invitesByUser['42'] = 2; u.invitesTotal = 2;
     store.saveUsage();
     assert.equal(await store.settle(), true);
     const s2 = await reopen();
-    assert.deepEqual(plain(s2.state.usage), { day: '2026-10-03', total: 5, byIp: { '1.2.3.4': 2 }, failedByIp: { '5.6.7.8': 1 }, byUser: { 42: 3 } });
+    assert.deepEqual(plain(s2.state.usage), { day: '2026-10-03', total: 5, byIp: { '1.2.3.4': 2 }, failedByIp: { '5.6.7.8': 1 }, byUser: { 42: 3 }, invitesByUser: { 42: 2 }, invitesTotal: 2 });
     assert.equal(Object.getPrototypeOf(s2.state.usage.byUser), null);
+    assert.equal(Object.getPrototypeOf(s2.state.usage.invitesByUser), null);
     s2.resetUsage('2026-10-04');
     assert.equal(await s2.settle(), true); // resetUsage schedules its own save
     const s3 = await reopen();
-    assert.deepEqual(plain(s3.state.usage), { day: '2026-10-04', total: 0, byIp: {}, failedByIp: {}, byUser: {} });
+    assert.deepEqual(plain(s3.state.usage), { day: '2026-10-04', total: 0, byIp: {}, failedByIp: {}, byUser: {}, invitesByUser: {}, invitesTotal: 0 });
   });
 
   it('resetUsage reaches the backend without any other save', async ({ store, reopen }) => {
@@ -93,7 +94,7 @@ function runStoreContract(name, makeStore) {
     store.resetUsage('new');
     assert.equal(await store.settle(), true);
     const s2 = await reopen();
-    assert.deepEqual(plain(s2.state.usage), { day: 'new', total: 0, byIp: {}, failedByIp: {}, byUser: {} });
+    assert.deepEqual(plain(s2.state.usage), { day: 'new', total: 0, byIp: {}, failedByIp: {}, byUser: {}, invitesByUser: {}, invitesTotal: 0 });
   });
 
   for (const kind of KINDS) {
@@ -325,7 +326,7 @@ function runStoreContract(name, makeStore) {
     const s2 = await reopen();
     assert.equal(s2.state.rooms.get('old00001').seats.A.mode, 'builtin');
     assert.equal(s2.state.rooms.get('old00001').demo, false);
-    assert.deepEqual(plain(s2.state.usage), { day: 'd', total: 2, byIp: { x: 2 }, failedByIp: {}, byUser: { u: 1 } });
+    assert.deepEqual(plain(s2.state.usage), { day: 'd', total: 2, byIp: { x: 2 }, failedByIp: {}, byUser: { u: 1 }, invitesByUser: {}, invitesTotal: 0 });
     assert.deepEqual([...s2.collection('user').map.keys(), ...s2.collection('session').map.keys(), ...s2.collection('agentkey').map.keys()], ['1', 's', 'k']);
   });
 

@@ -12,7 +12,7 @@ const T = { timeout: 30000 };
 
 async function boot(t, env) {
   const dir = mkTmp('mail-http-');
-  const config = { ...loadConfig({ SIGNIN: 'off', PUBLIC_URL: 'http://test.invalid', ...env }), dataDir: path.join(dir, 'data') };
+  const config = { ...loadConfig({ SIGNIN: 'off', PUBLIC_URL: 'http://localhost:3000', ...env }), dataDir: path.join(dir, 'data') };
   const app = createApp({ config, secrets: loadSecrets({}), log: quietLog(), proxy: fakeProxy(), clock: { sleep: async () => {} }, file: path.join(dir, 'data', 'rooms.json') });
   await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
   t.after(async () => {

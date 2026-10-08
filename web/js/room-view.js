@@ -720,6 +720,15 @@
       429: "You can't open a new room right now. Try again tomorrow, or watch the demo.",
       503: 'This server has no built-in AI, so each person brings their own AI agent.'
     },
+    invite: {
+      def: "We couldn't send that invite. Copy the link instead.",
+      400: "That doesn't look like an email address. Check it and try again.",
+      403: 'This room is not yours to send invites for. Reload the page, or copy the link instead.',
+      404: 'This room has closed. Start a new one to keep going.',
+      409: 'They have already joined, so there is nothing left to invite.',
+      429: "You can't send more invites right now. Copy the link instead.",
+      503: "We can't send email just now. Copy the link instead."
+    },
     demo: {
       def: "We couldn't start the demo. Please try again."
     },
@@ -743,6 +752,16 @@
       ip_limit: "You've opened all the rooms this network can today. Try again tomorrow, or watch the demo.",
       daily_limit: "Behalf has opened all the rooms it can today. Try again tomorrow, or watch the demo.",
       ai_access: 'Our AI needs approval first. Ask for access below, or use your own AI agent.'
+    },
+    invite: {
+      signin_required: "The invite wasn't sent because you're not signed in. Copy the link instead.",
+      origin: 'Please reload the page and try again.',
+      content_type: 'Something went wrong sending that. Reload the page and try again.',
+      invite_limit: "You've sent the most invites you can for this room. Copy the link instead.",
+      invite_address_limit: 'That address has had enough invitations today. Copy the link and send it yourself.',
+      invite_daily_limit: "You've sent all the invites you can today. Try again tomorrow, or copy the link instead.",
+      mail_off: "Email isn't available here. Copy the link instead.",
+      saving_unavailable: "Saving is unavailable right now, so we can't send that invite. Try again in a minute, or copy the link instead."
     },
     draft: {
       shutting_down: RESTARTING + ' You can fill in the fields yourself.',
@@ -967,7 +986,23 @@
     };
   }
 
+  // The wording of the invite step's optional "Their email" field (start.js holds none of it). otherName is the
+  // other person's first name as firstNameOf gives it.
+  function inviteEmailText(otherName) {
+    return {
+      label: 'Their email',
+      hint: "Optional. We'll email " + otherName + ' their link. You can still copy it above.',
+      send: 'Send invite',
+      empty: 'Enter their email address.'
+    };
+  }
+  function inviteSending(email) { return 'Sending to ' + email + '…'; }
+  function inviteSent(email) { return 'Invite sent to ' + email + '.'; }
+
   var RoomView = {
+    inviteEmailText: inviteEmailText,
+    inviteSending: inviteSending,
+    inviteSent: inviteSent,
     agentPrompt: agentPrompt,
     mcpUrl: mcpUrl,
     mcpCommand: mcpCommand,

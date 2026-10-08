@@ -79,6 +79,7 @@ function loadPage(opts) {
   const panel = container(page, 'agent-keys');
   const slot = container(page, 'account-slot');
   const adminView = container(page, 'admin-view'); // the admin page's list
+  const inviteView = container(page, 'invite-view'); // the start page's invite step: the ids it renders are elements too
   panel.hidden = true;
   slot.hidden = true;
   page.scrolled = 0; // how many times the key panel was scrolled into view
@@ -90,7 +91,8 @@ function loadPage(opts) {
     if (id === 'agent-keys') return panel;
     if (id === 'account-slot') return slot;
     if (id === 'admin-view') return adminView;
-    for (const c of [panel, slot, adminView]) { const e = c.find(id); if (e) return e; }
+    if (id === 'invite-view' && opts.lazy) return inviteView;
+    for (const c of [panel, slot, adminView, ...(opts.lazy ? [inviteView] : [])]) { const e = c.find(id); if (e) return e; }
     if (!opts.lazy) return null;
     if (!lazy.has(id)) lazy.set(id, makeEl(page, id));
     return lazy.get(id);

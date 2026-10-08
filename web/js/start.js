@@ -3,8 +3,8 @@
  * every piece of dynamic markup goes through UI.html and UI.render.
  *
  * Wording: the form labels, field errors and invite steps are static on this page by design, because
- * nothing else reads them. Only the shared error sentences (RoomView.errorMessage) and the other
- * person's name (RoomView.firstNameOf, which guards reserved names) and the step labels come from room-view.js.
+ * nothing else reads them. The shared error sentences (RoomView.errorMessage), the invite email field's wording (RoomView.inviteEmailText,
+ * inviteSending, inviteSent), the other person's name (RoomView.firstNameOf, which guards reserved names) and the step labels come from room-view.js.
  *
  * With sign-in on and nobody signed in, step 1 shows a sign-in link instead of the form (wording from account-view.js), whether
  * /api/me said so up front or a create came back 401. The form and that link both start hidden: one of them is shown once the
@@ -16,6 +16,8 @@
  * Step 1 posts the form to /api/rooms. Step 2 shows the other person's link, which the server never
  * returns again, so it is also kept in localStorage for a week (see links.js), and the creator's own link,
  * to come back to. Links older than that, or no longer valid, are swept out of localStorage on load.
+ * With config.invite, step 2 also offers an optional email field that has the server email the other person's link (an extra:
+ * copying the link works as before).
  * Once the room exists the form stays shut: a second submit would open a duplicate room.
  */
 (function () {
@@ -270,6 +272,51 @@ var OTHER_HINT = UI.byId('other-hint').textContent;
   // Once a room exists the form can't be used again, whatever happened to the invite step.
   function lockForm() { UI.disableAll(form); }
 
+  // The invite by email. The address is echoed only on this page (through UI.html), and the server answers 202 before the
+  // email is sent, so "sent" means handed over.
+  var inviting = false;
+  var sent = false; // one email per page view; the copy-link flow stays
+
+  function wireEmail(roomId, token, text) {
+    var input = UI.byId('invite-email');
+    var send = UI.byId('invite-send');
+    var status = UI.byId('invite-status');
+
+    function say(safe) { UI.render(status, safe); }
+
+    function sendInvite() {
+      if (inviting || sent) return;
+      var email = input.value.trim();
+      if (email === '') {
+        setFieldError('invite-email', text.empty);
+        input.focus();
+        return;
+      }
+      setFieldError('invite-email', '');
+      inviting = true;
+      UI.setBusy(send, true);
+      say(html`<p class="text-muted">${RoomView.inviteSending(email)}</p>`);
+      UI.request('POST', '/api/rooms/' + encodeURIComponent(roomId) + '/seats/A/invite', { token: token, email: email }).then(function (res) {
+        inviting = false;
+        UI.setBusy(send, false);
+        if (res.ok) {
+          sent = true;
+          input.value = '';
+          input.disabled = true;
+          send.disabled = true;
+          say(html`<p>${RoomView.inviteSent(email)}</p>`);
+          return;
+        }
+        say(UI.alertBox(RoomView.errorMessage('invite', res.status, (res.data || {}).code), 'danger'));
+      });
+    }
+
+    send.addEventListener('click', sendInvite);
+    input.addEventListener('keydown', function (e) {
+      if (e && e.key === 'Enter') { e.preventDefault(); sendInvite(); }
+    });
+  }
+
   // Returns false when the response's links can't be trusted, and shows nothing.
   function showInvite(room, nameA, nameB) {
     if (typeof room.id !== 'string') return false;
@@ -284,6 +331,11 @@ var OTHER_HINT = UI.byId('other-hint').textContent;
     // A full or failed save never blocks the page.
     try { localStorage.setItem(entry.key, entry.value); } catch (e) { /* storage unavailable */ }
 
+    // The optional email is an extra on top of the link, only when the server can send it. Seat A's token is the one in
+    // the creator's own link, which was just checked.
+    var emailOn = Boolean(config && config.invite);
+    var tokenA = Links.tokenOf(ownLink);
+    var emailText = RoomView.inviteEmailText(otherName);
     var previewPath = Links.previewPath(room.id, 'B');
     var inviteField = UI.copyField({ id: 'invite-link', label: otherName + "'s link", note: "You can't get this link back later, so copy it now.", value: otherLink });
     var ownField = UI.copyField({ id: 'own-link', label: 'Your link', note: 'Keep this link to come back to your room. Anyone with it can act for you.', value: ownLink });
@@ -300,6 +352,17 @@ var OTHER_HINT = UI.byId('other-hint').textContent;
         <div><a class="btn btn--link" href="${UI.url(previewPath)}" target="_blank" rel="noopener noreferrer">Preview what ${otherName} will see</a></div>
       </div>
 
+      ${emailOn ? html`<div class="card stack stack--sm">
+        <div class="field">
+          <label class="field__label" for="invite-email">${emailText.label}</label>
+          <span class="field__hint" id="invite-email-hint">${emailText.hint}</span>
+          <input class="input" id="invite-email" type="email" maxlength="254" autocomplete="email" aria-describedby="invite-email-hint">
+          <span class="field__error" id="invite-email-error" hidden></span>
+        </div>
+        <div><button class="btn btn--secondary" type="button" id="invite-send">${emailText.send}</button></div>
+        <div id="invite-status" role="status"></div>
+      </div>` : false}
+
       <div class="card stack">
         ${ownField.html}
       </div>
@@ -315,6 +378,7 @@ var OTHER_HINT = UI.byId('other-hint').textContent;
     inviteField.fill(UI.byId('invite-view'));
     ownField.fill(UI.byId('invite-view'));
     UI.byId('continue-btn').addEventListener('click', function () { location.assign(UI.url(ownLink)); });
+    if (emailOn) wireEmail(room.id, tokenA, emailText);
 
     UI.byId('start-view').hidden = true;
     UI.byId('invite-view').hidden = false;
