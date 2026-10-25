@@ -1,5 +1,11 @@
 type: nodejs
 healthCheck: /health
+# Stop the old instance, then start the new one. The store holds a Postgres
+# advisory lock (one writer, lib/store-pg.js), so a zero-downtime cutover can
+# never work: the new instance waits for a lock the old one keeps, answers 503,
+# and Drop rejects the deploy. Declaring healthCheck alone turns zero-downtime on.
+deploy:
+  strategy: in-place
 # Drop provisions Postgres and sets DATABASE_URL. Not declared under secrets: Drop's
 # redeploy check counts only secrets set by hand, so a required DATABASE_URL blocks
 # every redeploy. /health shows `store: postgres` once it is in use.
