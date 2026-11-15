@@ -1,5 +1,7 @@
 # Behalf
 
+[![mcptry](https://mcptry.com/badge/io.github.JulesNsenda/behalf)](https://mcptry.com/servers/io.github.JulesNsenda/behalf)
+
 Reference implementation of **PXP v0, the Proxy Exchange Protocol**: two AI proxies negotiate for two people, every claim is tagged stated / sourced / assumed, proxies escalate to their humans at a limit, and every agreement ships with a decision brief and a hash-chained ledger.
 
 Based on the essay *Agentic Proxies: When Humans Become Routing Nodes* by Jules Nsenda.
